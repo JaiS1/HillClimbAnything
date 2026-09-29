@@ -1,0 +1,169 @@
+{
+  "format": 1,
+  "scope": "allowlisted standalone source; no parent Git history or run artifacts",
+  "scan": "No matches for listed credential/private-path patterns; not a guarantee against all secrets.",
+  "rules": [
+    "private_key",
+    "github_token",
+    "aws_access_id",
+    "provider_key",
+    "hf_or_kaggle_key",
+    "personal_path",
+    "personal_identity",
+    "email_address",
+    "parent_repo_reference",
+    "confidential_project"
+  ],
+  "files": [
+    {
+      "file": ".gitignore",
+      "bytes": 117,
+      "sha256": "140615db05de77730bd9fa2a8d4b1c9199ebc18437d817ec2ff73dd6e2c90dc5"
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "bytes": 1165,
+      "sha256": "fb9a8c1b40a6137ee573adb6bb1aaad6109f9cc957ea936a1eb6290d1b976a45"
+    },
+    {
+      "file": "LICENSE",
+      "bytes": 1080,
+      "sha256": "3f3300108f0975b646e8d80b8ba57ae1e922bb5c1d062a04fdc0e4ecde615ef8"
+    },
+    {
+      "file": "README.md",
+      "bytes": 18474,
+      "sha256": "5fa8c979669c781bddac4888bad08847823741bec190903696713fb55a864d5b"
+    },
+    {
+      "file": "RELEASE_NOTES.md",
+      "bytes": 1667,
+      "sha256": "6f19f9c0a3fe36766b3580ea998b8071c806fe33c0814862b362cb86521beb28"
+    },
+    {
+      "file": "skills/dream-loop/SKILL.md",
+      "bytes": 3924,
+      "sha256": "e6ff52329049ffc92eae2894c9087c1aa7b568a6d2e0539c7a474db8116e56b6"
+    },
+    {
+      "file": "skills/dream-loop/references/usage.md",
+      "bytes": 5908,
+      "sha256": "4416d86ef9de437d40131dc1c75dbdbbe6a0b83a3f5b9538e00de8bf82670345"
+    },
+    {
+      "file": "tools/dream_rsi/.gitignore",
+      "bytes": 45,
+      "sha256": "6893ba36e6ded2738504e68ff4f82f93d298ff636bd9474da0f415d37940b36c"
+    },
+    {
+      "file": "tools/dream_rsi/DESIGN_NOTES.md",
+      "bytes": 4828,
+      "sha256": "c9cf978c1f257e03ec79ac03d3eee2ab721ed34a3a7e39ac8e89fbe4baba0489"
+    },
+    {
+      "file": "tools/dream_rsi/LICENSE",
+      "bytes": 1080,
+      "sha256": "3f3300108f0975b646e8d80b8ba57ae1e922bb5c1d062a04fdc0e4ecde615ef8"
+    },
+    {
+      "file": "tools/dream_rsi/POLICY_DEVELOPER.md",
+      "bytes": 2219,
+      "sha256": "5c0431a1192014d316c5f2979435f90b10596bd04a61beb38dfa75e68fd3d2d5"
+    },
+    {
+      "file": "tools/dream_rsi/README.md",
+      "bytes": 18438,
+      "sha256": "d41bef6e39a254aff6da01ad933a52242e0b1532398157421e1765aebb0225de"
+    },
+    {
+      "file": "tools/dream_rsi/REFERENCES.md",
+      "bytes": 2105,
+      "sha256": "d35da4ea58374db7f63db89c37be03b0a1ff64d8d8496e5f35ff7edef8c08354"
+    },
+    {
+      "file": "tools/dream_rsi/__init__.py",
+      "bytes": 90,
+      "sha256": "558ab6179e716614469b2d62bd5996787c19e72c5698c7f0f4b8cdf67ccd9b0d"
+    },
+    {
+      "file": "tools/dream_rsi/__main__.py",
+      "bytes": 30,
+      "sha256": "6d8b7d7846a845059d7a3107143f11131f63c5511d669b44085b15ec5e3d2279"
+    },
+    {
+      "file": "tools/dream_rsi/cli.py",
+      "bytes": 19580,
+      "sha256": "ba0a827292854b515184b2f0bb72f5196f009210d9929803632cbee7c0866a0a"
+    },
+    {
+      "file": "tools/dream_rsi/core.py",
+      "bytes": 21690,
+      "sha256": "180f11fabf4cc0d5365e17d0dc90b835be92fc07c9e9444f2421bf2005f3ea96"
+    },
+    {
+      "file": "tools/dream_rsi/demo_evolution.py",
+      "bytes": 3298,
+      "sha256": "9625eb97668c7263920d5cdabdabc0234fcfb9e2762aed0a5e6ee27049ff1a19"
+    },
+    {
+      "file": "tools/dream_rsi/evolve.py",
+      "bytes": 19414,
+      "sha256": "ed27cb436b0248fc3e2af5e056a4ce1abb6b1fc6b8cdcc2e0d637969d21bb1e0"
+    },
+    {
+      "file": "tools/dream_rsi/examples/knapsack/evaluate.py",
+      "bytes": 1053,
+      "sha256": "1b0f338ac373739d800ab62477dcfb995442e5b902a228787e6bec86d37e0ef2"
+    },
+    {
+      "file": "tools/dream_rsi/examples/knapsack/project.json",
+      "bytes": 644,
+      "sha256": "cee1573d66929ca5b51250053f4a5cbafd4fd1cc1062a4f0802167f0db0d194e"
+    },
+    {
+      "file": "tools/dream_rsi/examples/knapsack/propose.py",
+      "bytes": 866,
+      "sha256": "f0001769876f455df8a4f1fbe742a3f0b4e24232ddf0bc7535d926c047f76df5"
+    },
+    {
+      "file": "tools/dream_rsi/examples/knapsack/seed/candidate.json",
+      "bytes": 17,
+      "sha256": "61bdc8c7a222fa5b45797d8e53e4e52c649658f35ae93effc7389421b67d4159"
+    },
+    {
+      "file": "tools/dream_rsi/examples/policy_developer.py",
+      "bytes": 1315,
+      "sha256": "b9727a8406f6802da8f03a9bcdf958803b5b080339d700ff0f841d5e363c12ac"
+    },
+    {
+      "file": "tools/dream_rsi/pyproject.toml",
+      "bytes": 679,
+      "sha256": "9313c455695244d525617deb8a905dd9d5783f0ff39f9c3a194d2f4342eb142e"
+    },
+    {
+      "file": "tools/dream_rsi/replay.py",
+      "bytes": 19059,
+      "sha256": "3a731759b459ead64d80f9032bbbcd8af34c4b17bf714a3e7fc390d5e3ecef74"
+    },
+    {
+      "file": "tools/dream_rsi/stats.py",
+      "bytes": 18707,
+      "sha256": "2d3bc911c17d522e7d962a5272082f8a5cbe6921561bd6913e0e5846998d60a1"
+    },
+    {
+      "file": "tools/dream_rsi/tests/test_core.py",
+      "bytes": 13770,
+      "sha256": "1c9be02395812ef2ef8d12ae6dc8a82f6ecdc775b6db4166f0b6b300acad7b66"
+    },
+    {
+      "file": "tools/dream_rsi/tests/test_replay.py",
+      "bytes": 7133,
+      "sha256": "bda8e7010bcf03c3debb181e658299e3f32f07fdb14d6da826d36ed6e44e2a9c"
+    },
+    {
+      "file": "tools/dream_rsi/tests/test_stats.py",
+      "bytes": 13344,
+      "sha256": "e5a41ad3325f748b8107c6e7f9ce3e60595a35ab8582e1137c87a5bfe346ad4d"
+    }
+  ]
+}
