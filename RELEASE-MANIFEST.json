@@ -27,8 +27,8 @@
     },
     {
       "file": "LICENSE",
-      "bytes": 1080,
-      "sha256": "3f3300108f0975b646e8d80b8ba57ae1e922bb5c1d062a04fdc0e4ecde615ef8"
+      "bytes": 1066,
+      "sha256": "d54877dfc1865bd439aa544377418836b73f43c39a7fd8bff1d8f9d90684de44"
     },
     {
       "file": "README.md",
@@ -62,8 +62,8 @@
     },
     {
       "file": "tools/dream_rsi/LICENSE",
-      "bytes": 1080,
-      "sha256": "3f3300108f0975b646e8d80b8ba57ae1e922bb5c1d062a04fdc0e4ecde615ef8"
+      "bytes": 1066,
+      "sha256": "d54877dfc1865bd439aa544377418836b73f43c39a7fd8bff1d8f9d90684de44"
     },
     {
       "file": "tools/dream_rsi/POLICY_DEVELOPER.md",
