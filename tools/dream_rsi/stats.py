@@ -93,7 +93,8 @@ def paired_differences(candidate, baseline, direction):
             if left[key].get(field) != right[key].get(field):
                 raise core.HarnessError(f"item {key} has a different {field} in each arm")
         rows.append({"id": key, "diff": sign * (left[key]["score"] - right[key]["score"]),
-                     "cluster": right[key].get("cluster") or key, "subgroup": right[key].get("subgroup")})
+                     "cluster": ("cluster:" + right[key]["cluster"]) if right[key].get("cluster") else "item:" + key,
+                     "subgroup": right[key].get("subgroup")})
     return rows
 
 
@@ -104,23 +105,43 @@ def _quantile(values, q):
     return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
 
 
+def _mean_and_se(groups):
+    """Ratio mean over clusters and its cluster-robust (linearized) standard error."""
+    sums = [sum(group) for group in groups]
+    sizes = [len(group) for group in groups]
+    total = sum(sizes)
+    mean = sum(sums) / total
+    k = len(groups)
+    residual = sum((s - mean * n) ** 2 for s, n in zip(sums, sizes))
+    return mean, math.sqrt(k / (k - 1) * residual) / total
+
+
 def bootstrap_interval(rows, level, draws, seed):
-    """Percentile interval for the mean difference, resampling whole clusters."""
+    """Studentized (bootstrap-t) interval for the mean difference, resampling whole clusters.
+
+    A plain percentile bootstrap is anti-conservative with few independent units;
+    studentizing each resample by its cluster-robust standard error keeps the
+    false-promotion rate close to nominal even at five units.
+    """
     clusters = {}
     for row in rows:
         clusters.setdefault(row["cluster"], []).append(row["diff"])
     groups = [clusters[key] for key in sorted(clusters)]
+    mean, se = _mean_and_se(groups)
+    if se == 0:
+        return mean, mean
     rng = random.Random(seed)
-    means = []
+    studentized = []
     for _ in range(draws):
-        total = count = 0
-        for _ in groups:
-            group = groups[rng.randrange(len(groups))]
-            total += sum(group)
-            count += len(group)
-        means.append(total / count)
+        sample = [groups[rng.randrange(len(groups))] for _ in groups]
+        sample_mean, sample_se = _mean_and_se(sample)
+        if sample_se > 0:
+            studentized.append((sample_mean - mean) / sample_se)
+        else:
+            # Every draw repeated one cluster: an unbounded statistic, kept finite for sorting.
+            studentized.append(0.0 if sample_mean == mean else math.copysign(1e12, sample_mean - mean))
     tail = (1 - level) / 2
-    return _quantile(means, tail), _quantile(means, 1 - tail)
+    return mean - _quantile(studentized, 1 - tail) * se, mean - _quantile(studentized, tail) * se
 
 
 def decide(candidate, baseline, direction, rule=None):
@@ -150,6 +171,9 @@ def decide(candidate, baseline, direction, rule=None):
     low, high = bootstrap_interval(rows, level, rule["bootstrap"], rule["seed"])
     result["interval"] = [low, high]
     result["half_width"] = (high - low) / 2
+    if rule["bootstrap"] * (1 - level) / 2 < 10:
+        result["warnings"].append(f"only {rule['bootstrap'] * (1 - level) / 2:.2g} bootstrap draws lie beyond each "
+                                  "interval bound; raise bootstrap for this many comparisons")
     if rule["useful_effect"] is not None and result["half_width"] > rule["useful_effect"]:
         result["warnings"].append(
             f"underpowered: interval half-width {result['half_width']:.4g} exceeds useful effect "
@@ -205,7 +229,8 @@ def register(draft, now=None):
     if not isinstance(arms, list) or not arms or not all(isinstance(a, str) and a for a in arms) or len(set(arms)) != len(arms):
         raise core.HarnessError("registration needs a list of unique arm names")
     metric = draft.get("metric")
-    if not isinstance(metric, dict) or metric.get("direction") not in ("max", "min"):
+    if (not isinstance(metric, dict) or metric.get("direction") not in ("max", "min") or
+            not all(isinstance(metric.get(k), str) and metric[k] for k in ("name", "identity"))):
         raise core.HarnessError("registration metric needs name, identity and direction")
     rule = check_rule(draft.get("decision"))
     if rule["useful_effect"] is None or rule["useful_effect"] <= 0:
@@ -229,13 +254,20 @@ def register(draft, now=None):
     draft = dict(draft, decision=rule)
     stamp = (now or datetime.now(timezone.utc)).isoformat()
     return {"schema_version": 1, "kind": "dream_loop_frozen_registration", "registration": draft,
-            "sha256": core.object_hash(draft), "registered_utc": stamp, "warnings": warnings}
+            "registered_utc": stamp, "sha256": core.object_hash({"registration": draft, "registered_utc": stamp}),
+            "warnings": warnings}
 
 
 def check_registration(frozen):
+    """Detect edits to a frozen registration, including its timestamp.
+
+    Hashes detect accidental or casual drift. Timestamps are self-reported: this
+    is an honour system, not a trusted timestamping service or a signature.
+    """
     if not isinstance(frozen, dict) or frozen.get("kind") != "dream_loop_frozen_registration":
         raise core.HarnessError("not a frozen registration")
-    if core.object_hash(frozen.get("registration")) != frozen.get("sha256"):
+    if core.object_hash({"registration": frozen.get("registration"),
+                         "registered_utc": frozen.get("registered_utc")}) != frozen.get("sha256"):
         raise core.HarnessError("registration changed after it was frozen")
     _utc(frozen.get("registered_utc"), "registration")
     return frozen["registration"]
@@ -279,7 +311,11 @@ def compare(candidates, incumbent, control=None, frozen=None, rule=None):
         baseline = control
         if incumbent["runtime"] == runtime:
             noise = decide(control["items"], incumbent["items"], metric["direction"], dict(rule, comparisons=1))
-            if noise["interval"] is not None and (noise["interval"][0] > 0 or noise["interval"][1] < 0):
+            differs = noise["interval"] is not None and (noise["interval"][0] > 0 or noise["interval"][1] < 0)
+            noise["verdict"] = ("differs" if differs else "insufficient" if noise["interval"] is None
+                                else "consistent")
+            noise["reasons"] = []
+            if differs:
                 notes.append("same-session rerun differs from the stored incumbent beyond noise: the "
                              "evaluator or runtime is not reproducible; investigate before trusting deltas")
         else:
@@ -300,7 +336,7 @@ def compare(candidates, incumbent, control=None, frozen=None, rule=None):
             if arm["arm"] not in registration["arms"]:
                 status = "exploratory: arm added after registration"
             elif arm.get("created_utc") is None:
-                status = "confirmatory (result timestamp not recorded)"
+                status = "exploratory: result has no created_utc to show it followed registration"
             elif _utc(arm["created_utc"], arm["arm"]) < registered_at:
                 status = "exploratory: result predates registration"
         eligible = verdict["verdict"] == "promote" and not status.startswith("exploratory")

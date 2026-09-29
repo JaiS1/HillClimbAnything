@@ -7,12 +7,12 @@
     "github_token",
     "aws_access_id",
     "provider_key",
-    "hf_or_kaggle_key",
+    "ml_platform_key",
     "personal_path",
     "personal_identity",
     "email_address",
-    "parent_repo_reference",
-    "confidential_project"
+    "internal_reference",
+    "excluded_terms"
   ],
   "files": [
     {
@@ -32,13 +32,13 @@
     },
     {
       "file": "README.md",
-      "bytes": 18474,
-      "sha256": "5fa8c979669c781bddac4888bad08847823741bec190903696713fb55a864d5b"
+      "bytes": 20118,
+      "sha256": "cc454a143e3f41d9ec640cef7180193ebedf5fb4badec51b64f9e81dea0dd445"
     },
     {
       "file": "RELEASE_NOTES.md",
-      "bytes": 1667,
-      "sha256": "6f19f9c0a3fe36766b3580ea998b8071c806fe33c0814862b362cb86521beb28"
+      "bytes": 1681,
+      "sha256": "9113a990dde030a688707ce61c775ba4b48cd533b5af977e81554ee8396440a7"
     },
     {
       "file": "skills/dream-loop/SKILL.md",
@@ -47,8 +47,8 @@
     },
     {
       "file": "skills/dream-loop/references/usage.md",
-      "bytes": 5908,
-      "sha256": "4416d86ef9de437d40131dc1c75dbdbbe6a0b83a3f5b9538e00de8bf82670345"
+      "bytes": 6186,
+      "sha256": "cea0bdd867a1fd06caff7f7ff756c31efcd159b85bf9de129af12fc2b111dc24"
     },
     {
       "file": "tools/dream_rsi/.gitignore",
@@ -57,8 +57,8 @@
     },
     {
       "file": "tools/dream_rsi/DESIGN_NOTES.md",
-      "bytes": 4828,
-      "sha256": "c9cf978c1f257e03ec79ac03d3eee2ab721ed34a3a7e39ac8e89fbe4baba0489"
+      "bytes": 4989,
+      "sha256": "9319468ebe9741e33bc3e62ca073f58b001ad02480cb41ceb4548caf04659915"
     },
     {
       "file": "tools/dream_rsi/LICENSE",
@@ -72,8 +72,8 @@
     },
     {
       "file": "tools/dream_rsi/README.md",
-      "bytes": 18438,
-      "sha256": "d41bef6e39a254aff6da01ad933a52242e0b1532398157421e1765aebb0225de"
+      "bytes": 20082,
+      "sha256": "3f4fb41cd0f34bcdb2214d37d4f8788ee4c5da268299d3c6a963c9b50f88723e"
     },
     {
       "file": "tools/dream_rsi/REFERENCES.md",
@@ -92,8 +92,8 @@
     },
     {
       "file": "tools/dream_rsi/cli.py",
-      "bytes": 19580,
-      "sha256": "ba0a827292854b515184b2f0bb72f5196f009210d9929803632cbee7c0866a0a"
+      "bytes": 20168,
+      "sha256": "bf29968a504cf841925f4addc419de67de7d989d2c30db5ca6283a61c7c388d3"
     },
     {
       "file": "tools/dream_rsi/core.py",
@@ -107,8 +107,8 @@
     },
     {
       "file": "tools/dream_rsi/evolve.py",
-      "bytes": 19414,
-      "sha256": "ed27cb436b0248fc3e2af5e056a4ce1abb6b1fc6b8cdcc2e0d637969d21bb1e0"
+      "bytes": 20077,
+      "sha256": "edc046f00e45e38c19a705a9fc7b5a0618590c5dd1110c9d1238dc8a501e4334"
     },
     {
       "file": "tools/dream_rsi/examples/knapsack/evaluate.py",
@@ -147,8 +147,8 @@
     },
     {
       "file": "tools/dream_rsi/stats.py",
-      "bytes": 18707,
-      "sha256": "2d3bc911c17d522e7d962a5272082f8a5cbe6921561bd6913e0e5846998d60a1"
+      "bytes": 20759,
+      "sha256": "026001ae4e0548ca8a2b709ab600646acb12dc1455efca9ea19d8e655bea6491"
     },
     {
       "file": "tools/dream_rsi/tests/test_core.py",
@@ -162,8 +162,8 @@
     },
     {
       "file": "tools/dream_rsi/tests/test_stats.py",
-      "bytes": 13344,
-      "sha256": "e5a41ad3325f748b8107c6e7f9ce3e60595a35ab8582e1137c87a5bfe346ad4d"
+      "bytes": 17871,
+      "sha256": "2671872d8c4b814d5058ffb7ee7c367634311707f64632744b21aede755e41d6"
     }
   ]
 }

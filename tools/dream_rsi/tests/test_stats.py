@@ -1,5 +1,6 @@
+import contextlib
 from datetime import datetime, timedelta, timezone
-import json
+import io
 from pathlib import Path
 import shutil
 import sys
@@ -7,7 +8,7 @@ import tempfile
 import unittest
 
 from tools.dream_rsi import core, evolve, stats
-from tools.dream_rsi.cli import main
+from tools.dream_rsi.cli import checked_selection, main
 
 
 def arm(diffs, base=10.0, clusters=None, subgroups=None):
@@ -78,6 +79,24 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(worst["verdict"], "hold")
         self.assertEqual(worst["worst_subgroup"]["name"], "night")
 
+    def test_null_promotion_rate_stays_near_nominal_with_few_units(self):
+        import random
+        rng = random.Random(7)
+        promoted = 0
+        for trial in range(200):
+            candidate, baseline = arm([rng.gauss(0, 1) for _ in range(5)])
+            promoted += stats.decide(candidate, baseline, "max", {"bootstrap": 500, "seed": trial})["verdict"] == "promote"
+        # Nominal one-sided rate is 0.025; a plain percentile bootstrap gives about 0.10 here.
+        self.assertLessEqual(promoted / 200, 0.06)
+
+    def test_item_ids_do_not_merge_with_cluster_names(self):
+        candidate, baseline = arm([1.0] * 6, clusters=["A", "A", "B", "B", None, None])
+        for items in (candidate, baseline):
+            items[4]["id"] = "A"
+            items[4].pop("cluster")
+            items[5].pop("cluster")
+        self.assertEqual(stats.decide(candidate, baseline, "max", {"min_units": 2})["units"], 4)
+
     def test_small_or_mismatched_samples_and_direction(self):
         self.assertEqual(stats.decide(*arm([5.0, 5.0, 5.0]), "max")["verdict"], "insufficient")
         candidate, baseline = arm(alternating(40, 1.0))
@@ -109,9 +128,13 @@ class CompareTests(unittest.TestCase):
         drifted = [dict(item, score=item["score"] + 2.0) for item in self.baseline]
         result = stats.compare([score_file("cand", self.candidate)], score_file("inc", self.baseline),
                                control=score_file("inc-rerun", drifted))
-        self.assertEqual(result["same_session_noise"]["verdict"], "promote")
+        self.assertEqual(result["same_session_noise"]["verdict"], "differs")
         self.assertTrue(any("not reproducible" in note for note in result["notes"]))
         self.assertIsNone(result["current_verdict"]["promote"])
+        steady = stats.compare([score_file("cand", self.candidate)], score_file("inc", self.baseline),
+                               control=score_file("inc-rerun", self.baseline))
+        self.assertEqual(steady["same_session_noise"]["verdict"], "consistent")
+        self.assertEqual(steady["current_verdict"]["promote"], "cand")
 
     def test_one_current_verdict_and_bonferroni_over_all_candidates(self):
         weak, _ = arm(alternating(50, 0.35))
@@ -157,11 +180,17 @@ class RegistrationTests(unittest.TestCase):
                              score_file("inc", baseline), frozen=frozen)
         self.assertEqual([a["status"].split(":")[0] for a in late["arms"]], ["exploratory", "exploratory"])
         self.assertIsNone(late["current_verdict"]["promote"])
+        undated = stats.compare([score_file("cand", candidate)], score_file("inc", baseline), frozen=frozen)
+        self.assertTrue(undated["arms"][0]["status"].startswith("exploratory"))
+        self.assertIsNone(undated["current_verdict"]["promote"])
         with self.assertRaisesRegex(core.HarnessError, "fixes the decision rule"):
             stats.compare([score_file("cand", candidate)], score_file("inc", baseline), frozen=frozen, rule={"alpha": 0.5})
+        backdated = dict(frozen, registered_utc=(registered - timedelta(days=1)).isoformat())
+        with self.assertRaisesRegex(core.HarnessError, "changed after it was frozen"):
+            stats.compare([score_file("cand", candidate, created=before)], score_file("inc", baseline), frozen=backdated)
         frozen["registration"]["decision"]["alpha"] = 0.5
         with self.assertRaisesRegex(core.HarnessError, "changed after it was frozen"):
-            stats.compare([score_file("cand", candidate)], score_file("inc", baseline), frozen=frozen)
+            stats.compare([score_file("cand", candidate, created=after)], score_file("inc", baseline), frozen=frozen)
 
     def test_cli_register_and_compare_write_records(self):
         home = Path(__file__).resolve().parents[1] / ".runs"
@@ -173,14 +202,18 @@ class RegistrationTests(unittest.TestCase):
             now = datetime.now(timezone.utc) + timedelta(minutes=5)
             core.write_json(temp / "cand.json", score_file("cand", candidate, created=now.isoformat()))
             core.write_json(temp / "inc.json", score_file("inc", baseline))
-            main(["register", str(temp / "draft.json"), "--output", str(temp / "frozen.json")])
-            main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
-                  "--registration", str(temp / "frozen.json"), "--output", str(temp / "verdict.json")])
+            printed, errors = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(errors):
+                main(["register", str(temp / "draft.json"), "--output", str(temp / "frozen.json")])
+                main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
+                      "--registration", str(temp / "frozen.json"), "--output", str(temp / "verdict.json")])
+                with self.assertRaises(SystemExit):
+                    main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
+                          "--output", str(temp / "verdict.json")])
             verdict = core.read_json(temp / "verdict.json")
             self.assertEqual(verdict["current_verdict"]["promote"], "cand")
-            with self.assertRaises(SystemExit):
-                main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
-                      "--output", str(temp / "verdict.json")])
+            self.assertTrue(printed.getvalue().splitlines()[1].startswith("CURRENT VERDICT: promote cand"))
+            self.assertIn("output already exists", errors.getvalue())
 
 
 class EvolutionPromotionTests(unittest.TestCase):
@@ -197,44 +230,69 @@ class EvolutionPromotionTests(unittest.TestCase):
         config["limits"].update(attempts=3, wall_seconds=30)
         config["policy"]["width"] = 2
         core.write_json(self.project / "project.json", config)
-        self.runs = []
-        for name in ("select", "confirm"):
+        self.runs = {}
+        for name in ("select-1", "select-2", "confirm-1", "confirm-2"):
             run = self.base / name
             core.initialize(self.project / "project.json", run)
             list(core.run_automatic(run))
-            self.runs.append(run)
+            self.runs[name] = run
         self.bad = self.base / "bad.py"
         self.bad.write_text("import json, sys\njson.load(sys.stdin)\nprint('{\\\"action\\\": \\\"root\\\"}')\n")
-        good = evolve.baseline_source(core.load_config(self.project / "project.json")["policy"])
-        self.developer = [sys.executable, str(self.base / "developer.py")]
-        (self.base / "developer.py").write_text(
-            "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'source': " + repr(good) + "}))\n")
-        self.good = good
+        self.good = self.base / "good.py"
+        self.good.write_text(evolve.baseline_source(core.load_config(self.project / "project.json")["policy"]))
+        # Proposes a policy that stops at once; with a large attempt penalty it wins on every world.
+        stop = "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'action': None}))\n"
+        self.stopper = [sys.executable, str(self.base / "stopper.py")]
+        (self.base / "stopper.py").write_text(
+            "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'source': " + repr(stop) + "}))\n")
+        self.restorer = [sys.executable, str(self.base / "restorer.py")]
+        (self.base / "restorer.py").write_text(
+            "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'source': " + repr(self.good.read_text()) + "}))\n")
 
-    def evolve(self, name, **options):
-        return evolve.evolve([self.runs[0]], self.developer, revisions=1, timeout_seconds=5, wall_seconds=30,
-                             output=self.base / name, **options)
+    def evolve(self, name, developer, select, **options):
+        return evolve.evolve([self.runs[s] for s in select], developer, revisions=1, timeout_seconds=5,
+                             wall_seconds=30, output=self.base / name, **options)
 
-    def test_paired_diagnostic_is_recorded_and_one_world_is_insufficient(self):
-        good_path = self.base / "good.py"
-        good_path.write_text(self.good)
-        result = self.evolve("same.json", initial_source=good_path, promotion="paired")
-        self.assertEqual(result["revisions"][0]["paired"]["verdict"], "insufficient")
-        self.assertFalse(result["revisions"][0]["accepted"])
-        self.assertEqual(result["revisions"][0]["request"]["history"], [])
-
-    def test_held_out_confirmation_reverts_only_under_paired_promotion(self):
-        with self.assertRaisesRegex(core.HarnessError, "shared between select and confirm"):
-            self.evolve("dup.json", confirm_runs=[self.runs[0]])
-        point = self.evolve("point.json", initial_source=self.bad, confirm_runs=[self.runs[1]])
+    def test_paired_gate_rejects_what_the_point_rule_accepts(self):
+        common = dict(initial_source=self.good, penalty=1000.0, rule={"min_units": 3})
+        point = self.evolve("point.json", self.stopper, ["select-1", "select-2"], **common)
+        paired = self.evolve("paired.json", self.stopper, ["select-1", "select-2"], promotion="paired", **common)
         self.assertTrue(point["revisions"][0]["accepted"])
-        self.assertEqual(point["confirmation"]["verdict"], "unsupported")
-        self.assertFalse(point["confirmation"]["reverted_to_initial"])
-        paired = self.evolve("paired.json", initial_source=self.bad, confirm_runs=[self.runs[1]], promotion="paired")
-        self.assertTrue(paired["revisions"][0]["accepted"])
-        self.assertTrue(paired["confirmation"]["reverted_to_initial"])
+        self.assertFalse(paired["revisions"][0]["accepted"])
+        self.assertEqual(paired["revisions"][0]["paired"]["verdict"], "insufficient")
         self.assertEqual(paired["selected_source_hash"], paired["initial_evaluation"]["policy"]["source_hash"])
-        self.assertEqual(paired["confirmation"]["worlds"][0]["id"], core.verify(self.runs[1])["world_id"])
+
+    def test_multi_world_promotion_confirms_on_held_out_worlds(self):
+        with self.assertRaisesRegex(core.HarnessError, "shared between select and confirm"):
+            self.evolve("dup.json", self.stopper, ["select-1"], confirm_runs=[self.runs["select-1"]])
+        result = self.evolve("confirmed.json", self.stopper, ["select-1", "select-2"], initial_source=self.good,
+                             penalty=1000.0, promotion="paired", rule={"min_units": 2},
+                             confirm_runs=[self.runs["confirm-1"], self.runs["confirm-2"]])
+        self.assertEqual(result["revisions"][0]["paired"]["verdict"], "promote")
+        self.assertTrue(result["revisions"][0]["accepted"])
+        self.assertEqual(result["confirmation"]["verdict"], "promote")
+        self.assertFalse(result["confirmation"]["unconfirmed"])
+        self.assertNotEqual(result["selected_source_hash"], result["initial_evaluation"]["policy"]["source_hash"])
+        self.assertEqual([w["id"] for w in result["confirmation"]["worlds"]],
+                         [core.verify(self.runs[n])["world_id"] for n in ("confirm-1", "confirm-2")])
+
+    def test_failed_confirmation_reverts_only_to_a_supported_start(self):
+        options = dict(penalty=1000.0, promotion="paired", rule={"min_units": 2})
+        # Supported start, too few confirm worlds: the confirmation is insufficient, so keep the start.
+        reverted = self.evolve("reverted.json", self.stopper, ["select-1", "select-2"], initial_source=self.good,
+                               confirm_runs=[self.runs["confirm-1"]], **options)
+        self.assertTrue(reverted["revisions"][0]["accepted"])
+        self.assertEqual(reverted["confirmation"]["verdict"], "insufficient")
+        self.assertTrue(reverted["confirmation"]["reverted_to_initial"])
+        self.assertEqual(reverted["selected_source_hash"], reverted["initial_evaluation"]["policy"]["source_hash"])
+        # Unsupported start: never revert to it; keep the selection, marked unconfirmed, and still adoptable.
+        kept = self.evolve("kept.json", self.restorer, ["select-1"], initial_source=self.bad,
+                           confirm_runs=[self.runs["confirm-1"]], **options)
+        self.assertEqual(kept["confirmation"]["verdict"], "unsupported")
+        self.assertTrue(kept["confirmation"]["unconfirmed"])
+        self.assertFalse(kept["confirmation"]["reverted_to_initial"])
+        checked = checked_selection(self.base / "kept.json", core.load_config(self.project / "project.json"))
+        self.assertEqual(checked["selected_policy"]["name"], "executable")
 
 
 if __name__ == "__main__":

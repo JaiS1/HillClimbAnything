@@ -134,6 +134,9 @@ def cycle(config, output, developer, cycles, revisions, developer_seconds, polic
     """Close the serial loop: rollout, evolve policy code, adopt, repeat."""
     if cycles < 1 or not math.isfinite(wall_seconds) or wall_seconds <= 0:
         raise core.HarnessError("cycles and cycle wall deadline must be positive")
+    if promotion not in ("point", "paired"):
+        raise core.HarnessError("promotion must be point or paired")
+    stats.check_rule(rule)  # fail before the first rollout, not after it
     output = Path(output).resolve()
     if output.exists():
         raise core.HarnessError("cycle output already exists")
@@ -252,6 +255,9 @@ def main(argv=None):
                 config = core.load_config(args.config)
                 selected = checked_selection(args.policy_from, config)
                 policy = selected["selected_policy"]
+                if (selected.get("confirmation") or {}).get("unconfirmed"):
+                    print("warning: this selection did not pass held-out confirmation "
+                          f"({selected['confirmation']['verdict']}); treat the next run as exploratory")
             world = core.initialize(args.config, args.output, policy)
             if args.policy_from:
                 core.write_json(Path(args.output) / "policy-source.json", {"path": str(Path(args.policy_from).resolve()), "sha256": core.digest(args.policy_from), "selection": selected})
@@ -280,8 +286,10 @@ def main(argv=None):
                                       rule=rule_from(args), confirm_runs=args.confirm_runs)
             print(f"{args.output}: selected {result['selected_source_hash'][:12]}")
             if result["confirmation"]:
-                print(f"Confirmation on held-out worlds: {result['confirmation']['verdict']}"
-                      + (" (reverted to the initial policy)" if result["confirmation"]["reverted_to_initial"] else ""))
+                confirmation = result["confirmation"]
+                print(f"Confirmation on held-out worlds: {confirmation['verdict']}"
+                      + (" (reverted to the initial policy)" if confirmation["reverted_to_initial"]
+                         else " (selection kept but unconfirmed)" if confirmation["unconfirmed"] else ""))
         elif args.command == "cycle":
             runs = cycle(args.config, args.output, developer_argv(args.developer_json), args.cycles, args.revisions,
                          args.developer_seconds, args.policy_seconds, args.wall_seconds, args.attempt_penalty,

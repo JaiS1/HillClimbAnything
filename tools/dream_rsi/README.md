@@ -218,8 +218,9 @@ Dream Loop has three small safeguards.
 
 **Paired comparison with a multiplicity correction.** `compare` reads per-item
 scores for the incumbent and each candidate on identical items and reports a
-bootstrap interval for the mean paired difference. Clustered items (for example,
-several items drawn from one source) are resampled by cluster. The interval is
+studentized (bootstrap-t) interval for the mean paired difference, which stays
+close to its nominal error rate even with few independent units. Clustered items
+(for example, several items drawn from one source) are resampled by cluster. The interval is
 Bonferroni-corrected for the number of candidates compared. A candidate is
 promoted only if the lower bound is above zero and the optional guardrails hold:
 harmed-item rate at most `--max-harm-rate`, and no subgroup mean below
@@ -236,9 +237,33 @@ useful effect, expected interval half-width and a premise check (what produced t
 thing being changed and whether the data are new to it, the zero-effort baseline,
 whether the change can move the scored quantity at all, and the step-0 metric).
 It warns when the expected half-width exceeds the useful effect. `compare
---registration` then applies the frozen rule and labels any arm that was not
-registered, or whose result predates the registration, as exploratory: exploratory
-arms are never promoted.
+--registration` then applies the frozen rule and labels as exploratory any arm
+that was not registered, whose result predates the registration, or whose score
+file has no `created_utc`. Exploratory arms are never promoted. The hash covers
+the registration and its timestamp, so edits are detected, but timestamps are
+self-reported: this is an honour system, not a trusted timestamping service.
+
+A complete draft:
+
+```json
+{
+  "kind": "dream_loop_registration",
+  "question": "Does either candidate beat the incumbent on the fixed suite?",
+  "metric": {"name": "accuracy", "direction": "max", "identity": "suite-v3"},
+  "incumbent": "incumbent",
+  "arms": ["candidate-a", "candidate-b"],
+  "decision": {"alpha": 0.05, "comparisons": 2, "min_units": 20,
+               "useful_effect": 0.02, "max_harm_rate": 0.2, "max_subgroup_loss": 0.05},
+  "expected_half_width": 0.015,
+  "premise": {
+    "produced_by": "what produced the thing being changed, and its final training stage",
+    "data_new_to_it": "whether the evaluation items are new to it",
+    "zero_effort_baseline": 0.61,
+    "can_move_scored_quantity": "why this change can move the scored quantity at all",
+    "step0_metric": 0.74
+  }
+}
+```
 
 ```bash
 python3 -m tools.dream_rsi register draft.json --output registration.json
@@ -263,11 +288,19 @@ A score file looks like this; `cluster`, `subgroup` and `created_utc` are option
 The same statistics apply inside the dream phase. Each policy revision records a
 paired check against the incumbent across recorded worlds. `evolve --promotion
 paired` promotes a revision only if that check passes, with the correction taken
-over all requested revisions. `evolve --confirm-runs` holds out recorded worlds
-that the developer never sees: the final selection is re-checked against the
-starting policy there, and under paired promotion a failed confirmation keeps
-the starting policy. Paired promotion needs several recorded worlds (`--min-units`,
-default 5); with fewer, it holds the incumbent and says so.
+over all requested revisions. That in-sample check measures noise across worlds;
+it does not correct for a developer that has adapted to those worlds' feedback.
+Only held-out worlds address that: `evolve --confirm-runs` re-checks the final
+selection against the starting policy on recorded worlds the developer never
+sees (20% of the wall budget is reserved for it). Under paired promotion a
+failed confirmation keeps the starting policy if it is supported; otherwise the
+selection is kept and marked unconfirmed, and `init --policy-from` warns.
+
+Paired promotion needs several recorded worlds, both for selection and for
+confirmation (`--min-units`, default 5); with fewer, it holds the incumbent and
+says so. `cycle` dreams only on the rollouts completed so far, so with paired
+promotion nothing can be promoted until enough rollouts exist; to use it, run
+several rollouts first and then `evolve` over the pool.
 
 These checks measure sampling noise. They cannot detect a biased evaluator, an
 evaluation set the model was trained on, or poor generalization to fresh items.

@@ -109,10 +109,14 @@ python3 -m dream_rsi cycle project.json --developer-json developer-command.json 
 ## Noise-aware promotion
 
 Before calling a candidate better, compare per-item scores on identical items.
-Write a draft registration (arms, incumbent, metric, `decision` rule with a positive
-`useful_effect`, `expected_half_width`, and a `premise` block with `produced_by`,
+Write a draft registration before generating results. Required fields:
+`kind: "dream_loop_registration"`, `question`, `metric` (name/direction/identity),
+`incumbent`, `arms`, a `decision` rule with a positive `useful_effect` and
+`comparisons` covering every arm, and a `premise` block with `produced_by`,
 `data_new_to_it`, `zero_effort_baseline`, `can_move_scored_quantity`,
-`step0_metric`) before generating results, then:
+`step0_metric`. Add `expected_half_width` for a power check. The project README
+has a complete example. Score files need `created_utc` (after registration) or
+the arm is exploratory. Then:
 
 ```bash
 python3 -m dream_rsi register draft.json --output registration.json

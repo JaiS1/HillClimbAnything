@@ -190,9 +190,13 @@ def evolve(runs, developer_argv, revisions=4, timeout_seconds=10, policy_seconds
     promotion="paired" accepts a revision only when the per-world paired interval,
     Bonferroni-corrected over all requested revisions, excludes zero and the
     guardrails hold. Every revision records the paired diagnostic either way.
-    confirm_runs are held-out recorded worlds the developer never sees: the final
-    selection is re-checked against the initial policy there, and under "paired"
-    promotion a failed confirmation reverts to the initial policy.
+    The in-sample paired check measures noise across worlds; it does not correct
+    for a developer that has adapted to those same worlds' feedback.
+    confirm_runs are held-out recorded worlds the developer never sees (20% of the
+    wall budget is reserved for them): the final selection is re-checked against
+    the initial policy there. Under "paired" promotion a failed confirmation
+    reverts to the initial policy when that policy is supported; otherwise the
+    selection is kept and marked unconfirmed.
     """
     if promotion not in ("point", "paired"):
         raise core.HarnessError("promotion must be point or paired")
@@ -229,8 +233,10 @@ def evolve(runs, developer_argv, revisions=4, timeout_seconds=10, policy_seconds
     incumbent = initial_evaluation
     development_history = []
     revision_records = []
+    # Held-out confirmation gets a reserved share of the wall budget.
+    reserve = 0.2 * wall_seconds if confirm_worlds else 0.0
     for revision in range(1, revisions + 1):
-        remaining = wall_seconds - (time.monotonic() - started)
+        remaining = wall_seconds - reserve - (time.monotonic() - started)
         if remaining <= 0:
             break
         request = {
@@ -283,7 +289,7 @@ def evolve(runs, developer_argv, revisions=4, timeout_seconds=10, policy_seconds
                                     "sha256": core.digest(Path(run) / "world.json")} for run, w in zip(confirm_runs, confirm_worlds)],
                         "reverted_to_initial": False}
         if incumbent["policy"]["source_hash"] == initial_hash:
-            confirmation.update(verdict="not_needed", reasons=["the initial policy was retained"])
+            confirmation.update(verdict="not_needed", reasons=["the initial policy was retained"], unconfirmed=False)
         else:
             try:
                 selected_confirm = score_policy(confirm_worlds, incumbent["policy"], penalty, deadline)
@@ -294,9 +300,11 @@ def evolve(runs, developer_argv, revisions=4, timeout_seconds=10, policy_seconds
                     confirmation.update(verdict="unsupported", reasons=["a policy was not fully supported on the confirm worlds"])
                 else:
                     confirmation.update(check, verdict=check["verdict"])
-            except ValueError as exc:
+            except (ValueError, OSError) as exc:
                 confirmation.update(verdict="error", reasons=[str(exc)])
-            if promotion == "paired" and confirmation["verdict"] != "promote":
+            confirmation["unconfirmed"] = confirmation["verdict"] != "promote"
+            # Keeping the incumbent means keeping a usable one: never revert to an unsupported start.
+            if promotion == "paired" and confirmation["unconfirmed"] and initial_evaluation["eligible"]:
                 confirmation["reverted_to_initial"] = True
                 incumbent = initial_evaluation
     result = {

@@ -8,13 +8,15 @@ the [README](README.md).
 
 ## Implemented in this release
 
-1. **Noise-aware selection.** Paired comparisons on identical items, cluster
-   bootstrap intervals, Bonferroni correction over every candidate or revision
-   compared, and promotion only when the lower bound is above zero and the
-   harmed-item and worst-subgroup guardrails hold. In the dream phase, choosing
-   the best of N revisions on the same replay pool is a winner's curse: each
-   revision records a corrected paired check, `--promotion paired` gates on it,
-   and `--confirm-runs` re-checks the final choice on held-out recorded worlds.
+1. **Noise-aware selection.** Paired comparisons on identical items, studentized
+   cluster-bootstrap intervals, Bonferroni correction over every candidate or
+   revision compared, and promotion only when the lower bound is above zero and
+   the harmed-item and worst-subgroup guardrails hold. In the dream phase, each
+   revision records a corrected paired check and `--promotion paired` gates on it.
+   That limits promotion of noise, but choosing the best of N revisions developed
+   against the same replay feedback is still a winner's curse: only
+   `--confirm-runs`, which re-checks the final choice on held-out recorded worlds,
+   addresses adaptive fitting.
 2. **Same-session control and runtime tags.** Every score names its runtime.
    Numbers from different runtimes are never paired. An incumbent re-run in the
    candidates' session becomes the baseline, and its gap from the stored incumbent
@@ -27,9 +29,9 @@ the [README](README.md).
 ## Documented, not implemented
 
 **Evaluator card and verifier budget.** The assumption of a reliable evaluator can
-fail in three ways: a cheap proxy with a known directional bias, a base model that
-was trained on part of the evaluation split, and a true verifier that allows only
-a few checks per month. A project config could carry an optional card with the
+fail in three common ways: a cheap proxy evaluator with a directional bias, a
+pretrained component that has already seen the evaluation data, and a
+trustworthy verifier that can only be consulted rarely. A project config could carry an optional card with the
 proxy's rank correlation against the true verifier, known bias directions and a
 contamination statement, and flag candidates whose change moves in a known-bias
 direction. The scarce verifier would be a budget with a ledger, plus a written
@@ -48,8 +50,8 @@ suggest gating to an affected subset or a paired design when the effect is too s
 Before generating, search past rollouts and notes for the same mechanism and pass
 the prior warnings to both the discovery agent and the policy developer.
 
-**Latency and liveness.** A two-minute remote job can take many hours of wall time
-if completion events never wake the orchestrator. Completion should be event-driven
+**Latency and liveness.** A short remote job can take far more wall time than
+compute time if completion events never wake the orchestrator. Completion should be event-driven
 rather than heartbeat-polled. Wall time and compute time should be recorded
 separately for each attempt. A manifest saying "running" is not proof of liveness:
 check a heartbeat or a timestamp. After N hours with no efficacy number, force an
@@ -60,15 +62,15 @@ and local) gets a post-hoc audit only. Tier 1 (shared quota) gets one review bef
 launch. Tier 2 (paid compute or a scarce-verifier use) gets the full gate. Allow at
 most one re-review per decision.
 
-**Resource policy.** A per-project allowlist of devices and hosts (for example, no
-local GPU), caps on transfer sizes and memory guards. The current harness checks
+**Resource policy.** A per-project allowlist of the devices and hosts a job may
+use, caps on transfer sizes and memory guards. The current harness checks
 snapshot sizes after commands; it does not enforce OS-level quotas.
 
 **Remote-job adapter pattern.** Test packaging against local fixtures before the
 first push. Let the worker own the push, poll, diagnose, fix loop under a hard retry
-cap. Verify inputs by file hash. Download artifacts before the remote copy expires;
-a result whose state was not retained should be tagged "state lost" and cannot
-serve as an incumbent.
+cap. Verify inputs by file hash. Retrieve artifacts before the remote copy expires;
+a result whose artifact was not retained cannot be re-checked, so it should be
+marked as such and should not serve as an incumbent.
 
 **One current verdict everywhere.** `compare` leads with a single current verdict.
 Run and dream reports should do the same and visibly mark superseded or retracted

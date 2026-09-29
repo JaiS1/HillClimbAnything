@@ -14,13 +14,14 @@ Included:
 - `evolve` and `cycle`: executable policy-code revision with replay feedback,
   incumbent retention and adoption in the next live run. `dream` keeps the
   original finite policy grid as a baseline.
-- `compare` and `register` (new): paired, cluster-bootstrap, Bonferroni-corrected
-  promotion with harm and subgroup guardrails; runtime tags and a same-session
-  control; a frozen registration with a premise check and a power warning.
+- `compare` and `register` (new): paired, studentized cluster-bootstrap,
+  Bonferroni-corrected promotion with harm and subgroup guardrails; runtime tags
+  and a same-session control; a frozen registration with a premise check and a
+  power warning.
 - `evolve --promotion paired` and `--confirm-runs` (new): noise-aware revision
   promotion and a held-out confirmation of the final selection.
 - A CPU demo that needs no model key, a knapsack example, a scripted policy
-  developer, an agent skill and 40 unit tests.
+  developer, an agent skill and 43 unit tests.
 
 Limitations: one serial worker; trusted local subprocesses, not a security
 sandbox; replay fit is in-sample and does not prove fresh-run gains; the demo's
