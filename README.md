@@ -117,7 +117,7 @@ Two identical builds, compared the way most loops compare them ([Phase 0](spikes
 Ranges cover two benchmarks (a web server and a CLI). The HCA row is one look at α = 1%; the
 shipped rule is stricter.
 
-A loop that keeps half its no-ops is climbing noise. Its gains look stacked, then evaporate when
+A loop that keeps a fifth to a half of its no-ops is climbing noise. Its gains look stacked, then evaporate when
 you re-measure.
 
 ## How it works
