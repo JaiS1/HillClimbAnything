@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 388" width="960" height="388" role="img" aria-label="Terminal: hca quick measures the noise, hca try keeps a -28.6% change and reverts one a single run had read as -17.9%, and hca confirm passes at -53.8% on held-out documents.">
+<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;opacity:0}@keyframes k0{0%,0.00%{opacity:0}1.50%,94%{opacity:1}98%,100%{opacity:0}}.l0{animation:k0 20.0s linear infinite}@keyframes k1{0%,5.00%{opacity:0}6.50%,94%{opacity:1}98%,100%{opacity:0}}.l1{animation:k1 20.0s linear infinite}@keyframes k2{0%,13.00%{opacity:0}14.50%,94%{opacity:1}98%,100%{opacity:0}}.l2{animation:k2 20.0s linear infinite}@keyframes k3{0%,15.50%{opacity:0}17.00%,94%{opacity:1}98%,100%{opacity:0}}.l3{animation:k3 20.0s linear infinite}@keyframes k4{0%,18.00%{opacity:0}19.50%,94%{opacity:1}98%,100%{opacity:0}}.l4{animation:k4 20.0s linear infinite}@keyframes k5{0%,25.00%{opacity:0}26.50%,94%{opacity:1}98%,100%{opacity:0}}.l5{animation:k5 20.0s linear infinite}@keyframes k6{0%,34.00%{opacity:0}35.50%,94%{opacity:1}98%,100%{opacity:0}}.l6{animation:k6 20.0s linear infinite}@keyframes k7{0%,42.00%{opacity:0}43.50%,94%{opacity:1}98%,100%{opacity:0}}.l7{animation:k7 20.0s linear infinite}@keyframes k8{0%,51.00%{opacity:0}52.50%,94%{opacity:1}98%,100%{opacity:0}}.l8{animation:k8 20.0s linear infinite}@keyframes k9{0%,53.50%{opacity:0}55.00%,94%{opacity:1}98%,100%{opacity:0}}.l9{animation:k9 20.0s linear infinite}@keyframes k10{0%,61.00%{opacity:0}62.50%,94%{opacity:1}98%,100%{opacity:0}}.l10{animation:k10 20.0s linear infinite}@keyframes k11{0%,70.00%{opacity:0}71.50%,94%{opacity:1}98%,100%{opacity:0}}.l11{animation:k11 20.0s linear infinite}</style>
+<rect width="960" height="388" rx="12" fill="#151514"/>
+<rect width="960" height="34" rx="12" fill="#262624"/><rect y="22" width="960" height="12" fill="#262624"/>
+<circle cx="22" cy="17" r="6" fill="#e5534b"/><circle cx="42" cy="17" r="6" fill="#d9a54a"/><circle cx="62" cy="17" r="6" fill="#5cc28a"/>
+<text x="480.0" y="22" text-anchor="middle" fill="#6f6d66" style="opacity:1;font-size:12px">hca · python-markdown</text>
+<text class="l0" x="22" y="58" fill="#6f6d66"># real output from the Python-Markdown showcase (commit messages shortened)</text>
+<text class="l1" x="22" y="84"><tspan fill="#7fb2f0">$ </tspan><tspan fill="#e8e6df">hca quick -- python bench/hca_bench.py</tspan></text>
+<text class="l2" x="22" y="110" fill="#a9a79e">Noise: ±0.6% (robust SD of A/A block log ratios, 20 blocks).</text>
+<text class="l3" x="22" y="136" fill="#a9a79e">Detectable at 80% power: 0.7% at 10 blocks (~65 s per try), 0.5% at 20 blocks (~130 s).</text>
+<text class="l4" x="22" y="162" fill="#a9a79e">Your useful effect 5%: OK (10 blocks are enough).</text>
+<text class="l5" x="22" y="188"><tspan fill="#7fb2f0">$ </tspan><tspan fill="#e8e6df">hca try -m &quot;skip inline patterns whose required character is absent&quot;</tspan></text>
+<text class="l6" x="22" y="214" fill="#5cc28a" font-weight="600">attempt 0004  KEEP  render_ms -28.6% (better; cut of at least 27.1%, p = 0.000977, 10 blocks, 80.5 s)</text>
+<text class="l7" x="22" y="240"><tspan fill="#7fb2f0">$ </tspan><tspan fill="#e8e6df">hca try -m &quot;dispatch inline patterns by trigger character&quot;</tspan></text>
+<text class="l8" x="22" y="266" fill="#e66767" font-weight="600">attempt 0009  REVERT  render_ms -1.7% (p = 0.00859 &gt; 0.005, 20 blocks after extending, 112.7 s)</text>
+<text class="l9" x="38" y="292" fill="#a9a79e">a single run had read this one as -17.9%</text>
+<text class="l10" x="22" y="318"><tspan fill="#7fb2f0">$ </tspan><tspan fill="#e8e6df">hca confirm</tspan></text>
+<text class="l11" x="22" y="344" fill="#5cc28a" font-weight="600">CONFIRM 4: PASS - estimate render_ms -53.8% (better) vs the original, cut of at least 53.0%</text>
+</svg>
