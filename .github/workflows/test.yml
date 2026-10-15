@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main, hca/design]
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Git identity for the fixture repos
+        run: |
+          git config --global user.name "hca-ci"
+          git config --global user.email "hca-ci@example.invalid"
+      - name: Tests
+        run: python -m unittest discover -s tests
+      - name: Translations in sync
+        run: python docs/readme/check.py
+      - name: Build and check the package
+        run: |
+          python -m pip install --quiet build twine
+          python -m build
+          python -m twine check dist/*
+          python -m zipfile -l dist/*.whl | grep -q "hca/skill/SKILL.md"
