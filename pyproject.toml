@@ -16,4 +16,4 @@ hca = "hca.cli:main"
 hillclimbanything = "hca.cli:main"
 
 [tool.setuptools]
-packages = ["hca"]
+packages = ["hca", "hca.commands"]

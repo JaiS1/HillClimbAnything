@@ -33,3 +33,11 @@ def write_json(path, data):
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def read_tail(path, limit=4096):
+    """The last limit bytes of a file as text (undecodable bytes replaced); whole file if shorter."""
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        handle.seek(max(0, handle.tell() - limit))
+        return handle.read().decode("utf-8", errors="replace")

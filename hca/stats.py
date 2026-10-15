@@ -143,8 +143,10 @@ def keep_decision(scores, useful: float, alpha: float = DEFAULT_ALPHA, look: int
     return result
 
 
-def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA, power: float = 0.8) -> dict:
+def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA / 2, power: float = 0.8) -> dict:
     """From A/A block scores: the noise floor and the smallest shift detectable at 10 and 20 blocks.
+
+    The default alpha is the per-look level of the two-look keep rule (keep_decision with looks=2).
 
     Uses a robust SD (1.4826 * MAD) and the normal approximation to the signed-rank test's power
     with its 0.955 relative efficiency. It is a planning number, not a guarantee; heavy tails
