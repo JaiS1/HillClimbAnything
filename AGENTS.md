@@ -27,6 +27,7 @@ python3 -m unittest discover -s tests             # all tests (run under `nice -
 python3 -m hca --help                             # the CLI from a checkout
 python3 docs/assets/make_climb_chart.py           # regenerate README chart from the showcase ledger
 python3 docs/assets/make_terminal_svg.py          # regenerate the animated terminal
+python3 docs/readme/check.py                      # translations: links, numbers, structure vs README.md
 ```
 
 ## Rules
