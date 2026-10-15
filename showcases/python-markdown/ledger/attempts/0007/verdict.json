@@ -1,0 +1,41 @@
+{
+  "n": 7,
+  "message": "Block processor tests (HashHeader, BlockQuote, HR, DefList, Admonition): add a C-level substring precheck for the literal their regex requires (#, >, one of - _ *, :, !!!) before the whole-block multiline regex scan. Profile after tables fix: Admonition 10ms, HashHeader 7ms, DefList 6.6ms, BlockQuote 6.5ms, HR 4.7ms of block test time, mostly failed searches.",
+  "at": "2026-10-15T10:04:10-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "76c5ccc11b130c2197efe8ae3c3ae4c9ee64cfb1",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 14775966842846,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "b9a22fd1cc0cf843d228cec43fd95f3154e5929e",
+  "snapshot": "7e9a609718a6d6c658217c9486bac5d249ff693f",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.10218845438173516,
+  "estimate": -9.714061217240715,
+  "lower": -6.616267441620999,
+  "upper": -14.189362454741866,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 7.933850999961578
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 7.166300500102807
+    }
+  },
+  "commit": "7e9a609718a6d6c658217c9486bac5d249ff693f",
+  "wall_seconds": 51.089
+}

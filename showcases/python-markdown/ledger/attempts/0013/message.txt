@@ -1,0 +1,1 @@
+Inline: when every pattern needs one of a known set of characters (derived from the regexes, none overlapping placeholder text), one char-class search per text skips the whole pattern loop for text containing none of them. About 30% of the 8700 text/tail strings have no trigger character. Simpler form of the reverted candidate-dispatch attempt 0009 (in-process about -1.7%).

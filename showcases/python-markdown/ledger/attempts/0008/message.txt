@@ -1,0 +1,1 @@
+InlineProcessor.run: when __handleInline stashed no node (placeholder prefix absent from the result), put the text/tail straight back instead of going through __processPlaceholders (+ a dummy Element and list(currElement).index(child) for tails). Exact same result for the no-placeholder case; profile: __processPlaceholders 10090 calls, only 2199 placeholders.

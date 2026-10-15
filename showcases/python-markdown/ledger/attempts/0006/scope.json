@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "base": "0566caf3eb115962354985b5ca2e642cd373e577",
+  "changed": [
+    "markdown/extensions/tables.py"
+  ],
+  "untracked": [],
+  "untracked_outside_editable": [],
+  "violations": []
+}

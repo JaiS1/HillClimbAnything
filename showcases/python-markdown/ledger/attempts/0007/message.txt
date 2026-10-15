@@ -1,0 +1,1 @@
+Block processor tests (HashHeader, BlockQuote, HR, DefList, Admonition): add a C-level substring precheck for the literal their regex requires (#, >, one of - _ *, :, !!!) before the whole-block multiline regex scan. Profile after tables fix: Admonition 10ms, HashHeader 7ms, DefList 6.6ms, BlockQuote 6.5ms, HR 4.7ms of block test time, mostly failed searches.

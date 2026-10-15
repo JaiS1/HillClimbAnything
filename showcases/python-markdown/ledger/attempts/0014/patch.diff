@@ -1,0 +1,67 @@
+diff --git a/markdown/core.py b/markdown/core.py
+index a62b311..fcd378f 100644
+--- a/markdown/core.py
++++ b/markdown/core.py
+@@ -304,6 +304,9 @@ class Markdown:
+             raise
+         return self
+ 
++    _block_level_list: list[str] | None = None
++    _block_level_set: frozenset[str] = frozenset()
++
+     # Note: the `tag` argument is type annotated `Any` as ElementTree uses many various objects as tags.
+     # As there is no standardization in ElementTree, the type of a given tag is unpredictable.
+     def is_block_level(self, tag: Any) -> bool:
+@@ -315,7 +318,19 @@ class Markdown:
+ 
+         """
+         if isinstance(tag, str):
+-            return tag.lower().rstrip('/') in self.block_level_elements
++            block_level_elements = self.block_level_elements
++            if block_level_elements != self._block_level_list:
++                # The list is new or has been changed (extensions may modify it): rebuild the lookup set.
++                try:
++                    self._block_level_set = frozenset(block_level_elements)
++                except TypeError:  # pragma: no cover
++                    # Not all hashable; just search the list.
++                    self._block_level_list = None
++                    return tag.lower().rstrip("/") in block_level_elements
++                self._block_level_list = block_level_elements.copy()
++            # A set lookup is far cheaper than scanning the list; comparing two lists which hold the very same
++            # strings is cheap as well, and guarantees that the answer always reflects the current list.
++            return tag.lower().rstrip('/') in self._block_level_set
+         # Some ElementTree tags are not strings, so return False.
+         return False
+ 
+diff --git a/markdown/postprocessors.py b/markdown/postprocessors.py
+index d4b0e1f..11c5f1d 100644
+--- a/markdown/postprocessors.py
++++ b/markdown/postprocessors.py
+@@ -81,9 +81,10 @@ class RawHtmlPostprocessor(Postprocessor):
+             if (key := int(key)) >= self.md.htmlStash.html_counter:
+                 return m.group(0)
+             html = self.stash_to_string(self.md.htmlStash.rawHtmlBlocks[key])
+-            if not wrapped or self.isblocklevel(html):
+-                return pattern.sub(substitute_match, html)
+-            return pattern.sub(substitute_match, f"<p>{html}</p>")
++            if wrapped and not self.isblocklevel(html):
++                html = f"<p>{html}</p>"
++            # Placeholders always start with `STX`; without one there is nothing to substitute.
++            return pattern.sub(substitute_match, html) if util.STX in html else html
+ 
+         if self.md.htmlStash.html_counter:
+             base_placeholder = util.HTML_PLACEHOLDER % r'([0-9]+)'
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index d713eb0..72c2391 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -553,6 +553,9 @@ class UnescapeTreeprocessor(Treeprocessor):
+         return chr(int(m.group(1)))
+ 
+     def unescape(self, text: str) -> str:
++        if util.STX not in text:
++            # Nothing was escaped, so the regex has nothing to find.
++            return text
+         return self.RE.sub(self._unescape, text)
+ 
+     def run(self, root: etree.Element) -> None:

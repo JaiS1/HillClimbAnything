@@ -1,0 +1,85 @@
+diff --git a/markdown/blockprocessors.py b/markdown/blockprocessors.py
+index 06370e5..9270cef 100644
+--- a/markdown/blockprocessors.py
++++ b/markdown/blockprocessors.py
+@@ -525,8 +525,8 @@ class HRProcessor(BlockProcessor):
+     SEARCH_RE = re.compile(RE, re.MULTILINE)
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        # A rule is made of `-`, `_` or `*`: skip the multiline regex scan when none is present.
+-        if '-' not in block and '_' not in block and '*' not in block:
++        # A rule needs at least three `-`, `_` or `*`: skip the multiline regex scan when there are fewer.
++        if block.count('-') < 3 and block.count('_') < 3 and block.count('*') < 3:
+             return False
+         m = self.SEARCH_RE.search(block)
+         if m:
+diff --git a/markdown/core.py b/markdown/core.py
+index fcd378f..e84628b 100644
+--- a/markdown/core.py
++++ b/markdown/core.py
+@@ -182,8 +182,8 @@ class Markdown:
+             if isinstance(ext, Extension):
+                 ext.extendMarkdown(self)
+                 logger.debug(
+-                    'Successfully loaded extension "%s.%s".'
+-                    % (ext.__class__.__module__, ext.__class__.__name__)
++                    'Successfully loaded extension "%s.%s".',
++                    ext.__class__.__module__, ext.__class__.__name__
+                 )
+             elif ext is not None:
+                 raise TypeError(
+@@ -226,7 +226,7 @@ class Markdown:
+         try:
+             module = importlib.import_module(ext_name)
+             logger.debug(
+-                'Successfully imported extension module "%s".' % ext_name
++                'Successfully imported extension module "%s".', ext_name
+             )
+         except ImportError as e:
+             message = 'Failed loading extension "%s".' % ext_name
+diff --git a/markdown/serializers.py b/markdown/serializers.py
+index 255092b..97612a1 100644
+--- a/markdown/serializers.py
++++ b/markdown/serializers.py
+@@ -119,9 +119,7 @@ def _escape_attrib_html(text: str) -> str:
+ def _serialize_html(write: Callable[[str], None], elem: Element, format: Literal["html", "xhtml"]) -> None:
+     stack: deque[Element | str] = deque([elem])
+ 
+-    count = 0
+     while stack:
+-        count += 1
+         el = stack.popleft()
+ 
+         if isinstance(el, str):
+@@ -152,6 +150,7 @@ def _serialize_html(write: Callable[[str], None], elem: Element, format: Literal
+                 else:
+                     raise ValueError('QName objects must define a tag.')
+             write(f"<{tag}")
++            tag_lower = tag.lower()
+             items = el.items()
+             if items:
+                 items = sorted(items)  # lexical order
+@@ -171,12 +170,12 @@ def _serialize_html(write: Callable[[str], None], elem: Element, format: Literal
+                         write(f' {k}="{v}"')
+             if namespace_uri:
+                 write(f' xmlns="{_escape_attrib(namespace_uri)}"')
+-            if format == "xhtml" and tag.lower() in HTML_EMPTY:
++            if format == "xhtml" and tag_lower in HTML_EMPTY:
+                 write(" />")
+             else:
+                 write(">")
+                 if text:
+-                    if tag.lower() in ["script", "style"]:
++                    if tag_lower in ("script", "style"):
+                         write(text)
+                     else:
+                         write(_escape_cdata(text))
+@@ -184,7 +183,7 @@ def _serialize_html(write: Callable[[str], None], elem: Element, format: Literal
+                 # Since we pop from the left, this will ensure results are ordered correctly.
+                 if el.tail:
+                     stack.appendleft(_escape_cdata(el.tail))
+-                if tag.lower() not in HTML_EMPTY:
++                if tag_lower not in HTML_EMPTY:
+                     stack.appendleft(f"</{tag}>")
+                 stack.extendleft(reversed(el))
+                 continue

@@ -1,0 +1,51 @@
+diff --git a/markdown/extensions/fenced_code.py b/markdown/extensions/fenced_code.py
+index 603f0bc..80d4071 100644
+--- a/markdown/extensions/fenced_code.py
++++ b/markdown/extensions/fenced_code.py
+@@ -104,7 +104,8 @@ class FencedBlockPreprocessor(Preprocessor):
+         text = "\n".join(lines)
+         index = 0
+         while 1:
+-            m = self.FENCED_BLOCK_RE.search(text, index)
++            # Skip straight to the next line which starts with a fence; a match cannot start anywhere else.
++            m = self.FENCED_BLOCK_RE.search(text, self._next_fence(text, index))
+             if m:
+                 lang, id, classes, config = None, '', [], {}
+                 if m.group('attrs'):
+@@ -170,6 +171,21 @@ class FencedBlockPreprocessor(Preprocessor):
+                 break
+         return text.split("\n")
+ 
++    @staticmethod
++    def _next_fence(text: str, index: int) -> int:
++        """
++        Return the first position at or after `index` where a line starts with three backticks or tildes
++        (the only places a fenced block can open), or the length of `text` if there is none.
++        """
++        first = len(text)
++        for fence in ('```', '~~~'):
++            i = text.find(fence, index, first + 2)
++            while i != -1 and i > 0 and text[i - 1] != '\n':
++                i = text.find(fence, i + 1, first + 2)
++            if i != -1:
++                first = i
++        return first
++
+     def handle_attrs(self, attrs: Iterable[tuple[str, str]]) -> tuple[str, list[str], dict[str, Any]]:
+         """ Return tuple: `(id, [list, of, classes], {configs})` """
+         id = ''
+diff --git a/markdown/preprocessors.py b/markdown/preprocessors.py
+index 0f63cdd..0585592 100644
+--- a/markdown/preprocessors.py
++++ b/markdown/preprocessors.py
+@@ -71,7 +71,9 @@ class NormalizeWhitespace(Preprocessor):
+         source = source.replace(util.STX, "").replace(util.ETX, "")
+         source = source.replace("\r\n", "\n").replace("\r", "\n") + "\n\n"
+         source = source.expandtabs(self.md.tab_length)
+-        source = re.sub(r'(?<=\n) +\n', '\n', source)
++        if ' \n' in source:
++            # Only lines which end in a space can be blank apart from spaces.
++            source = re.sub(r'(?<=\n) +\n', '\n', source)
+         return source.split('\n')
+ 
+ 

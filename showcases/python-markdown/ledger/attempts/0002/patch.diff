@@ -1,0 +1,141 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index f1c1d8b..5923532 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -133,9 +133,27 @@ class InlineProcessor(Treeprocessor):
+             startIndex = 0
+             patterns = self.__patterns
+             count = len(patterns)
++            simple = self.__simple
+             while patternIndex < count:
++                pattern = patterns[patternIndex]
++                if simple[patternIndex]:
++                    # New style pattern without ancestor restrictions: search inline
++                    # so the (very common) "no match" case skips `__applyPattern`.
++                    match = None
++                    for match in pattern.getCompiledRegExp().finditer(data, startIndex):
++                        node, start, end = pattern.handleMatch(match, data)
++                        if start is None or end is None:
++                            match = None
++                            continue
++                        break
++                    if not match:
++                        patternIndex += 1
++                        startIndex = 0
++                        continue
++                    data, startIndex = self.__replaceMatch(pattern, data, patternIndex, node, start, end)
++                    continue
+                 data, matched, startIndex = self.__applyPattern(
+-                    patterns[patternIndex], data, patternIndex, startIndex
++                    pattern, data, patternIndex, startIndex
+                 )
+                 if not matched:
+                     patternIndex += 1
+@@ -302,39 +320,67 @@ class InlineProcessor(Treeprocessor):
+             start = match.start(0)
+             end = match.end(0)
+ 
++        if new_style:
++            data, startIndex = self.__replaceMatch(pattern, data, patternIndex, node, start, end)
++            return data, True, startIndex
++
+         if node is None:
+             return data, True, end
+ 
++        if not isinstance(node, str):  # pragma: no cover
++            self.__processNode(node, patternIndex)
++
++        placeholder = self.__stashNode(node, pattern.type())  # pragma: no cover
++        return "{}{}{}{}".format(leftData,
++                                 match.group(1),
++                                 placeholder, match.groups()[-1]), True, (
++            len(leftData) + len(match.group(1)) + len(placeholder)
++        )
++
++    def __processNode(self, node: etree.Element, patternIndex: int) -> None:
++        """ Apply the remaining inline patterns to the text and tails of a freshly matched node. """
++        if not isinstance(node.text, util.AtomicString):
++            # We need to process current node too
++            for child in [node] + list(node):
++                if not isString(node):
++                    if child.text:
++                        self.ancestors.append(child.tag.lower())
++                        child.text = self.__handleInline(
++                            child.text, patternIndex + 1
++                        )
++                        self.ancestors.pop()
++                    if child.tail:
++                        child.tail = self.__handleInline(
++                            child.tail, patternIndex
++                        )
++
++    def __replaceMatch(
++        self,
++        pattern: inlinepatterns.Pattern,
++        data: str,
++        patternIndex: int,
++        node: etree.Element | str | None,
++        start: int,
++        end: int
++    ) -> tuple[str, int]:
++        """
++        Replace the matched span of `data` with a placeholder for `node`.
++
++        Returns the new text and the index just past the inserted placeholder
++        (or `end` if the handler returned no node).
++        """
++        if node is None:
++            return data, end
++
+         if not isinstance(node, str):
+-            if not isinstance(node.text, util.AtomicString):
+-                # We need to process current node too
+-                for child in [node] + list(node):
+-                    if not isString(node):
+-                        if child.text:
+-                            self.ancestors.append(child.tag.lower())
+-                            child.text = self.__handleInline(
+-                                child.text, patternIndex + 1
+-                            )
+-                            self.ancestors.pop()
+-                        if child.tail:
+-                            child.tail = self.__handleInline(
+-                                child.tail, patternIndex
+-                            )
++            self.__processNode(node, patternIndex)
+ 
+         placeholder = self.__stashNode(node, pattern.type())
+ 
+-        if new_style:
+-            # Return the index just past the inserted placeholder so the
+-            # next call scans only the unprocessed tail. Scanning from 0
+-            # after every match makes repeated inline patterns quadratic.
+-            return "{}{}{}".format(data[:start],
+-                                   placeholder, data[end:]), True, start + len(placeholder)
+-        else:  # pragma: no cover
+-            return "{}{}{}{}".format(leftData,
+-                                     match.group(1),
+-                                     placeholder, match.groups()[-1]), True, (
+-                len(leftData) + len(match.group(1)) + len(placeholder)
+-            )
++        # Return the index just past the inserted placeholder so the
++        # next call scans only the unprocessed tail. Scanning from 0
++        # after every match makes repeated inline patterns quadratic.
++        return "{}{}{}".format(data[:start], placeholder, data[end:]), start + len(placeholder)
+ 
+     def __build_ancestors(self, parent: etree.Element | None, parents: list[str]) -> None:
+         """Build the ancestor list."""
+@@ -366,8 +412,12 @@ class InlineProcessor(Treeprocessor):
+         """
+         self.stashed_nodes: dict[str, etree.Element | str] = {}
+         # Snapshot the (sorted) patterns once per run instead of resolving
+-        #  through the registry for every text node.
++        # `self.inlinePatterns[i]` through the registry for every text node.
+         self.__patterns = list(self.inlinePatterns)
++        # New style patterns with no ancestor restrictions can be matched inline in `__handleInline`.
++        self.__simple = [
++            isinstance(p, inlinepatterns.InlineProcessor) and not p.ANCESTOR_EXCLUDES for p in self.__patterns
++        ]
+ 
+         # Ensure a valid parent list, but copy passed in lists
+         # to ensure we don't have the user accidentally change it on us.

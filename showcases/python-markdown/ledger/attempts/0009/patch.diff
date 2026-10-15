@@ -1,0 +1,140 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index 12b5424..1c8a619 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -129,38 +129,41 @@ class InlineProcessor(Treeprocessor):
+             String with placeholders.
+ 
+         """
+-        if not isinstance(data, util.AtomicString):
++        if isinstance(data, util.AtomicString):
++            return data
++        # Only patterns whose required characters occur in the text can match (see `run`).
++        candidates = self.__always
++        if self.__scan is not None:
++            found = self.__scan(data)
++            if found:
++                by_char = self.__by_char
++                found = set(found)
++                if len(found) == 1:
++                    candidates = by_char[found.pop()]
++                else:
++                    candidates = sorted(set().union(*[by_char[char] for char in found]))
++        entries = self.__entries
++        for index in candidates:
++            if index < patternIndex:
++                continue
++            pattern, finditer = entries[index]
+             startIndex = 0
+-            entries = self.__entries
+-            count = len(entries)
+-            while patternIndex < count:
+-                pattern, finditer, required = entries[patternIndex]
+-                if required is not None and required not in data:
+-                    # A match must contain this character, so the pattern cannot apply.
+-                    patternIndex += 1
+-                    startIndex = 0
+-                    continue
++            while True:
+                 if finditer is not None:
+                     # New style pattern without ancestor restrictions: search inline
+                     # so the (very common) "no match" case skips `__applyPattern`.
+-                    match = None
+                     for match in finditer(data, startIndex):
+                         node, start, end = pattern.handleMatch(match, data)
+                         if start is None or end is None:
+-                            match = None
+                             continue
+                         break
+-                    if not match:
+-                        patternIndex += 1
+-                        startIndex = 0
+-                        continue
+-                    data, startIndex = self.__replaceMatch(pattern, data, patternIndex, node, start, end)
+-                    continue
+-                data, matched, startIndex = self.__applyPattern(
+-                    pattern, data, patternIndex, startIndex
+-                )
+-                if not matched:
+-                    patternIndex += 1
++                    else:
++                        break
++                    data, startIndex = self.__replaceMatch(pattern, data, index, node, start, end)
++                else:
++                    data, matched, startIndex = self.__applyPattern(pattern, data, index, startIndex)
++                    if not matched:
++                        break
+         return data
+ 
+     def __processElementText(self, node: etree.Element, subnode: etree.Element, isText: bool = True) -> None:
+@@ -416,19 +419,28 @@ class InlineProcessor(Treeprocessor):
+         """
+         self.stashed_nodes: dict[str, etree.Element | str] = {}
+         # Snapshot the (sorted) patterns once per run instead of resolving
+-        # `self.inlinePatterns[i]` through the registry for every text node. For each pattern also keep
+-        # its bound `finditer` (`None` unless it is a new style pattern with no ancestor restrictions) and
+-        # a character which every match must contain (or `None`), so that `__handleInline` can reject
+-        # most patterns without calling into the regular expression engine.
++        # `self.inlinePatterns[i]` through the registry for every text node. For each pattern keep its
++        # bound `finditer` (`None` unless it is a new style pattern with no ancestor restrictions).
++        # Also work out which characters a match of each pattern must contain, so that `__handleInline`
++        # only has to try the patterns whose characters occur in the text. A pattern whose characters
++        # could also come from a placeholder, or which has none known, is always tried.
++        placeholder_chars = set(self.__placeholder_prefix + self.__placeholder_suffix + '0123456789')
+         self.__entries = []
+-        for pattern in self.inlinePatterns:
++        groups: dict[str, list[int]] = {}
++        always = []
++        for index, pattern in enumerate(self.inlinePatterns):
+             regex = pattern.getCompiledRegExp() if isinstance(pattern, inlinepatterns.InlineProcessor) else None
+             simple = regex is not None and not pattern.ANCESTOR_EXCLUDES
+-            self.__entries.append((
+-                pattern,
+-                regex.finditer if simple else None,
+-                util.required_char(regex) if isinstance(regex, re.Pattern) else None
+-            ))
++            self.__entries.append((pattern, regex.finditer if simple else None))
++            chars = util.required_chars(regex) if isinstance(regex, re.Pattern) else None
++            if chars is None or not chars.isdisjoint(placeholder_chars):
++                always.append(index)
++            else:
++                for char in chars:
++                    groups.setdefault(char, []).append(index)
++        self.__always = tuple(always)
++        self.__by_char = {char: tuple(sorted([*always, *indexes])) for char, indexes in groups.items()}
++        self.__scan = re.compile('[%s]' % ''.join(map(re.escape, groups))).findall if groups else None
+ 
+         # Ensure a valid parent list, but copy passed in lists
+         # to ensure we don't have the user accidentally change it on us.
+diff --git a/markdown/util.py b/markdown/util.py
+index 4d251bb..a83e3fa 100644
+--- a/markdown/util.py
++++ b/markdown/util.py
+@@ -225,13 +225,13 @@ def _is_common(chars: frozenset[str]) -> bool:
+ 
+ 
+ @lru_cache(maxsize=1024)
+-def required_char(regex: re.Pattern[str]) -> str | None:
++def required_chars(regex: re.Pattern[str]) -> frozenset[str] | None:
+     """
+-    Return a single character which every match of the compiled `regex` must contain, or `None`.
++    Return a small set of characters, one of which every match of the compiled `regex` must contain.
+ 
+-    A text which does not contain the character cannot match, which lets a caller skip the
+-    (much slower) regular expression search. The answer is derived from the regular expression
+-    alone and `None` is returned whenever it cannot be determined with certainty.
++    A text which contains none of the characters cannot match, which lets a caller skip the (much
++    slower) regular expression search. The answer is derived from the regular expression alone and
++    `None` is returned whenever it cannot be determined with certainty.
+     """
+     try:
+         if regex.flags & re.IGNORECASE:
+@@ -239,7 +239,7 @@ def required_char(regex: re.Pattern[str]) -> str | None:
+         chars = _required_chars(_sre_parse.parse(regex.pattern, regex.flags))
+     except Exception:  # pragma: no cover
+         return None
+-    return next(iter(chars)) if chars is not None and len(chars) == 1 else None
++    return chars if chars is not None and len(chars) <= 4 else None
+ 
+ 
+ class AtomicString(str):

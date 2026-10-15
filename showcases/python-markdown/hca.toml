@@ -1,0 +1,25 @@
+[task]
+name     = "markdown-render"
+brief    = "BRIEF.md"
+editable = ["markdown/**"]
+frozen   = ["bench/**", "tests/**"]
+
+[objective]
+command       = ["/home/jai/hca-showcase/venv/bin/python", "bench/hca_bench.py"]
+metric        = "render_ms"
+direction     = "min"
+mode          = "blocks"
+useful_effect = "2%"
+max_tries     = 40
+
+[[guards]]
+name    = "test-suite"
+command = ["/home/jai/hca-showcase/venv/bin/python", "-m", "unittest", "discover", "-q", "tests"]
+
+[mechanism]
+metrics = ["html_kb"]
+slices  = ["kind"]
+
+[limits]
+command_seconds = 120
+try_seconds     = 900

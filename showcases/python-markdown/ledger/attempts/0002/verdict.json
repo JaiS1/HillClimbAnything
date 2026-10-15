@@ -1,0 +1,41 @@
+{
+  "n": 2,
+  "message": "Inline loop: for new-style patterns without ANCESTOR_EXCLUDES, run the finditer/handleMatch search directly in __handleInline and call __applyPattern-equivalent replacement only on a hit; the ~87% no-match case (150k pattern x text pairs) skips a Python call with isinstance, excludes loop and tuple return. Profile: __applyPattern 0.25s tottime of 0.89",
+  "at": "2026-10-15T09:44:50-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "f90c36687c9409e908527d9e56863d160def4cec",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 133834093235985,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "1be1cfff26ca0506cce7ca927a29a02658737ccf",
+  "snapshot": "79e1bdbf5af2424a59d096313bf213f50f9164ba",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.09338032355136118,
+  "estimate": -8.915298215997376,
+  "lower": -4.506600398822487,
+  "upper": -9.945707766090226,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 12.789599499910764
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 11.542050000116433
+    }
+  },
+  "commit": "79e1bdbf5af2424a59d096313bf213f50f9164ba",
+  "wall_seconds": 68.493
+}

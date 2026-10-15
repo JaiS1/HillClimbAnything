@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "base": "dee0a677727cb8266851057e1a51f81c8bd03ea2",
+  "changed": [
+    "markdown/blockprocessors.py",
+    "markdown/core.py",
+    "markdown/serializers.py"
+  ],
+  "untracked": [],
+  "untracked_outside_editable": [],
+  "violations": []
+}

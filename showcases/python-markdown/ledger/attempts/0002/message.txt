@@ -1,0 +1,1 @@
+Inline loop: for new-style patterns without ANCESTOR_EXCLUDES, run the finditer/handleMatch search directly in __handleInline and call __applyPattern-equivalent replacement only on a hit; the ~87% no-match case (150k pattern x text pairs) skips a Python call with isinstance, excludes loop and tuple return. Profile: __applyPattern 0.25s tottime of 0.89

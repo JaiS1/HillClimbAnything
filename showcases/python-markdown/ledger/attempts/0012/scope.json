@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "base": "d0be6f588bfbbe3bb92c32795f8f07587a04983f",
+  "changed": [
+    "markdown/inlinepatterns.py"
+  ],
+  "untracked": [],
+  "untracked_outside_editable": [],
+  "violations": []
+}

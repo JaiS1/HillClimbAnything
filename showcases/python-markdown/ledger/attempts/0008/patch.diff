@@ -1,0 +1,63 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index 97104c4..12b5424 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -437,6 +437,7 @@ class InlineProcessor(Treeprocessor):
+         self.parent_map = {c: p for p in tree.iter() for c in p}
+         stack = [(tree, tree_parents)]
+         self.__build_ancestors(tree, tree_parents)
++        placeholder_prefix = self.__placeholder_prefix
+ 
+         while stack:
+             currElement, parents = stack.pop(0)
+@@ -453,26 +454,33 @@ class InlineProcessor(Treeprocessor):
+                     self.ancestors.append(child.tag.lower())
+                     text = child.text
+                     child.text = None
+-                    lst = self.__processPlaceholders(
+-                        self.__handleInline(text), child
+-                    )
+-                    for item in lst:
+-                        self.parent_map[item[0]] = child
+-                    stack += lst
+-                    insertQueue.append((child, lst))
++                    text = self.__handleInline(text)
++                    if text and placeholder_prefix not in text:
++                        # No inline node was stashed, so there is nothing to expand.
++                        child.text = text
++                    else:
++                        lst = self.__processPlaceholders(text, child)
++                        for item in lst:
++                            self.parent_map[item[0]] = child
++                        stack += lst
++                        insertQueue.append((child, lst))
+                     self.ancestors.pop()
+                 if child.tail:
+                     tail = self.__handleInline(child.tail)
+-                    dumby = etree.Element('d')
+-                    child.tail = None
+-                    tailResult = self.__processPlaceholders(tail, dumby, False)
+-                    if dumby.tail:
+-                        child.tail = dumby.tail
+-                    pos = list(currElement).index(child) + 1
+-                    tailResult.reverse()
+-                    for newChild in tailResult:
+-                        self.parent_map[newChild[0]] = currElement
+-                        currElement.insert(pos, newChild[0])
++                    if tail and placeholder_prefix not in tail:
++                        # No inline node was stashed, so there is nothing to expand.
++                        child.tail = tail
++                    else:
++                        dumby = etree.Element('d')
++                        child.tail = None
++                        tailResult = self.__processPlaceholders(tail, dumby, False)
++                        if dumby.tail:
++                            child.tail = dumby.tail
++                        pos = list(currElement).index(child) + 1
++                        tailResult.reverse()
++                        for newChild in tailResult:
++                            self.parent_map[newChild[0]] = currElement
++                            currElement.insert(pos, newChild[0])
+                 if len(child):
+                     self.parent_map[child] = currElement
+                     stack.append((child, self.ancestors[:]))

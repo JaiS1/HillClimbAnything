@@ -1,0 +1,41 @@
+{
+  "n": 14,
+  "message": "Bundle of cheap-necessary-condition shortcuts: (1) Markdown.is_block_level scanned a 41-item list with == per call (13k calls, ~1us): look up a frozenset instead, rebuilt whenever the public list differs from the snapshot (a list == compare of identical strings is cheaper than the scan and keeps extensions that mutate block_level_elements correct); (2) UnescapeTreeprocessor.unescape and RawHtmlPostprocessor stash recursion skip their regex sub when no STX placeholder/escape char is present. In-process A/B about -2.3% to -4%.",
+  "at": "2026-10-15T10:31:17-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "0ffc20717b70945a5c0df2eff94bb8e4694bcdbd",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 218398250363491,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "6e80673236fafdd25e48b92895db1069cc7fc2ce",
+  "snapshot": "eae7e7e631b97b01762cf3818b5c7571b59b435e",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.03203674257535555,
+  "estimate": -3.152900269313471,
+  "lower": -1.939919365641506,
+  "upper": -6.248424919365315,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.233650499780197
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.987850000110484
+    }
+  },
+  "commit": "eae7e7e631b97b01762cf3818b5c7571b59b435e",
+  "wall_seconds": 45.382
+}

@@ -1,0 +1,41 @@
+{
+  "n": 6,
+  "message": "TableProcessor.test: reject early unless the second line consists only of separator characters (|:- and backslash, proved to be all that a valid separator row can contain after _split_row), before splitting every row and running the code-aware pipe tokenizer on the header. Profile: TableProcessor.test ~13us per call, 2029 calls, ~27ms of block-test time, the largest single block-processor test.",
+  "at": "2026-10-15T10:01:57-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "0566caf3eb115962354985b5ca2e642cd373e577",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 233079252118982,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "c601608ff3df2d6177d5fc66fa66dbdee89a47de",
+  "snapshot": "76c5ccc11b130c2197efe8ae3c3ae4c9ee64cfb1",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.060604119469104004,
+  "estimate": -5.880423288705374,
+  "lower": -4.5748779360066365,
+  "upper": -6.851677882996262,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 7.87905250035692
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 7.453853000242816
+    }
+  },
+  "commit": "76c5ccc11b130c2197efe8ae3c3ae4c9ee64cfb1",
+  "wall_seconds": 51.29
+}

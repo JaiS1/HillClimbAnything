@@ -1,0 +1,61 @@
+diff --git a/markdown/blockprocessors.py b/markdown/blockprocessors.py
+index cbad917..e3dc0a3 100644
+--- a/markdown/blockprocessors.py
++++ b/markdown/blockprocessors.py
+@@ -287,7 +287,8 @@ class BlockQuoteProcessor(BlockProcessor):
+     RE = re.compile(r'(^|\n)[ ]{0,3}>[ ]?(.*)')
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return bool(self.RE.search(block)) and not util.nearing_recursion_limit()
++        # A blockquote needs a `>`, which is much cheaper to look for than scanning every line with the regex.
++        return '>' in block and bool(self.RE.search(block)) and not util.nearing_recursion_limit()
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> None:
+         block = blocks.pop(0)
+@@ -461,7 +462,8 @@ class HashHeaderProcessor(BlockProcessor):
+     RE = re.compile(r'(?:^|\n)(?P<level>#{1,6})(?P<header>(?:\\.|[^\\])*?)#*(?:\n|$)')
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return bool(self.RE.search(block))
++        # A header needs a `#`, which is much cheaper to look for than scanning every line with the regex.
++        return '#' in block and bool(self.RE.search(block))
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> None:
+         block = blocks.pop(0)
+@@ -523,6 +525,9 @@ class HRProcessor(BlockProcessor):
+     SEARCH_RE = re.compile(RE, re.MULTILINE)
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
++        # A rule is made of `-`, `_` or `*`: skip the multiline regex scan when none is present.
++        if '-' not in block and '_' not in block and '*' not in block:
++            return False
+         m = self.SEARCH_RE.search(block)
+         if m:
+             # Save match object on class instance so we can use it later.
+diff --git a/markdown/extensions/admonition.py b/markdown/extensions/admonition.py
+index 37a7136..4d6c619 100644
+--- a/markdown/extensions/admonition.py
++++ b/markdown/extensions/admonition.py
+@@ -130,7 +130,7 @@ class AdmonitionProcessor(BlockProcessor):
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+ 
+-        if self.RE.search(block):
++        if '!!!' in block and self.RE.search(block):
+             return True
+         else:
+             return self.parse_content(parent, block)[0] is not None
+diff --git a/markdown/extensions/def_list.py b/markdown/extensions/def_list.py
+index 03d8b9c..cabfe9e 100644
+--- a/markdown/extensions/def_list.py
++++ b/markdown/extensions/def_list.py
+@@ -34,7 +34,8 @@ class DefListProcessor(BlockProcessor):
+     NO_INDENT_RE = re.compile(r'^[ ]{0,3}[^ :]')
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return bool(self.RE.search(block))
++        # A definition needs a `:`, which is much cheaper to look for than scanning every line with the regex.
++        return ':' in block and bool(self.RE.search(block))
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> bool | None:
+ 

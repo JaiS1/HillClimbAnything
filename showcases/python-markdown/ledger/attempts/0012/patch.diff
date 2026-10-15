@@ -1,0 +1,76 @@
+diff --git a/markdown/inlinepatterns.py b/markdown/inlinepatterns.py
+index e42b297..c7386d4 100644
+--- a/markdown/inlinepatterns.py
++++ b/markdown/inlinepatterns.py
+@@ -407,6 +407,8 @@ class SubstituteTagInlineProcessor(SimpleTagInlineProcessor):
+ class BacktickInlineProcessor(InlineProcessor):
+     """ Return a `<code>` element containing the escaped matching text. """
+ 
++    RE_TICKS = re.compile('`+')
++
+     def __init__(self, pattern: str):
+         InlineProcessor.__init__(self, pattern)
+         self.ESCAPED_BSLASH = '{}{}{}'.format(util.STX, ord('\\'), util.ETX)
+@@ -432,24 +434,17 @@ class BacktickInlineProcessor(InlineProcessor):
+         end = 0
+ 
+         # Find an ending span of backticks that matches our opening
+-        i = start
+-        while i < last:
+-            span_length = 0
+-            while i < last and text[i] == '`':
+-                span_length += 1
+-                i += 1
+-            if not span_length:
+-                i += 1
+-                continue
++        for span in self.RE_TICKS.finditer(text, start):
++            span_length = span.end() - span.start()
+ 
+             # Did we find the end?
+             if max_ticks == span_length:
+-                return start, i - span_length
++                return start, span.start()
+ 
+             # Track the longest span of backticks we find as a fallback.
+             if span_length > longest_span:
+                 longest_span = span_length
+-                end = i
++                end = span.end()
+ 
+         # Since we didn't find an exact matching start and end,
+         # adjust start to match the largest end we could calculate.
+@@ -1113,6 +1108,7 @@ class LinkInlineProcessor(InlineProcessor):
+     """ Return a link element from the given match. """
+     RE_LINK = re.compile(r'''\(\s*(?:(<[^<>]*>)\s*(?:('[^']*'|"[^"]*")\s*)?\))?''', re.DOTALL | re.UNICODE)
+     RE_TITLE_CLEAN = re.compile(r'\s')
++    RE_BRACKET = re.compile(r'[\[\]]')
+ 
+     def handleMatch(self, m: re.Match[str], data: str) -> tuple[etree.Element | None, int | None, int | None]:
+         """ Return an `a` [`Element`][xml.etree.ElementTree.Element] or `(None, None, None)`. """
+@@ -1257,18 +1253,15 @@ class LinkInlineProcessor(InlineProcessor):
+ 
+         """
+         bracket_count = 1
+-        text = []
+-        for pos in range(index, len(data)):
+-            c = data[pos]
+-            if c == ']':
++        for bracket in self.RE_BRACKET.finditer(data, index):
++            if bracket.group() == ']':
+                 bracket_count -= 1
+-            elif c == '[':
++                if bracket_count == 0:
++                    return data[index:bracket.start()], bracket.end(), True
++            else:
+                 bracket_count += 1
+-            index += 1
+-            if bracket_count == 0:
+-                break
+-            text.append(c)
+-        return ''.join(text), index, bracket_count == 0
++        # Never closed: all of the remaining text is the content.
++        return data[index:], max(index, len(data)), False
+ 
+ 
+ class ImageInlineProcessor(LinkInlineProcessor):

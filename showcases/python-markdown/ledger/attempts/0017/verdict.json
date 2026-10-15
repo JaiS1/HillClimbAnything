@@ -1,0 +1,41 @@
+{
+  "n": 17,
+  "message": "Bundle of exact short-circuits for work that cannot matter (in-process A/B -3.6%, init -14%): (1) FencedBlockPreprocessor jumps with str.find to the next line starting with a fence instead of running the fence regex at every position; (2) NormalizeWhitespace only runs its blank-line lookbehind regex if the text has a space before a newline; (3) TOC replace_marker returns early unless some element text contains the marker; (4) re.DOTALL | re.UNICODE evaluated once at import instead of 35 enum unions per Markdown() instance; (5) Registry.register checks the name in its dict directly. Earlier reverts 0015/0016 were no-evidence at this noise level (quick: +-1.8%); this is the combination.",
+  "at": "2026-10-15T10:43:51-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "eae7e7e631b97b01762cf3818b5c7571b59b435e",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 250402050198223,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "0045d1c835a7571ee0efdd524fd631de0888df69",
+  "snapshot": "dee0a677727cb8266851057e1a51f81c8bd03ea2",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.041686463812390856,
+  "estimate": -4.082953191635644,
+  "lower": -0.6759189092941551,
+  "upper": -6.130814025948071,
+  "p": 0.0029296875,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.069298499824072
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.821448999995482
+    }
+  },
+  "commit": "dee0a677727cb8266851057e1a51f81c8bd03ea2",
+  "wall_seconds": 44.547
+}

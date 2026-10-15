@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "base": "8ea01e7ecfdad9aa4f6df73e51190fc38d328dda",
+  "changed": [
+    "markdown/blockprocessors.py",
+    "markdown/extensions/abbr.py",
+    "markdown/extensions/footnotes.py"
+  ],
+  "untracked": [],
+  "untracked_outside_editable": [],
+  "violations": []
+}

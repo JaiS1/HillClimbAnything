@@ -1,0 +1,76 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index 12b5424..d713eb0 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -130,6 +130,9 @@ class InlineProcessor(Treeprocessor):
+ 
+         """
+         if not isinstance(data, util.AtomicString):
++            # Quick exit for text without any character that a pattern needs (see `run`).
++            if self.__triggers is not None and self.__triggers(data) is None:
++                return data
+             startIndex = 0
+             entries = self.__entries
+             count = len(entries)
+@@ -421,14 +424,24 @@ class InlineProcessor(Treeprocessor):
+         # a character which every match must contain (or `None`), so that `__handleInline` can reject
+         # most patterns without calling into the regular expression engine.
+         self.__entries = []
++        triggers: set[str] | None = set()
++        placeholder_chars = set(self.__placeholder_prefix + self.__placeholder_suffix + '0123456789')
+         for pattern in self.inlinePatterns:
+             regex = pattern.getCompiledRegExp() if isinstance(pattern, inlinepatterns.InlineProcessor) else None
+             simple = regex is not None and not pattern.ANCESTOR_EXCLUDES
++            chars = util.required_chars(regex) if isinstance(regex, re.Pattern) else None
+             self.__entries.append((
+                 pattern,
+                 regex.finditer if simple else None,
+-                util.required_char(regex) if isinstance(regex, re.Pattern) else None
++                next(iter(chars)) if chars is not None and len(chars) == 1 else None
+             ))
++            # If every pattern needs one of a known set of characters (none of which can be
++            # part of a placeholder) then text without any of them can be skipped altogether.
++            if chars is None or not chars.isdisjoint(placeholder_chars):
++                triggers = None
++            elif triggers is not None:
++                triggers.update(chars)
++        self.__triggers = re.compile('[%s]' % ''.join(map(re.escape, triggers))).search if triggers else None
+ 
+         # Ensure a valid parent list, but copy passed in lists
+         # to ensure we don't have the user accidentally change it on us.
+diff --git a/markdown/util.py b/markdown/util.py
+index 4d251bb..36dd415 100644
+--- a/markdown/util.py
++++ b/markdown/util.py
+@@ -225,13 +225,13 @@ def _is_common(chars: frozenset[str]) -> bool:
+ 
+ 
+ @lru_cache(maxsize=1024)
+-def required_char(regex: re.Pattern[str]) -> str | None:
++def required_chars(regex: re.Pattern[str]) -> frozenset[str] | None:
+     """
+-    Return a single character which every match of the compiled `regex` must contain, or `None`.
++    Return a small set of characters, one of which every match of the compiled `regex` must contain.
+ 
+-    A text which does not contain the character cannot match, which lets a caller skip the
+-    (much slower) regular expression search. The answer is derived from the regular expression
+-    alone and `None` is returned whenever it cannot be determined with certainty.
++    A text which contains none of the characters cannot match, which lets a caller skip the (much
++    slower) regular expression search. The answer is derived from the regular expression alone and
++    `None` is returned whenever it cannot be determined with certainty.
+     """
+     try:
+         if regex.flags & re.IGNORECASE:
+@@ -239,6 +239,12 @@ def required_char(regex: re.Pattern[str]) -> str | None:
+         chars = _required_chars(_sre_parse.parse(regex.pattern, regex.flags))
+     except Exception:  # pragma: no cover
+         return None
++    return chars if chars is not None and len(chars) <= 4 else None
++
++
++def required_char(regex: re.Pattern[str]) -> str | None:
++    """ Return the one character which every match of the compiled `regex` must contain, or `None`. """
++    chars = required_chars(regex)
+     return next(iter(chars)) if chars is not None and len(chars) == 1 else None
+ 
+ 

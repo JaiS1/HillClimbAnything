@@ -1,0 +1,41 @@
+{
+  "n": 5,
+  "message": "Registry.__iter__ cached: build the ordered item list once and reuse it until register/deregister, instead of rebuilding a list per iteration. BlockParser.parseBlocks iterates the block processors for every block (3101 iterations, util.py __iter__ + listcomp ~2.4% of profile).",
+  "at": "2026-10-15T09:56:10-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "c8bbd7394f4ba57d184a1cb0cb4510ab838f2dff",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 83057564044546,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "5f297dec8f158915683fe9d51a787d5abea6dd10",
+  "snapshot": "0566caf3eb115962354985b5ca2e642cd373e577",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.025805904088939118,
+  "estimate": -2.547577757999559,
+  "lower": -1.3511595563802772,
+  "upper": -3.481058937353542,
+  "p": 9.5367431640625e-06,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 8.309502000429347
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 8.093701500001771
+    }
+  },
+  "commit": "0566caf3eb115962354985b5ca2e642cd373e577",
+  "wall_seconds": 102.607
+}

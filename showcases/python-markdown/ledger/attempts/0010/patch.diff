@@ -1,0 +1,42 @@
+diff --git a/markdown/blockprocessors.py b/markdown/blockprocessors.py
+index e3dc0a3..06370e5 100644
+--- a/markdown/blockprocessors.py
++++ b/markdown/blockprocessors.py
+@@ -587,7 +587,8 @@ class ReferenceProcessor(BlockProcessor):
+     )
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return True
++        # A reference definition contains `]:`; the regex search is only needed when that is present.
++        return ']:' in block
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> bool:
+         block = blocks.pop(0)
+diff --git a/markdown/extensions/abbr.py b/markdown/extensions/abbr.py
+index 9f60981..479559d 100644
+--- a/markdown/extensions/abbr.py
++++ b/markdown/extensions/abbr.py
+@@ -147,7 +147,8 @@ class AbbrBlockprocessor(BlockProcessor):
+         super().__init__(parser)
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return True
++        # A definition starts with `*[`; the regex search is only needed when that is present.
++        return '*[' in block
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> bool:
+         """
+diff --git a/markdown/extensions/footnotes.py b/markdown/extensions/footnotes.py
+index 46bb93c..598fe23 100644
+--- a/markdown/extensions/footnotes.py
++++ b/markdown/extensions/footnotes.py
+@@ -253,7 +253,8 @@ class FootnoteBlockProcessor(BlockProcessor):
+         self.footnotes = footnotes
+ 
+     def test(self, parent: etree.Element, block: str) -> bool:
+-        return True
++        # A definition starts with `[^`; the regex search is only needed when that is present.
++        return '[^' in block
+ 
+     def run(self, parent: etree.Element, blocks: list[str]) -> bool:
+         """ Find, set, and remove footnote definitions. """

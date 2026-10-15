@@ -1,0 +1,41 @@
+{
+  "n": 12,
+  "message": "Replace Python character loops with C-level regex scans in two inline handlers: LinkInlineProcessor.getText (per-char bracket counting via range/append) now iterates [ and ] via finditer; BacktickInlineProcessor.find_code_spans walks backtick runs via finditer. Profile: getText 1487 calls, 0.011s tottime; find_code_spans 1421 calls. Differential fuzz (links/backtick alphabet) identical.",
+  "at": "2026-10-15T10:21:26-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "d0be6f588bfbbe3bb92c32795f8f07587a04983f",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 77696515911097,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "bb0d51e1667ef1caef090656bfbff169f8d401ce",
+  "snapshot": "b78334394ed6a10f78d6240e3898ca9f5a3dda8b",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.01152267902739176,
+  "estimate": -1.145654721035554,
+  "lower": -0.06961849221616942,
+  "upper": -1.824836620558353,
+  "p": 0.0027904510498046875,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.308200000148645
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.3591000002816145
+    }
+  },
+  "commit": "b78334394ed6a10f78d6240e3898ca9f5a3dda8b",
+  "wall_seconds": 85.674
+}

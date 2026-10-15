@@ -1,0 +1,11 @@
+{
+ "documents": 4,
+ "rounds": 20,
+ "output_identical": true,
+ "change_pct": -63.504844242106714,
+ "bound_pct": -62.628807318626286,
+ "p_value": 9.5367431640625e-07,
+ "median_ms_A": 958.245522998368,
+ "median_ms_B": 350.2952999988338,
+ "commit_b": "dee0a677727c"
+}

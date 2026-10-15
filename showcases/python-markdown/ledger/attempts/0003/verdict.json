@@ -1,0 +1,41 @@
+{
+  "n": 3,
+  "message": "Resolve each simple pattern bound finditer once per run (list of bound methods) instead of calling pattern.getCompiledRegExp().finditer per pattern per text node (150k method calls + attribute lookups); profile: getCompiledRegExp 150k calls",
+  "at": "2026-10-15T09:46:46-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "79e1bdbf5af2424a59d096313bf213f50f9164ba",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 69395653073989,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "5de73ca26090ab6e83da37ff42d284a79c8f1550",
+  "snapshot": "e4b371927e873b53f1893f5bf83f1aff69b060db",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.026957761910739432,
+  "estimate": -2.659764468838313,
+  "lower": -1.0759744487490737,
+  "upper": -4.944166302416366,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 11.572099999966667
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 11.168649999945046
+    }
+  },
+  "commit": "e4b371927e873b53f1893f5bf83f1aff69b060db",
+  "wall_seconds": 65.025
+}

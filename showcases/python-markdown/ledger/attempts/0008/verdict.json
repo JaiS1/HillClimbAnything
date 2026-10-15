@@ -1,0 +1,41 @@
+{
+  "n": 8,
+  "message": "InlineProcessor.run: when __handleInline stashed no node (placeholder prefix absent from the result), put the text/tail straight back instead of going through __processPlaceholders (+ a dummy Element and list(currElement).index(child) for tails). Exact same result for the no-placeholder case; profile: __processPlaceholders 10090 calls, only 2199 placeholders.",
+  "at": "2026-10-15T10:10:17-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "7e9a609718a6d6c658217c9486bac5d249ff693f",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 277842745233273,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "ca666031f14960f119d0e1eb00278b09b5e6c0c8",
+  "snapshot": "8ea01e7ecfdad9aa4f6df73e51190fc38d328dda",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.046577479511071676,
+  "estimate": -4.550939576038182,
+  "lower": -3.1345374542058666,
+  "upper": -6.459873075310814,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 7.121604000076331
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.714102500154695
+    }
+  },
+  "commit": "8ea01e7ecfdad9aa4f6df73e51190fc38d328dda",
+  "wall_seconds": 54.397
+}

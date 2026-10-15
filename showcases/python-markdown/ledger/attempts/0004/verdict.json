@@ -1,0 +1,41 @@
+{
+  "n": 4,
+  "message": "Inline loop prefilter: derive from each pattern compiled regex (sre parse tree, cached per regex) a character every match must contain (e.g. [ ! < & backslash, single-quote, dash), and skip the pattern when that char is absent from the text. Removes most of the 150k finditer calls and loop iterations; the check is a C-level str containment. Differential fuzz vs 3.11.1 identical.",
+  "at": "2026-10-15T09:54:02-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "e4b371927e873b53f1893f5bf83f1aff69b060db",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 276391085662383,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "6b1b7eb1e551678fd1dd69e60e4e940673ce4879",
+  "snapshot": "c8bbd7394f4ba57d184a1cb0cb4510ab838f2dff",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.33671346572793515,
+  "estimate": -28.58865714380862,
+  "lower": -27.093651803540215,
+  "upper": -53.79365242486157,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 11.509800000112591
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 8.218198499889695
+    }
+  },
+  "commit": "c8bbd7394f4ba57d184a1cb0cb4510ab838f2dff",
+  "wall_seconds": 80.534
+}

@@ -1,0 +1,41 @@
+{
+  "n": 13,
+  "message": "Inline: when every pattern needs one of a known set of characters (derived from the regexes, none overlapping placeholder text), one char-class search per text skips the whole pattern loop for text containing none of them. About 30% of the 8700 text/tail strings have no trigger character. Simpler form of the reverted candidate-dispatch attempt 0009 (in-process about -1.7%).",
+  "at": "2026-10-15T10:24:17-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "b78334394ed6a10f78d6240e3898ca9f5a3dda8b",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 74711672998317,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "6076becb7c31063affb4a8338a0d20cf7c34378a",
+  "snapshot": "0ffc20717b70945a5c0df2eff94bb8e4694bcdbd",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.02176396613201809,
+  "estimate": -2.1528839870297647,
+  "lower": -1.016143848717067,
+  "upper": -3.094269957997419,
+  "p": 0.00013065338134765625,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.412700000055338
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.240400000024238
+    }
+  },
+  "commit": "0ffc20717b70945a5c0df2eff94bb8e4694bcdbd",
+  "wall_seconds": 86.374
+}

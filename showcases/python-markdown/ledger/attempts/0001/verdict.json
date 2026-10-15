@@ -1,0 +1,41 @@
+{
+  "n": 1,
+  "message": "InlineProcessor: snapshot the sorted inline patterns into a list once per run() instead of resolving self.inlinePatterns[i] via Registry.__getitem__ (which calls _sort and isinstance checks) for each of ~150k pattern applications; profile: Registry.__getitem__ ~12% of time",
+  "at": "2026-10-15T09:42:09-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "68bef279a95541d6e5d529bd4c0b78b42f2ac244",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 167805513557692,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "97a6d090f6068e1e66881176b616be9caf00c10a",
+  "snapshot": "f90c36687c9409e908527d9e56863d160def4cec",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.09790052787196139,
+  "estimate": -9.326090546457868,
+  "lower": -8.66263511395002,
+  "upper": -9.948151956375737,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 13.883399499945881
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 12.596049999956449
+    }
+  },
+  "commit": "f90c36687c9409e908527d9e56863d160def4cec",
+  "wall_seconds": 72.488
+}

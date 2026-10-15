@@ -1,0 +1,37 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index 5923532..3e4cf44 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -133,14 +133,15 @@ class InlineProcessor(Treeprocessor):
+             startIndex = 0
+             patterns = self.__patterns
+             count = len(patterns)
+-            simple = self.__simple
++            finders = self.__finders
+             while patternIndex < count:
+                 pattern = patterns[patternIndex]
+-                if simple[patternIndex]:
++                finditer = finders[patternIndex]
++                if finditer is not None:
+                     # New style pattern without ancestor restrictions: search inline
+                     # so the (very common) "no match" case skips `__applyPattern`.
+                     match = None
+-                    for match in pattern.getCompiledRegExp().finditer(data, startIndex):
++                    for match in finditer(data, startIndex):
+                         node, start, end = pattern.handleMatch(match, data)
+                         if start is None or end is None:
+                             match = None
+@@ -415,8 +416,11 @@ class InlineProcessor(Treeprocessor):
+         # `self.inlinePatterns[i]` through the registry for every text node.
+         self.__patterns = list(self.inlinePatterns)
+         # New style patterns with no ancestor restrictions can be matched inline in `__handleInline`.
+-        self.__simple = [
+-            isinstance(p, inlinepatterns.InlineProcessor) and not p.ANCESTOR_EXCLUDES for p in self.__patterns
++        # Resolve each one's compiled `finditer` once per run (`None` for the rest).
++        self.__finders = [
++            p.getCompiledRegExp().finditer
++            if isinstance(p, inlinepatterns.InlineProcessor) and not p.ANCESTOR_EXCLUDES else None
++            for p in self.__patterns
+         ]
+ 
+         # Ensure a valid parent list, but copy passed in lists

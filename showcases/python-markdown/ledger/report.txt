@@ -1,0 +1,74 @@
+HCA report: markdown-render (branch hca/markdown-render; blocks mode; render_ms min; useful effect 2%)
+
+Headline
+  Confirmed: render_ms -53.8% (better) vs the original (cut of at least 53.0%; confirm 4, 20 blocks).
+
+Attempts
+  n     verdict           estimate  p         blocks    wall    message
+  0001  keep (confirmed)  -9.3%     0.000977  10        72.5s   InlineProcessor: snapshot the sorted inline patterns into a list once 
+  0002  keep (confirmed)  -8.9%     0.000977  10        68.5s   Inline loop: for new-style patterns without ANCESTOR_EXCLUDES, run the
+  0003  keep (confirmed)  -2.7%     0.000977  10        65.0s   Resolve each simple pattern bound finditer once per run (list of bound
+  0004  keep (confirmed)  -28.6%    0.000977  10        80.5s   Inline loop prefilter: derive from each pattern compiled regex (sre pa
+  0005  keep (confirmed)  -2.5%     9.54e-06  20 (ext)  102.6s  Registry.__iter__ cached: build the ordered item list once and reuse i
+  0006  keep (confirmed)  -5.9%     0.000977  10        51.3s   TableProcessor.test: reject early unless the second line consists only
+  0007  keep (confirmed)  -9.7%     0.000977  10        51.1s   Block processor tests (HashHeader, BlockQuote, HR, DefList, Admonition
+  0008  keep (confirmed)  -4.6%     0.000977  10        54.4s   InlineProcessor.run: when __handleInline stashed no node (placeholder 
+  0009  revert            -1.7%     0.00859   20 (ext)  112.7s  Inline dispatch by required characters: generalise the prefilter to sm
+  0010  keep (confirmed)  -2.9%     0.00488   10        47.5s   Footnote/Abbr/Reference block processors: their test() always returned
+  0011  keep (confirmed)  -2.1%     0.000977  10        46.3s   TOC extension: (1) replace_marker joined c.itertext() and stripped it 
+  0012  keep (confirmed)  -1.1%     0.00279   20 (ext)  85.7s   Replace Python character loops with C-level regex scans in two inline 
+  0013  keep (confirmed)  -2.2%     0.000131  20 (ext)  86.4s   Inline: when every pattern needs one of a known set of characters (der
+  0014  keep (confirmed)  -3.2%     0.000977  10        45.4s   Bundle of cheap-necessary-condition shortcuts: (1) Markdown.is_block_l
+  0015  revert            -0.5%     0.165     20 (ext)  84.8s   TOC replace_marker: walked the whole tree with the recursive iterparen
+  0016  revert            -1.4%     0.0884    20 (ext)  108.0s  Preprocessors: skip regex scanning that cannot match. FencedBlockPrepr
+  0017  keep (confirmed)  -4.1%     0.00293   10        44.5s   Bundle of exact short-circuits for work that cannot matter (in-process
+  0018  revert            -0.6%     0.165     20 (ext)  83.7s   Second micro bundle (in-process A/B about -1% to -2.4%): serializer co
+
+Validity rate: 18 of 18 tries valid (100%). Invalid = scope violation, no change, build/guard failure, crash, or an unfinished measurement.
+
+Expected false keeps so far <= 18 tries x 1% = 0.18 (an upper bound from chance alone; `hca confirm` is the check).
+
+Mechanism metrics (kept attempts, baseline -> candidate medians)
+  0001: html_kb 9.064 -> 9.064 (+0.0%)
+  0002: html_kb 9.064 -> 9.064 (+0.0%)
+  0003: html_kb 9.064 -> 9.064 (+0.0%)
+  0004: html_kb 9.064 -> 9.064 (+0.0%)
+  0005: html_kb 9.064 -> 9.064 (+0.0%)
+  0006: html_kb 9.064 -> 9.064 (+0.0%)
+  0007: html_kb 9.064 -> 9.064 (+0.0%)
+  0008: html_kb 9.064 -> 9.064 (+0.0%)
+  0010: html_kb 9.064 -> 9.064 (+0.0%)
+  0011: html_kb 9.064 -> 9.064 (+0.0%)
+  0012: html_kb 9.064 -> 9.064 (+0.0%)
+  0013: html_kb 9.064 -> 9.064 (+0.0%)
+  0014: html_kb 9.064 -> 9.064 (+0.0%)
+  0017: html_kb 9.064 -> 9.064 (+0.0%)
+
+Slices from confirm 4 (median item change per tag value, the metric's own %)
+  kind=contributing: -47.1% over 1 item(s)
+  kind=hca: -60.7% over 3 item(s)
+  kind=phase0: -58.6% over 1 item(s)
+  kind=skill: -51.7% over 6 item(s)
+
+No evidence is not no effect: 4 reverted attempt(s) (0009, 0015, 0016, 0018) have an interval that still allows the useful effect (2%). They were not shown to fail, only not shown to work.
+
+Confirms used: 4 of 5.
+
+Change so far (confirmed dee0a677727c vs original):
+   markdown/blockprocessors.py        |  12 ++-
+   markdown/core.py                   |  17 +++-
+   markdown/extensions/abbr.py        |   3 +-
+   markdown/extensions/admonition.py  |   2 +-
+   markdown/extensions/def_list.py    |   3 +-
+   markdown/extensions/fenced_code.py |  18 +++-
+   markdown/extensions/footnotes.py   |   3 +-
+   markdown/extensions/tables.py      |   7 ++
+   markdown/extensions/toc.py         |  29 +++---
+   markdown/inlinepatterns.py         |  50 +++++------
+   markdown/postprocessors.py         |   7 +-
+   markdown/preprocessors.py          |   4 +-
+   markdown/treeprocessors.py         | 179 +++++++++++++++++++++++++++----------
+   markdown/util.py                   |  75 +++++++++++++++-
+   14 files changed, 310 insertions(+), 99 deletions(-)
+
+To take the result: git checkout hca-showcase && git merge hca/markdown-render

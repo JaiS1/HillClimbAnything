@@ -1,0 +1,1 @@
+TOC replace_marker: walked the whole tree with the recursive iterparent generator for every document just to find a [TOC] marker element; first check with a flat root.iter() that any element text contains the marker at all (a necessary condition for replacement), and return when none does. Profile: replace_marker + iterparent ~18% of toc.run, 8029 generator yields for 21 docs.

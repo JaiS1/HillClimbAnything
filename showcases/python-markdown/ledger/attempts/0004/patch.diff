@@ -1,0 +1,131 @@
+diff --git a/markdown/treeprocessors.py b/markdown/treeprocessors.py
+index 3e4cf44..97104c4 100644
+--- a/markdown/treeprocessors.py
++++ b/markdown/treeprocessors.py
+@@ -131,12 +131,15 @@ class InlineProcessor(Treeprocessor):
+         """
+         if not isinstance(data, util.AtomicString):
+             startIndex = 0
+-            patterns = self.__patterns
+-            count = len(patterns)
+-            finders = self.__finders
++            entries = self.__entries
++            count = len(entries)
+             while patternIndex < count:
+-                pattern = patterns[patternIndex]
+-                finditer = finders[patternIndex]
++                pattern, finditer, required = entries[patternIndex]
++                if required is not None and required not in data:
++                    # A match must contain this character, so the pattern cannot apply.
++                    patternIndex += 1
++                    startIndex = 0
++                    continue
+                 if finditer is not None:
+                     # New style pattern without ancestor restrictions: search inline
+                     # so the (very common) "no match" case skips `__applyPattern`.
+@@ -413,15 +416,19 @@ class InlineProcessor(Treeprocessor):
+         """
+         self.stashed_nodes: dict[str, etree.Element | str] = {}
+         # Snapshot the (sorted) patterns once per run instead of resolving
+-        # `self.inlinePatterns[i]` through the registry for every text node.
+-        self.__patterns = list(self.inlinePatterns)
+-        # New style patterns with no ancestor restrictions can be matched inline in `__handleInline`.
+-        # Resolve each one's compiled `finditer` once per run (`None` for the rest).
+-        self.__finders = [
+-            p.getCompiledRegExp().finditer
+-            if isinstance(p, inlinepatterns.InlineProcessor) and not p.ANCESTOR_EXCLUDES else None
+-            for p in self.__patterns
+-        ]
++        # `self.inlinePatterns[i]` through the registry for every text node. For each pattern also keep
++        # its bound `finditer` (`None` unless it is a new style pattern with no ancestor restrictions) and
++        # a character which every match must contain (or `None`), so that `__handleInline` can reject
++        # most patterns without calling into the regular expression engine.
++        self.__entries = []
++        for pattern in self.inlinePatterns:
++            regex = pattern.getCompiledRegExp() if isinstance(pattern, inlinepatterns.InlineProcessor) else None
++            simple = regex is not None and not pattern.ANCESTOR_EXCLUDES
++            self.__entries.append((
++                pattern,
++                regex.finditer if simple else None,
++                util.required_char(regex) if isinstance(regex, re.Pattern) else None
++            ))
+ 
+         # Ensure a valid parent list, but copy passed in lists
+         # to ensure we don't have the user accidentally change it on us.
+diff --git a/markdown/util.py b/markdown/util.py
+index 29ffa24..8597cd8 100644
+--- a/markdown/util.py
++++ b/markdown/util.py
+@@ -25,6 +25,8 @@ throughout the code base.
+ from __future__ import annotations
+ 
+ import re
++import re._constants as _sre_constants
++import re._parser as _sre_parse
+ import sys
+ import warnings
+ from functools import wraps, lru_cache
+@@ -183,6 +185,63 @@ def nearing_recursion_limit() -> bool:
+ # =============================================================================
+ 
+ 
++def _required_chars(items) -> frozenset[str] | None:
++    """
++    Return a set of characters, at least one of which must appear in every match of the
++    parsed regular expression `items`, or `None` if no such set is known.
++    """
++    best: frozenset[str] | None = None
++    for op, av in items:
++        chars = None
++        if op is _sre_constants.LITERAL:
++            chars = frozenset(chr(av))
++        elif op is _sre_constants.IN:
++            if all(o is _sre_constants.LITERAL for o, _ in av):
++                chars = frozenset(chr(a) for _, a in av)
++        elif op is _sre_constants.BRANCH:
++            alternatives = [_required_chars(branch) for branch in av[1]]
++            if all(alternatives):
++                chars = frozenset().union(*alternatives)
++        elif op is _sre_constants.SUBPATTERN:
++            if not av[1] & re.IGNORECASE:
++                chars = _required_chars(av[3])
++        elif op in (_sre_constants.MAX_REPEAT, _sre_constants.MIN_REPEAT, _sre_constants.POSSESSIVE_REPEAT):
++            if av[0] >= 1:
++                chars = _required_chars(av[2])
++        elif op is _sre_constants.ATOMIC_GROUP:
++            chars = _required_chars(av)
++        if chars and (
++            best is None or len(chars) < len(best) or (
++                len(chars) == len(best) and _is_common(best) and not _is_common(chars)
++            )
++        ):
++            best = chars
++    return best
++
++
++def _is_common(chars: frozenset[str]) -> bool:
++    """ Whether `chars` holds only characters that occur in nearly every piece of text. """
++    return all(c == " " or c.isalnum() for c in chars)
++
++
++@lru_cache(maxsize=1024)
++def required_char(regex: re.Pattern[str]) -> str | None:
++    """
++    Return a single character which every match of the compiled `regex` must contain, or `None`.
++
++    A text which does not contain the character cannot match, which lets a caller skip the
++    (much slower) regular expression search. The answer is derived from the regular expression
++    alone and `None` is returned whenever it cannot be determined with certainty.
++    """
++    try:
++        if regex.flags & re.IGNORECASE:
++            return None
++        chars = _required_chars(_sre_parse.parse(regex.pattern, regex.flags))
++    except Exception:  # pragma: no cover
++        return None
++    return next(iter(chars)) if chars is not None and len(chars) == 1 else None
++
++
+ class AtomicString(str):
+     """A string which should not be further processed."""
+     pass

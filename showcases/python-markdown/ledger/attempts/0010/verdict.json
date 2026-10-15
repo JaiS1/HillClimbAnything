@@ -1,0 +1,41 @@
+{
+  "n": 10,
+  "message": "Footnote/Abbr/Reference block processors: their test() always returned True and run() popped the block, ran a regex, then pushed the block back and returned False for ~all blocks (3 x 1528 blocks). Make test() the cheap literal check each regex requires ([^, *[, ]:) so run() only executes when a definition can be present; same flow in parseBlocks.",
+  "at": "2026-10-15T10:16:40-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "8ea01e7ecfdad9aa4f6df73e51190fc38d328dda",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 170280210510621,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "529cfb2c0230ea8718cd61b3e8ecbbb0bc760d64",
+  "snapshot": "e75e4eff29175ee144276f347246f1750855dbab",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.029438970185805893,
+  "estimate": -2.9009864819528057,
+  "lower": -0.0741676793972357,
+  "upper": -4.299076456059239,
+  "p": 0.0048828125,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.746400000338326
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.533199999921635
+    }
+  },
+  "commit": "e75e4eff29175ee144276f347246f1750855dbab",
+  "wall_seconds": 47.534
+}

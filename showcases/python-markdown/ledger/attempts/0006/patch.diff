@@ -1,0 +1,25 @@
+diff --git a/markdown/extensions/tables.py b/markdown/extensions/tables.py
+index c537a6b..e5ed90e 100644
+--- a/markdown/extensions/tables.py
++++ b/markdown/extensions/tables.py
+@@ -40,6 +40,9 @@ class TableProcessor(BlockProcessor):
+ 
+     RE_CODE_PIPES = re.compile(r'(?:(\\\\)|(\\`+)|(`+)|(\\\|)|(\|))')
+     RE_END_BORDER = re.compile(r'(?<!\\)(?:\\\\)*\|$')
++    # Every character of a valid separator row. Its cells only hold `|:- ` and what splitting a row
++    # removes (a border pipe and the backslashes escaping each other before it) is `|` or `\`.
++    RE_SEPARATOR_CHARS = re.compile(r'[|:\\ -]*')
+ 
+     def __init__(self, parser: blockparser.BlockParser, config: dict[str, Any]):
+         self.border: bool | int = False
+@@ -55,6 +58,10 @@ class TableProcessor(BlockProcessor):
+         Keep border check and separator row do avoid repeating the work.
+         """
+         is_table = False
++        # Cheap rejection: a table needs a second line made only of separator characters.
++        lines = block.split('\n', 2)
++        if len(lines) < 2 or self.RE_SEPARATOR_CHARS.fullmatch(lines[1].strip(' ')) is None:
++            return False
+         rows = [row.strip(' ') for row in block.split('\n')]
+         if len(rows) > 1:
+             header0 = rows[0]

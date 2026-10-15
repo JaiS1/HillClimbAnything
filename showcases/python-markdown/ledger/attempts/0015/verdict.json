@@ -1,0 +1,43 @@
+{
+  "n": 15,
+  "message": "TOC replace_marker: walked the whole tree with the recursive iterparent generator for every document just to find a [TOC] marker element; first check with a flat root.iter() that any element text contains the marker at all (a necessary condition for replacement), and return when none does. Profile: replace_marker + iterparent ~18% of toc.run, 8029 generator yields for 21 docs.",
+  "at": "2026-10-15T10:35:03-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "eae7e7e631b97b01762cf3818b5c7571b59b435e",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.165 > 0.005",
+    "estimate is +0.52% better, below the keep floor of +1.01% better (half the useful effect)"
+  ],
+  "seed": 196639492990971,
+  "confirm": null,
+  "again": false,
+  "tree": "759eee36478aafcea2c36d2edd3dcae8eefc393a",
+  "snapshot": "1468578ff84fb498754df4d86c48c83f891464f8",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.005207208647399325,
+  "estimate": -0.5193674638110826,
+  "lower": 1.1451743048366765,
+  "upper": -2.4030868799513656,
+  "p": 0.1649913787841797,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.9556999995038495
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.994700500195904
+    }
+  },
+  "wall_seconds": 84.838
+}

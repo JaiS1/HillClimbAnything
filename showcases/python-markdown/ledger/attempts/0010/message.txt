@@ -1,0 +1,1 @@
+Footnote/Abbr/Reference block processors: their test() always returned True and run() popped the block, ran a regex, then pushed the block back and returned False for ~all blocks (3 x 1528 blocks). Make test() the cheap literal check each regex requires ([^, *[, ]:) so run() only executes when a definition can be present; same flow in parseBlocks.

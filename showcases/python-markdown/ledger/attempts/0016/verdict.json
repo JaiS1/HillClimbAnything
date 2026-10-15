@@ -1,0 +1,42 @@
+{
+  "n": 16,
+  "message": "Preprocessors: skip regex scanning that cannot match. FencedBlockPreprocessor searched the whole text with the multiline fence regex (tried at every position, about 3 ms for the corpus); now jump with str.find to the next line starting with three backticks or tildes (the only possible match starts). NormalizeWhitespace only runs its blank-line regex (about 3.4 ms, lookbehind at every position) when the text contains a space before a newline. Both exact short-circuits, fenced/whitespace-focused differential fuzz identical.",
+  "at": "2026-10-15T10:38:41-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "eae7e7e631b97b01762cf3818b5c7571b59b435e",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.0884 > 0.005"
+  ],
+  "seed": 97422062074712,
+  "confirm": null,
+  "again": false,
+  "tree": "5b13df42524c4c860073eaf1079a99e4c24e5b92",
+  "snapshot": "edb331312ce4de9aaa74bfe6927eea34c1dae5ce",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.013824064351777932,
+  "estimate": -1.3728950764070613,
+  "lower": 4.43990329753312,
+  "upper": -7.410227513902937,
+  "p": 0.08842658996582031,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.195250000018859
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.071799999972427
+    }
+  },
+  "wall_seconds": 108.022
+}

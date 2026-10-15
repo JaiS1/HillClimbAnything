@@ -1,0 +1,1 @@
+Resolve each simple pattern bound finditer once per run (list of bound methods) instead of calling pattern.getCompiledRegExp().finditer per pattern per text node (150k method calls + attribute lookups); profile: getCompiledRegExp 150k calls

@@ -1,0 +1,15 @@
+[
+  {
+    "name": "test-suite",
+    "kind": "command",
+    "passed": true,
+    "attempts": [
+      {
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 1.101,
+        "error_tail": ""
+      }
+    ]
+  }
+]

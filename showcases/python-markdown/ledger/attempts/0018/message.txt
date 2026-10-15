@@ -1,0 +1,1 @@
+Second micro bundle (in-process A/B about -1% to -2.4%): serializer computes tag.lower() once per element instead of up to three times and drops an unused counter; HRProcessor.test requires three of the same rule character before running its multiline regex (the regex needs 3+); lazy %-args for two logger.debug calls made per extension. All exact.

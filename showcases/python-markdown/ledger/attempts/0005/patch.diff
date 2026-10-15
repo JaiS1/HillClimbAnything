@@ -1,0 +1,40 @@
+diff --git a/markdown/util.py b/markdown/util.py
+index 8597cd8..4d251bb 100644
+--- a/markdown/util.py
++++ b/markdown/util.py
+@@ -370,6 +370,7 @@ class Registry(Generic[_T]):
+         self._data: dict[str, _T] = {}
+         self._priority: list[_PriorityItem] = []
+         self._is_sorted = False
++        self._items: list[_T] | None = None
+ 
+     def __contains__(self, item: str | _T) -> bool:
+         if isinstance(item, str):
+@@ -380,7 +381,10 @@ class Registry(Generic[_T]):
+ 
+     def __iter__(self) -> Iterator[_T]:
+         self._sort()
+-        return iter([self._data[k] for k, p in self._priority])
++        if self._items is None:
++            # Build the ordered list of items once; it is discarded when the registry changes.
++            self._items = [self._data[k] for k, p in self._priority]
++        return iter(self._items)
+ 
+     @overload
+     def __getitem__(self, key: str | int) -> _T:  # pragma: no cover
+@@ -441,6 +445,7 @@ class Registry(Generic[_T]):
+             # Remove existing item of same name first
+             self.deregister(name)
+         self._is_sorted = False
++        self._items = None
+         self._data[name] = item
+         self._priority.append(_PriorityItem(name, priority))
+ 
+@@ -454,6 +459,7 @@ class Registry(Generic[_T]):
+             index = self.get_index_for_name(name)
+             del self._priority[index]
+             del self._data[name]
++            self._items = None
+         except ValueError:
+             if strict:
+                 raise

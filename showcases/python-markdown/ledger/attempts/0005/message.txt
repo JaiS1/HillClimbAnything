@@ -1,0 +1,1 @@
+Registry.__iter__ cached: build the ordered item list once and reuse it until register/deregister, instead of rebuilding a list per iteration. BlockParser.parseBlocks iterates the block processors for every block (3101 iterations, util.py __iter__ + listcomp ~2.4% of profile).

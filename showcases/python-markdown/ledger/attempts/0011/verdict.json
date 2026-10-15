@@ -1,0 +1,41 @@
+{
+  "n": 11,
+  "message": "TOC extension: (1) replace_marker joined c.itertext() and stripped it for every element in the tree before checking the marker condition; for the only case that matters (len(c)==0) that text is just c.text.strip(), so test the cheap condition first. (2) used-id collection used el.attrib (allocates a dict per element in C etree), now el.get. Profile: replace_marker + iterparent about 11ms of 42ms in toc.run.",
+  "at": "2026-10-15T10:18:32-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "e75e4eff29175ee144276f347246f1750855dbab",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 241352810909473,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "a3a6f91ec6eb4c0e6893641de8bd097090e20b33",
+  "snapshot": "d0be6f588bfbbe3bb92c32795f8f07587a04983f",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.02092013831969795,
+  "estimate": -2.07028302358887,
+  "lower": -0.7080224964581436,
+  "upper": -3.348314195112423,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.447499999922002
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 6.305450000581914
+    }
+  },
+  "commit": "d0be6f588bfbbe3bb92c32795f8f07587a04983f",
+  "wall_seconds": 46.274
+}

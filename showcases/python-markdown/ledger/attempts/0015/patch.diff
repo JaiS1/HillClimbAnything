@@ -1,0 +1,16 @@
+diff --git a/markdown/extensions/toc.py b/markdown/extensions/toc.py
+index c71f015..8b9f5d8 100644
+--- a/markdown/extensions/toc.py
++++ b/markdown/extensions/toc.py
+@@ -277,6 +277,11 @@ class TocTreeprocessor(Treeprocessor):
+ 
+     def replace_marker(self, root: etree.Element, elem: etree.Element) -> None:
+         """ Replace marker with elem. """
++        # The marker can only be replaced in an element whose text contains it. Checking for that is much
++        # cheaper than walking the tree with the (recursive) `iterparent` generator, and most documents
++        # have no marker at all.
++        if self.marker and not any(el.text and self.marker in el.text for el in root.iter()):
++            return
+         for (p, c) in self.iterparent(root):
+             # To keep the output from screwing up the
+             # validation by putting a `<div>` inside of a `<p>`

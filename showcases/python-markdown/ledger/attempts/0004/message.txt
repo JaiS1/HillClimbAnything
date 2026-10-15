@@ -1,0 +1,1 @@
+Inline loop prefilter: derive from each pattern compiled regex (sre parse tree, cached per regex) a character every match must contain (e.g. [ ! < & backslash, single-quote, dash), and skip the pattern when that char is absent from the text. Removes most of the 150k finditer calls and loop iterations; the check is a C-level str containment. Differential fuzz vs 3.11.1 identical.

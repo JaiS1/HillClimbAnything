@@ -20,6 +20,22 @@ Detectable at 80% power: 4.5% at 10 blocks (~1 s per try), 3.1% at 20 blocks (~3
 Your useful effect 5%: OK (10 blocks are enough).
 ```
 
+## Showcase: Python-Markdown, 2× faster, byte-identical
+
+A Sonnet coding agent climbed [Python-Markdown](https://github.com/Python-Markdown/markdown) 3.11.1
+with HCA as the referee. It took 18 tries in about 80 minutes.
+
+| | Render time vs 3.11.1 |
+|---|---|
+| `hca confirm` on held-out documents | **−53.8%** (at least −53.0%) |
+| Independent check, outside HCA, on the project's test fixtures | **−63.5%** |
+| Output (1,126 tests + 23,000 random documents vs 3.11.1) | identical |
+
+Single-run measurement would have kept 3 of the 4 changes HCA rejected. One of them read as
+**−17.9%** on its first run, but was −1.7% over 20 randomised blocks. The full write-up, patch,
+per-try log and raw ledger are in [showcases/python-markdown](showcases/python-markdown/README.md).
+It is one machine and one run, and the patch has not been reviewed upstream.
+
 ## Why a referee?
 
 Autoresearch-style loops edit, measure, and keep whatever scored best. On a noisy metric, "best"
@@ -32,13 +48,14 @@ compare them.
 | Raw best score | **~50%** | 100% |
 | HCA (exact signed-rank test on randomised blocks) | **0.9%** | 95% |
 
-The raw row comes from 20 live tries per condition. The HCA row is **one look at α = 1% on 15 blocks**,
-estimated from 2,000 tries resampled from the same recorded blocks. That is not the rule HCA ships: the
-shipped rule is **two looks** (10 blocks, extended to 20 when promising, 0.5% per look) plus a keep floor of
-half your useful effect, which is more conservative (the Phase 1 review simulated it and saw 0.0% to 0.2% of do-nothing tries kept
-under three noise models, against a nominal 1%; and `tests/test_calibration.py` runs 100 do-nothing tries
-through the real `hca try` and requires at most 3 keeps). The effects in the table were made by hand, and this
-is one machine on one evening.
+How the rows were measured:
+- **Raw best score:** 20 live tries per condition.
+- **HCA:** one look at α = 1% on 15 blocks, estimated from 2,000 tries resampled from the same
+  recorded blocks.
+
+That HCA row is not quite the shipped rule. The shipped rule takes two looks (10 blocks, extended
+to 20 when promising, 0.5% each) plus a keep floor of half your useful effect, which is stricter:
+simulated, it keeps 0.0–0.2% of do-nothing tries. The effects were made by hand on one machine.
 
 A loop that keeps half of its no-op changes is climbing noise. Gains that look stacked are
 partly fake, and they evaporate the moment you re-measure.
@@ -137,12 +154,12 @@ model fine-tuning campaign and the mistakes it paid for.
 - **It is not a benchmark harness.** You bring the command that measures. HCA decides what the
   measurement means.
 - **It is not orchestration.** HCA doesn't call model APIs. Your agent drives; HCA referees.
-- **It has no results of its own yet.** The numbers above are a calibration of the referee, not
-  a claim that HCA has made anything faster. Showcases with reproducible numbers come next.
+- **It is not proven broadly yet.** There is one showcase, on one machine. More targets (web LCP,
+  frame time, a model eval) are next.
 
 ## Status
 
-Early research release (0.2.0.dev). Phase 0 calibration and the core loop are under active
+Early research release (0.2.0.dev). The core loop and one showcase exist; it is under active
 development on the `hca/design` branch. See the [design](docs/DESIGN-hca.md) and the
 [architecture contract](docs/ARCHITECTURE-v1.md).
 

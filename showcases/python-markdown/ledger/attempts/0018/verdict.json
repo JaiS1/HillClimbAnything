@@ -1,0 +1,43 @@
+{
+  "n": 18,
+  "message": "Second micro bundle (in-process A/B about -1% to -2.4%): serializer computes tag.lower() once per element instead of up to three times and drops an unused counter; HRProcessor.test requires three of the same rule character before running its multiline regex (the regex needs 3+); lazy %-args for two logger.debug calls made per extension. All exact.",
+  "at": "2026-10-15T10:45:52-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "dee0a677727cb8266851057e1a51f81c8bd03ea2",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.165 > 0.005",
+    "estimate is +0.59% better, below the keep floor of +1.01% better (half the useful effect)"
+  ],
+  "seed": 55614728534631,
+  "confirm": null,
+  "again": false,
+  "tree": "62fba3317cd799b3d7a9d6aa66ec7baa92c73d91",
+  "snapshot": "9c94d30af125044a54d17ed85801797c9450084c",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.005879007175003271,
+  "estimate": -0.5861759628357353,
+  "lower": 1.1101629393778754,
+  "upper": -2.347875454999861,
+  "p": 0.1649913787841797,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -2.0,
+  "arm_medians": {
+    "baseline": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.805650000638707
+    },
+    "candidate": {
+      "html_kb": 9.064453125,
+      "render_ms": 5.8625000001484295
+    }
+  },
+  "wall_seconds": 83.702
+}
