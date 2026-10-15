@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn raw timings (driver.py) into verdicts using tools/dream_rsi/stats.py, then SUMMARY.md.
+"""Turn raw timings (driver.py) into verdicts using hca/paired.py (tools/dream_rsi/stats.py at run time), then SUMMARY.md.
 
 Item scores are log(time) with direction "min", so the mean paired difference reported by
 stats.decide is the mean log ratio log(A/B): positive means B (candidate) is faster.
@@ -17,8 +17,8 @@ import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent / "tools"))
-from dream_rsi import stats  # noqa: E402
+sys.path.insert(0, str(HERE.parent.parent))
+from hca import paired as stats  # noqa: E402 (was tools/dream_rsi/stats.py when the spike ran)
 
 KS = (5, 10, 15)
 ROUTES = ["/catalog", "/listing", "/search", "/report", "/table", "/tree", "/feed",

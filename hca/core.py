@@ -1,0 +1,35 @@
+"""Shared helpers: errors, JSON I/O and hashing. Standard library only."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+class HcaError(ValueError):
+    """A user-facing harness error: the message says what to fix."""
+
+
+HarnessError = HcaError  # name used by code ported from Dream Loop
+
+
+def object_hash(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def write_json(path, data):
+    """Atomic write: a reader never sees a half-written file."""
+    path = Path(path)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    os.replace(temp, path)
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()

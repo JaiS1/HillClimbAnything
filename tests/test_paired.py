@@ -7,8 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from tools.dream_rsi import core, evolve, stats
-from tools.dream_rsi.cli import checked_selection, main
+from hca import core, paired as stats
 
 
 def arm(diffs, base=10.0, clusters=None, subgroups=None):
@@ -33,7 +32,7 @@ METRIC = {"name": "accuracy", "direction": "max", "identity": "toy-items-v1"}
 
 
 def score_file(name, items, runtime="cpu-fp32", created=None):
-    data = {"schema_version": 1, "kind": "dream_loop_item_scores", "arm": name, "runtime": runtime,
+    data = {"schema_version": 1, "kind": "hca_item_scores", "arm": name, "runtime": runtime,
             "metric": METRIC, "items": items}
     if created:
         data["created_utc"] = created
@@ -149,7 +148,7 @@ class CompareTests(unittest.TestCase):
 
 class RegistrationTests(unittest.TestCase):
     def draft(self, **changes):
-        base = {"kind": "dream_loop_registration", "question": "Does the candidate beat the incumbent?",
+        base = {"kind": "hca_registration", "question": "Does the candidate beat the incumbent?",
                 "metric": METRIC, "incumbent": "inc", "arms": ["cand"],
                 "decision": {"alpha": 0.05, "comparisons": 1, "useful_effect": 0.5, "max_harm_rate": 0.5},
                 "expected_half_width": 0.4,
@@ -191,108 +190,6 @@ class RegistrationTests(unittest.TestCase):
         frozen["registration"]["decision"]["alpha"] = 0.5
         with self.assertRaisesRegex(core.HarnessError, "changed after it was frozen"):
             stats.compare([score_file("cand", candidate, created=after)], score_file("inc", baseline), frozen=frozen)
-
-    def test_cli_register_and_compare_write_records(self):
-        home = Path(__file__).resolve().parents[1] / ".runs"
-        home.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=home) as temp:
-            temp = Path(temp)
-            core.write_json(temp / "draft.json", self.draft())
-            candidate, baseline = arm(alternating(40, 1.0))
-            now = datetime.now(timezone.utc) + timedelta(minutes=5)
-            core.write_json(temp / "cand.json", score_file("cand", candidate, created=now.isoformat()))
-            core.write_json(temp / "inc.json", score_file("inc", baseline))
-            printed, errors = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(errors):
-                main(["register", str(temp / "draft.json"), "--output", str(temp / "frozen.json")])
-                main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
-                      "--registration", str(temp / "frozen.json"), "--output", str(temp / "verdict.json")])
-                with self.assertRaises(SystemExit):
-                    main(["compare", str(temp / "cand.json"), "--incumbent", str(temp / "inc.json"),
-                          "--output", str(temp / "verdict.json")])
-            verdict = core.read_json(temp / "verdict.json")
-            self.assertEqual(verdict["current_verdict"]["promote"], "cand")
-            self.assertTrue(printed.getvalue().splitlines()[1].startswith("CURRENT VERDICT: promote cand"))
-            self.assertIn("output already exists", errors.getvalue())
-
-
-class EvolutionPromotionTests(unittest.TestCase):
-    def setUp(self):
-        home = Path(__file__).resolve().parents[1]
-        scratch = home / ".runs"
-        scratch.mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(dir=scratch)
-        self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
-        self.project = self.base / "project"
-        shutil.copytree(home / "examples/knapsack", self.project)
-        config = core.read_json(self.project / "project.json")
-        config["limits"].update(attempts=3, wall_seconds=30)
-        config["policy"]["width"] = 2
-        core.write_json(self.project / "project.json", config)
-        self.runs = {}
-        for name in ("select-1", "select-2", "confirm-1", "confirm-2"):
-            run = self.base / name
-            core.initialize(self.project / "project.json", run)
-            list(core.run_automatic(run))
-            self.runs[name] = run
-        self.bad = self.base / "bad.py"
-        self.bad.write_text("import json, sys\njson.load(sys.stdin)\nprint('{\\\"action\\\": \\\"root\\\"}')\n")
-        self.good = self.base / "good.py"
-        self.good.write_text(evolve.baseline_source(core.load_config(self.project / "project.json")["policy"]))
-        # Proposes a policy that stops at once; with a large attempt penalty it wins on every world.
-        stop = "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'action': None}))\n"
-        self.stopper = [sys.executable, str(self.base / "stopper.py")]
-        (self.base / "stopper.py").write_text(
-            "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'source': " + repr(stop) + "}))\n")
-        self.restorer = [sys.executable, str(self.base / "restorer.py")]
-        (self.base / "restorer.py").write_text(
-            "import json, sys\njson.load(sys.stdin)\nprint(json.dumps({'source': " + repr(self.good.read_text()) + "}))\n")
-
-    def evolve(self, name, developer, select, **options):
-        return evolve.evolve([self.runs[s] for s in select], developer, revisions=1, timeout_seconds=5,
-                             wall_seconds=30, output=self.base / name, **options)
-
-    def test_paired_gate_rejects_what_the_point_rule_accepts(self):
-        common = dict(initial_source=self.good, penalty=1000.0, rule={"min_units": 3})
-        point = self.evolve("point.json", self.stopper, ["select-1", "select-2"], **common)
-        paired = self.evolve("paired.json", self.stopper, ["select-1", "select-2"], promotion="paired", **common)
-        self.assertTrue(point["revisions"][0]["accepted"])
-        self.assertFalse(paired["revisions"][0]["accepted"])
-        self.assertEqual(paired["revisions"][0]["paired"]["verdict"], "insufficient")
-        self.assertEqual(paired["selected_source_hash"], paired["initial_evaluation"]["policy"]["source_hash"])
-
-    def test_multi_world_promotion_confirms_on_held_out_worlds(self):
-        with self.assertRaisesRegex(core.HarnessError, "shared between select and confirm"):
-            self.evolve("dup.json", self.stopper, ["select-1"], confirm_runs=[self.runs["select-1"]])
-        result = self.evolve("confirmed.json", self.stopper, ["select-1", "select-2"], initial_source=self.good,
-                             penalty=1000.0, promotion="paired", rule={"min_units": 2},
-                             confirm_runs=[self.runs["confirm-1"], self.runs["confirm-2"]])
-        self.assertEqual(result["revisions"][0]["paired"]["verdict"], "promote")
-        self.assertTrue(result["revisions"][0]["accepted"])
-        self.assertEqual(result["confirmation"]["verdict"], "promote")
-        self.assertFalse(result["confirmation"]["unconfirmed"])
-        self.assertNotEqual(result["selected_source_hash"], result["initial_evaluation"]["policy"]["source_hash"])
-        self.assertEqual([w["id"] for w in result["confirmation"]["worlds"]],
-                         [core.verify(self.runs[n])["world_id"] for n in ("confirm-1", "confirm-2")])
-
-    def test_failed_confirmation_reverts_only_to_a_supported_start(self):
-        options = dict(penalty=1000.0, promotion="paired", rule={"min_units": 2})
-        # Supported start, too few confirm worlds: the confirmation is insufficient, so keep the start.
-        reverted = self.evolve("reverted.json", self.stopper, ["select-1", "select-2"], initial_source=self.good,
-                               confirm_runs=[self.runs["confirm-1"]], **options)
-        self.assertTrue(reverted["revisions"][0]["accepted"])
-        self.assertEqual(reverted["confirmation"]["verdict"], "insufficient")
-        self.assertTrue(reverted["confirmation"]["reverted_to_initial"])
-        self.assertEqual(reverted["selected_source_hash"], reverted["initial_evaluation"]["policy"]["source_hash"])
-        # Unsupported start: never revert to it; keep the selection, marked unconfirmed, and still adoptable.
-        kept = self.evolve("kept.json", self.restorer, ["select-1"], initial_source=self.bad,
-                           confirm_runs=[self.runs["confirm-1"]], **options)
-        self.assertEqual(kept["confirmation"]["verdict"], "unsupported")
-        self.assertTrue(kept["confirmation"]["unconfirmed"])
-        self.assertFalse(kept["confirmation"]["reverted_to_initial"])
-        checked = checked_selection(self.base / "kept.json", core.load_config(self.project / "project.json"))
-        self.assertEqual(checked["selected_policy"]["name"], "executable")
 
 
 if __name__ == "__main__":

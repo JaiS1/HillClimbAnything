@@ -193,8 +193,8 @@ def decide(candidate, baseline, direction, rule=None):
 def load_scores(path):
     """Read one arm's per-item scores, tagged with the runtime that produced them."""
     data = core.read_json(path)
-    if data.get("kind") != "dream_loop_item_scores":
-        raise core.HarnessError(f"{path}: kind must be dream_loop_item_scores")
+    if data.get("kind") != "hca_item_scores":
+        raise core.HarnessError(f"{path}: kind must be hca_item_scores")
     for key in ("arm", "runtime"):
         if not isinstance(data.get(key), str) or not data[key]:
             raise core.HarnessError(f"{path}: {key} must be a nonempty string")
@@ -220,8 +220,8 @@ def _utc(value, where):
 
 def register(draft, now=None):
     """Freeze arms, decision rule, premise check and power target before results."""
-    if not isinstance(draft, dict) or draft.get("kind") != "dream_loop_registration":
-        raise core.HarnessError("registration kind must be dream_loop_registration")
+    if not isinstance(draft, dict) or draft.get("kind") != "hca_registration":
+        raise core.HarnessError("registration kind must be hca_registration")
     for key in ("question", "incumbent"):
         if not isinstance(draft.get(key), str) or not draft[key]:
             raise core.HarnessError(f"registration needs {key}")

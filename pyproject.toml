@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hillclimbanything"
+version = "0.2.0.dev0"
+description = "A noise-aware referee for hill-climbing any metric with your coding agent"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+hca = "hca.cli:main"
+hillclimbanything = "hca.cli:main"
+
+[tool.setuptools]
+packages = ["hca"]

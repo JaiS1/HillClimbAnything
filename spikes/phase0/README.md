@@ -8,7 +8,7 @@ Files
 
 - `server.py` - target 1: stdlib `ThreadingHTTPServer`, 12 routes, `--scale` knob (data size multiplier).
 - `driver.py` - collects raw timings only. Everything runs strictly one job at a time under `nice -n 19`.
-- `analyze.py` - applies `tools/dream_rsi/stats.py` (`decide`) with Rules S / N / R, writes `results/raw.jsonl` and `results/SUMMARY.md`.
+- `analyze.py` - applies `hca/paired.py (ported unchanged from tools/dream_rsi/stats.py, which the spike used at commit 7291206)` (`decide`) with Rules S / N / R, writes `results/raw.jsonl` and `results/SUMMARY.md`.
 - `results/` - `timings_web.jsonl`, `timings_cli.jsonl` (raw timings), `raw.jsonl` (verdict rows),
   `SUMMARY.md`, `calibration.jsonl` (knob calibration long runs), `knobs.json`.
 

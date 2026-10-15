@@ -20,7 +20,7 @@ import statistics
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from tools.dream_rsi import stats  # noqa: E402
+from hca import paired as stats  # noqa: E402
 
 HERE = os.path.dirname(__file__)
 
