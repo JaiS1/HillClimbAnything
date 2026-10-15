@@ -62,7 +62,7 @@ def draw(theme):
            f'role="img" aria-labelledby="t d" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">',
            '<title id="t">Python-Markdown render time across an HCA climb</title>',
            '<desc id="d">Render time as a percentage of version 3.11.1 over 18 tries. 14 kept changes step it down to '
-           'about 46 percent; four confirms on held-out documents passed at -18.9, -45.9, -49.8 and -53.8 percent. '
+           'about 39 percent on the 21 dev documents; four confirms on held-out documents passed at -18.9, -45.9, -49.8 and -53.8 percent. '
            'Try 9 read -17.9 percent on a single run but -1.7 percent over 20 blocks, and was reverted.</desc>',
            f'<rect width="{W}" height="{H}" rx="12" fill="{c["surface"]}"/>',
            f'<text x="{L}" y="40" font-size="20" font-weight="650" fill="{c["ink"]}">Python-Markdown render time, one try at a time</text>',

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440" role="img" aria-labelledby="t d" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
 <title id="t">Python-Markdown render time across an HCA climb</title>
-<desc id="d">Render time as a percentage of version 3.11.1 over 18 tries. 14 kept changes step it down to about 46 percent; four confirms on held-out documents passed at -18.9, -45.9, -49.8 and -53.8 percent. Try 9 read -17.9 percent on a single run but -1.7 percent over 20 blocks, and was reverted.</desc>
+<desc id="d">Render time as a percentage of version 3.11.1 over 18 tries. 14 kept changes step it down to about 39 percent on the 21 dev documents; four confirms on held-out documents passed at -18.9, -45.9, -49.8 and -53.8 percent. Try 9 read -17.9 percent on a single run but -1.7 percent over 20 blocks, and was reverted.</desc>
 <rect width="960" height="440" rx="12" fill="#fcfcfb"/>
 <text x="72" y="40" font-size="20" font-weight="650" fill="#0b0b0b">Python-Markdown render time, one try at a time</text>
 <text x="72" y="64" font-size="14" fill="#52514e">% of 3.11.1 · lower is better · line: kept changes on the 21 dev docs · diamonds: confirmed on held-out docs</text>

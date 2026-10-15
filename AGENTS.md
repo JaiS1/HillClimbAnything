@@ -12,7 +12,8 @@ project, read [`skills/hca/SKILL.md`](skills/hca/SKILL.md) instead.
 | `hca/paired.py` | `items` mode: paired bootstrap-t (from Dream Loop) |
 | `hca/measure.py`, `hca/runner.py` | running commands and parsing their results; never use `Popen.wait(timeout=...)` for timing |
 | `hca/gitops.py`, `hca/arms.py`, `hca/ledger.py` | snapshot commits, arm worktrees, the `.hca/` ledger and the referee store |
-| `hca/commands/` | `quick`, `init`, `try`, `confirm`, `report`, `status`, `doctor` |
+| `hca/core.py`, `hca/spec.py` | errors, JSON/hash helpers; `hca.toml` parsing and validation |
+| `hca/commands/` | `quick`, `init`, `try_`, `confirm`, `report` (also `status`), `doctor` |
 | `tests/` | unittest suite (~2 min); `test_calibration.py` runs 100 no-op tries end to end |
 | `skills/hca/` | the agent skill and its references |
 | `docs/` | design, architecture contract (with amendments), limits, README assets and translations |
@@ -31,6 +32,8 @@ python3 docs/assets/make_terminal_svg.py          # regenerate the animated term
 ## Rules
 
 - **Standard library only.** No runtime dependencies.
+- **Exit codes are a contract** (README table, `docs/ARCHITECTURE-v1.md`). Don't change them
+  casually.
 - **Every behaviour change gets a test.** Statistical changes also need a calibration check:
   false keeps at or below the nominal rate under heavy-tailed noise.
 - **Respect `docs/ARCHITECTURE-v1.md`.** Where you deviate, mark it `# CONTRACT NOTE:` and update

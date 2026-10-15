@@ -2,8 +2,9 @@
 
 **Result.** On [Python-Markdown](https://github.com/Python-Markdown/markdown) 3.11.1, HCA
 confirmed a **53.8% cut in render time** (lower bound 53.0%). The measurement used held-out
-documents the climber never tuned against. The output is unchanged: the project's 1,126 tests
-pass, and 23,000 randomly generated documents render identically.
+documents the climber never tuned against. The output is unchanged: the project's test suite
+passes (1,126 tests; 110 skipped, as in 3.11.1), and 23,000 randomly generated documents render
+identically.
 
 | Check | Corpus | Change in render time | Output |
 |---|---|---|---|
@@ -85,8 +86,9 @@ cumulative change against the original on held-out documents (4 confirms, all pa
   Markdown. Other extension sets, `codehilite`, or tiny documents (where `Markdown()` setup
   dominates) may see less.
 - **Small held-out set:** the held-out documents are smaller than the dev corpus, and the climber
-  could read them (they ship with HCA). Reading Markdown text doesn't help tune a parser, and the
-  independent check uses a different corpus again.
+  could read them (they are copies of HCA's own docs, kept in [`corpus/heldout`](corpus/heldout)).
+  Reading Markdown text doesn't help tune a parser, and the independent check uses a different
+  corpus again. The dev corpus is in [`corpus/dev`](corpus/dev).
 - **Not upstreamed.** The patch has not been reviewed by Python-Markdown's maintainers. It uses
   the private `re._parser` module (the project requires Python 3.11 or later), and it leaves one
   unused helper (`util.required_char`). Treat it as a demonstration, not a release.

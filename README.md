@@ -11,10 +11,10 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](pyproject.toml)
 [![Tests](https://img.shields.io/badge/tests-224_passing-1baf7a?style=flat-square)](tests)
-[![Agent skill](https://img.shields.io/badge/agent_skill-any_coding_agent-5c4ee5?style=flat-square)](skills/hca/SKILL.md)
+[![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](LICENSE)
 
-[Quick start](#quick-start) · [Showcase](#showcase-python-markdown-2-faster) · [Why a referee](#why-a-referee) · [How it works](#how-it-works) · [What you can climb](#what-you-can-climb) · [For agents](#for-agents) · [FAQ](#faq)
+[Quick start](#quick-start) · [Showcase](#showcase-python-markdown-2-faster) · [How it works](#how-it-works) · [For agents](#for-agents) · [FAQ](#faq)
 
 <code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
 
@@ -30,20 +30,21 @@
 ---
 
 Autoresearch-style loops let an agent edit, measure, and keep whatever scored best. On a noisy
-metric, "best" is often luck. On an ordinary desktop, keeping the raw best score kept **half** of
-the changes that did nothing ([measured](spikes/phase0/RESULT.md)).
+metric, "best" is often luck. On an ordinary desktop, keeping the raw best score kept **17–55%**
+of the changes that did nothing, depending on the benchmark ([measured](spikes/phase0/RESULT.md)).
 
 HillClimbAnything is the **referee** for that loop:
+
 - it measures how noisy your number is before you start;
 - it keeps a change only if it beats that noise;
 - it confirms the total gain on data the agent never tuned against.
 
 Your agent proposes, and HCA decides. HCA is a small Python CLI with no dependencies, plus a skill
-that teaches any coding agent the method.
+(plain Markdown) that teaches a coding agent the method. It has been tested with Claude Code.
 
 ## Quick start
 
-**1. Install** (Python 3.11+, Linux / WSL / macOS):
+**1. Install** (Python 3.11+; tested on Linux and WSL, macOS untested):
 
 ```bash
 pip install git+https://github.com/JaiS1/HillClimbAnything     # not on PyPI yet
@@ -53,8 +54,9 @@ npx skills add JaiS1/HillClimbAnything --skill hca             # optional: the a
 **2. Ask your agent:**
 
 ```text
-Use HillClimbAnything to make `python bench.py` faster. Read the hca skill, run `hca quick` first,
-write hca.toml with me, then climb with `hca try` and only report what `hca confirm` passes.
+Install HillClimbAnything (github.com/JaiS1/HillClimbAnything) and follow its skills/hca/SKILL.md.
+Make `python bench.py` faster: run `hca quick` first, write hca.toml with me, climb with
+`hca try`, and report only what `hca confirm` passes.
 ```
 
 **3. Or drive it yourself:**
@@ -96,7 +98,7 @@ A Sonnet coding agent climbed [Python-Markdown](https://github.com/Python-Markdo
 |---|---|
 | `hca confirm` on held-out documents | render time **−53.8%** (at least −53.0%) |
 | Independent re-measurement outside HCA, on the project's test fixtures | **−63.5%** |
-| Output: 1,126 project tests and 23,000 random documents vs 3.11.1 | **identical** |
+| Output: the project's test suite (1,126 tests; 110 skipped, as in 3.11.1) and 23,000 random documents | **identical** to 3.11.1 |
 | Changes HCA rejected that a single-run loop would have kept | **3 of 4**, one of them a "−17.9%" that was really −1.7% |
 
 The biggest win was skipping inline regex patterns when the text can't contain a character that
@@ -109,8 +111,11 @@ Two identical builds, compared the way most loops compare them ([Phase 0](spikes
 
 | Keep rule | No-op changes kept | Real 5% speedups kept |
 |---|---|---|
-| Keep the raw best score | **~50%** | 100% |
-| HCA's test on randomised blocks | **≤ 1%** | 95% (15 blocks) |
+| Keep the raw best score | **17–55%** | 100% |
+| HCA's test on randomised blocks | **≤ 1%** | 76–96% (15 blocks) |
+
+Ranges cover two benchmarks (a web server and a CLI). The HCA row is one look at α = 1%; the
+shipped rule is stricter.
 
 A loop that keeps half its no-ops is climbing noise. Its gains look stacked, then evaporate when
 you re-measure.
@@ -171,7 +176,7 @@ If you are an AI agent reading this:
 |---|---|---|
 | 0 | kept | passed |
 | 1 | reverted | failed (rolled back) |
-| 2 | invalid / void / refused: nothing kept, your edits left in place | refused |
+| 2 | invalid / void / refused: nothing kept, your edits left in place | inconclusive or refused |
 | 3 / 4 | usage error / internal error | same |
 
 Report only what `hca confirm` passed, with its bound and the number of tries.
@@ -205,6 +210,7 @@ runs, or closing other load. Climbing before that is wasted effort.
 <summary><strong>Can the agent cheat?</strong></summary>
 
 It can try, and HCA makes it inconvenient:
+
 - frozen evaluator files are hashed;
 - edits outside the declared paths invalidate the try;
 - both arms run from clean worktrees;
@@ -228,6 +234,7 @@ the winner's curse.
 <summary><strong>What about expensive runs, like GPU training?</strong></summary>
 
 The skill's references carry the discipline from a real months-long model fine-tuning campaign:
+
 - a preregistered card with a matched "same compute, no idea" control;
 - a cheap rehearsal before the paid run;
 - adversarial review;
@@ -240,7 +247,7 @@ The tooling for this is planned.
 <details>
 <summary><strong>Windows?</strong></summary>
 
-Use WSL. Native Windows process control isn't tested yet.
+Use WSL. Native Windows process control isn't tested yet, and neither is macOS.
 </details>
 
 ## Documentation
