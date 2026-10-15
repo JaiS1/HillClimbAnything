@@ -1,0 +1,6 @@
+{"target": "web", "cond": "aa", "k": 10, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.087, "route@0.005": 0.047, "block@0.025": 0.011, "block@0.005": 0.0}
+{"target": "web", "cond": "aa", "k": 15, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.063, "route@0.005": 0.031, "block@0.025": 0.029, "block@0.005": 0.0}
+{"target": "web", "cond": "b3", "k": 10, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.8, "route@0.005": 0.715, "block@0.025": 0.342, "block@0.005": 0.23}
+{"target": "web", "cond": "b3", "k": 15, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.875, "route@0.005": 0.798, "block@0.025": 0.384, "block@0.005": 0.245}
+{"target": "web", "cond": "b5", "k": 10, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.936, "route@0.005": 0.91, "block@0.025": 0.541, "block@0.005": 0.503}
+{"target": "web", "cond": "b5", "k": 15, "sims": 1000, "pool_blocks": 180, "route@0.025": 0.972, "route@0.005": 0.946, "block@0.025": 0.566, "block@0.005": 0.484}

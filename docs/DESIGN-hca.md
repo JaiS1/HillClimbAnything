@@ -119,10 +119,10 @@ held-out set, the ledger and the verdict, which the agent must not decide on its
 
 | Verb | What it does |
 |---|---|
-| `hca quick -- <cmd>` | Needs no spec file and runs in about 2 minutes. It runs the command with adaptive repeats and reports one honest sentence, e.g. "noise ±4.1% (A/A), a 12% win is detectable at 5 runs per arm, 3% is not". If the noise is too high it suggests the cheapest fix (more items, longer runs, pin clocks, close the game). |
+| `hca quick -- <cmd>` | Needs no spec file and runs in about 2 minutes. It runs an A/A in randomised blocks and reports one honest sentence, e.g. "noise ±4.1%; a 6% win is detectable at 10 blocks (~20 s per try), 3% is not". If the noise is too high it suggests the cheapest fix (more items, longer runs, pin clocks, close the game). |
 | `hca init` | Writes `hca.toml` + `BRIEF.md` (the skill fills them by asking), creates the `hca/<task>` branch and moves held-out items into the referee store. |
 | `hca try` | Diff-scope check → build → measure the candidate vs the last keep in randomised blocks with an in-session A/A → verdict (§3) → keep (commit on the branch) or revert (restore the editable paths to the last keep). It writes an attempt record whether the candidate was valid or not. |
-| `hca confirm` | Measures the cumulative change vs the *original* baseline on held-out items with fresh repeats. The agent sees pass/fail and the interval only. The number of confirms is capped and logged. |
+| `hca confirm` | Measures the cumulative change vs the *original* baseline on held-out items with fresh blocks. The agent sees pass/fail and the interval only. The number of confirms is capped and logged. |
 | `hca report` / `hca status` | The execution report and the hypothesis board / `VERDICTS.md`. |
 
 Campaign mode (§7) adds `card`, `rehearse` and a remote guard file. `doctor` and `setup` handle
@@ -138,49 +138,59 @@ itself (`hca report` prints the diff summary and the merge command).
 
 ## 3. Statistics: what a "win" means
 
+> **Amendment A1 (2026-10-15, before any build, after the Phase 0 spike, `spikes/phase0/RESULT.md`).**
+> Was: per-item bootstrap-t on `items`, tested at alpha/50 per try, starting at 3 repeats. Reason:
+> on real timings, routes measured in the same block share noise, so treating them as independent
+> units rejected at 6-12% when the nominal rate was 2.5%. A sign-flip test on randomised blocks was
+> exactly calibrated and caught 96% of 5% wins on cli at 15 blocks, where the old rule caught 65%.
+
 ### 3.1 Measurement modes (declared in the spec, never guessed)
 
-| Mode | Pairing unit | Use when | What it can claim |
+| Mode | Unit of the test | Use when | What it can claim |
 |---|---|---|---|
-| `items` | item id (page, scene, eval case) | the metric decomposes over ≥ 8 items | "the typical item improved by X%" (§3.2), with slice reads |
-| `repeats` | repeat index of interleaved A/B blocks | one number only (build time, binary size, a single benchmark) | "this command's number improved by X%"; no slices |
-| `seeds` | seed | training or stochastic pipelines | "the recipe improved by X% across seeds"; needs ≥ 3 seeds per arm, otherwise exploratory |
+| `blocks` (default for anything timed or noisy) | randomised A/B block: both arms measured back to back, order random | latency, frame time, build time, binary size from a noisy build, cost from a noisy run | "the candidate is X% better under these conditions"; per-item slices are descriptive |
+| `items` | item id | deterministic per-item scores with no shared measurement noise (eval-set accuracy, solver objective per instance) | "the typical item improved by X" (Dream Loop's paired bootstrap-t), with slice reads |
+| `seeds` | seed pair | training or stochastic pipelines | "the recipe improved by X across seeds"; >= 5 seed pairs, otherwise exploratory |
 
-`METRIC name=value` output defaults to `repeats`. Item JSON defaults to `items`.
+`METRIC name=value` output and item JSON with repeated `runs` both default to `blocks`. Item JSON
+with one deterministic score per item defaults to `items`.
 
-### 3.2 Estimand
+### 3.2 Estimand and test
 
-- **Default (`mean_log_ratio`).** Each item's score is the median of its k runs. The paired
-  difference is `log(candidate/baseline)`, sign-adjusted for direction. The headline is the
-  geometric-mean change, reported as a %, and `useful_effect = "5%"` is converted to `log(1.05)`.
-  This fits positive metrics (times, sizes, costs) and is what the existing bootstrap-t tests.
-- **`mean_diff`** is for additive metrics (accuracy, score) and is the Dream Loop behaviour.
-- **Tail metrics** (p95 latency, p99 frame time) are computed **per item** from that item's runs and
-  then enter the estimand above. A pooled p95 across items is reported as a mechanism metric. If
-  pooled tails are the goal, `estimand = "aggregate"` bootstraps the aggregate statistic directly by
-  resampling items. That option is slower, and its stated cost is honesty about the item count.
+- **`blocks` mode.** Each block gets a score: `log(baseline/candidate)` for one number, or the
+  **median over items** of the per-item log ratios, sign-adjusted for direction. The test is a
+  **Wilcoxon signed-rank test with an exact sign-flip null**. The randomised order makes it valid by
+  construction, with no assumption about the shape of the noise. The estimate is Hodges-Lehmann,
+  reported as a % change, with a Walsh-average one-sided bound. `useful_effect = "5%"` means
+  `log(1.05)`.
+- **`items` mode.** The paired bootstrap-t from Dream Loop, with `mean_diff` or `mean_log_ratio` as
+  the estimand.
+- **Tail metrics** (p95 latency, p99 frame time) are computed per item, within a block, from that
+  item's runs. A pooled tail across items is a mechanism metric.
 
 ### 3.3 Noise control
 
-- Arms run **sequentially** by default, in **randomised block order** rather than fixed ABBA. An
-  **in-session A/A** spread is the noise floor for that try, not a prior.
-- **Load and temperature** are recorded per block where the platform allows it. A spread above the
-  useful effect makes the result "too noisy here" with a suggestion, never a silent
-  "inconclusive".
-- **Concurrent arms** (two servers on two ports) are opt-in only, because they contend for cores.
-- **Repeats are adaptive.** Start at 3 per arm and add repeats until the interval half-width is below
-  the useful effect or the per-try time cap is hit.
+- Arms run **sequentially** inside each block, **in random order**. Concurrent arms are opt-in only,
+  because they contend for cores.
+- **`quick` measures an A/A** (the same build in both arms) and reports the noise floor and the
+  smallest detectable effect at 10 and 20 blocks. If even 20 blocks cannot detect the useful
+  effect, it says "too noisy here" and names the cheapest fix, rather than letting tries come back
+  inconclusive.
+- **Load** is recorded per block where the platform allows it, and outlier blocks are flagged in
+  the report. The rank test already limits their influence.
 
 ### 3.4 Keep rule, and why many keeps don't inflate wins
 
-- **Alpha spending.** The spec declares `max_tries` (default 50). Each try is tested at
-  `alpha / max_tries` (Bonferroni across the session).
-- **Keep only if** the lower bound is above 0 *and* the point estimate is at least half the useful
-  effect. Microscopic wins are not kept. Guards must also hold, each with an **A/A-derived
-  tolerance**, and a test command gets one retry for flakiness.
-- **Confirm** runs every N keeps (default 3) and at the end. If confirm fails, HCA reverts to the
-  last confirmed commit and marks the intervening keeps `unconfirmed`. They stay in the ledger and
-  their ideas stay on the board.
+- **Per-try test:** one-sided, alpha = 0.01, after 10 blocks. An inconclusive try may extend once to
+  20 blocks; the two looks are tested at 0.005 each. At most 1% of do-nothing changes are kept per
+  try (measured: 0.1-0.9%).
+- **Keep only if** the bound clears 0 *and* the estimate is at least half the useful effect.
+  Microscopic wins are not kept. Guards must also hold, each with an A/A-derived tolerance, and a
+  test command gets one retry for flakiness.
+- **Confirm** runs every N keeps (default 3) and at the end. It is the defence against the false
+  keeps that accumulate over many tries. If confirm fails, HCA reverts to the last confirmed commit
+  and marks the intervening keeps `unconfirmed`. They stay in the ledger and their ideas stay on
+  the board.
 - **Only confirmed deltas are reported as results.**
 
 ### 3.5 Invalid candidates (preregistered)
@@ -197,7 +207,7 @@ Item JSON separates `candidate_invalid` (crash, wrong output, a guard failure) f
 
 Held-out items live in the **referee store** (`~/.hca/<task>/heldout`, outside the repo and the
 brief), copied there at `init`. The agent never gets per-item held-out detail, and confirms are
-capped (default 5 per session) so the held-out set can't become a dev set. In `repeats` mode, where
+capped (default 5 per session) so the held-out set can't become a dev set. For a single-number metric, where
 there are no items to hold out, confirm uses fresh repeats on a fresh process/seed and a
 cooled-down machine.
 
@@ -219,8 +229,7 @@ command  = ["npm", "run", "build"]
 command       = ["./bench/run.sh"]       # prints METRIC lines or item JSON
 metric        = "lcp_ms"
 direction     = "min"
-mode          = "items"                  # items | repeats | seeds  (§3.1)
-estimand      = "mean_log_ratio"         # mean_log_ratio | mean_diff | aggregate
+mode          = "blocks"                 # blocks | items | seeds  (§3.1)
 useful_effect = "5%"
 max_tries     = 50
 
@@ -265,21 +274,22 @@ review overhead piled up last time.
 
 ## 6. Worked examples
 
-### 6.1 Web-page latency (Tier 0, `items`)
+### 6.1 Web-page latency (Tier 0, `blocks`)
 
 - **Metric:** LCP for 12 pages × k adaptive runs, measured with Playwright against a local build and
-  fixed CPU throttling. Each page's score is the median of its runs. The headline is the
-  geometric-mean change; pooled p75 is a mechanism metric.
+  fixed CPU throttling. Each block scores the median over pages of the per-page log ratio. The headline is the
+  Hodges-Lehmann % change; per-page reads and pooled p75 are mechanism metrics.
 - **Guards:** e2e tests, screenshot diff and visible-text equality. These catch the hack of
   deferring the LCP element.
 - **Mechanism metrics:** bytes transferred, JS execution time, request count.
 - **Held-out:** 4 further pages for confirm. These catch per-page tricks, which is the point. If a
-  site has fewer than 12 + 4 meaningful pages, use `repeats` mode on a page set instead.
+  site has fewer than 12 + 4 meaningful pages, confirm uses fresh blocks on the same pages instead.
 
-### 6.2 Game/UI frame-time jank (Tier 0, `items`)
+### 6.2 Game/UI frame-time jank (Tier 0, `blocks`)
 
-- **Metric:** a deterministic input replay over 8 scene segments. Each segment's score is its p99
-  frame time over k runs, and the estimand is the mean log ratio across segments. The share of
+- **Metric:** a deterministic input replay over 8 scene segments. Each block plays every segment once per arm; a
+  segment's score is its p99 frame time, and the block score is the median of the segment log
+  ratios. The share of
   frames over 16.7 ms is a mechanism metric, alongside GC pauses, draw calls and shader-compile
   hitches.
 - **Guards:** visual parity at fixed frames and a game-state checksum at the end of the replay.
@@ -344,7 +354,7 @@ undisclosed grader drift, and state that persists between tries without a reset 
 
 **Kept:**
 
-- `stats.py`, extended with log-ratio, `repeats` and `seeds` modes, and alpha spending;
+- `stats.py`, kept for `items` mode, plus a new signed-rank test on randomised blocks (A1);
 - registration, extended with amendments;
 - runtime tags and same-session control;
 - hashing and verification;
@@ -438,7 +448,7 @@ Each phase ends with a Sonnet adversarial review of the diff and a fixes commit.
 ## 11. Risks
 
 - **Tier 0 may be mostly "too noisy" on ordinary machines.** Phase 0 measures this. Mitigations are
-  more items, longer runs and `repeats` mode.
+  more blocks, longer runs, closing other load. Phase 0: 5% wins are detectable here at 10-20 blocks.
 - **Reward hacking.** The diff scope, frozen hashes, guards and the referee-held held-out set reduce
   it; they do not eliminate it. The skill treats gaming the metric as failure.
 - **Branch-in-place revert.** It touches the user's tree. It is limited to the editable paths, needs
