@@ -1,6 +1,8 @@
 # HillClimbAnything (HCA): design v0.2
 
-Status: DRAFT. Revised after an adversarial review (see the appendix). Nothing has been built yet.
+Status: DESIGN AGREED 2026-10-14. Jai chose the recommended option on every big choice: rename in
+place (to be confirmed before pushing), command `hca`, cut dream replay to a tag, first build = Phase 0 + Phase 1 + a
+real recorded climb. Revised after an adversarial review (see the appendix).
 Branch `hca/design`, 2026-10-14.
 
 > **HillClimbAnything: the harness to get you to hill-climb any technical challenge.**
