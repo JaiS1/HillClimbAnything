@@ -1,15 +1,19 @@
-"""Git operations for the referee: branch, scope check, patch capture, keep and revert.
+"""Git operations for the referee: snapshots, scope check, keep and revert.
 
-The rule behind every function here: HCA may only ever change the files the spec declares editable.
-So paths are always handed to git as explicit `:(literal)` lists, computed by our own glob matcher,
-never as globs or "everything" (git errors on a pathspec that matches nothing, and a bare `git
-checkout .` or `git clean` would eat the user's work). Remotes are never touched. Standard library
-only; `git` runs through subprocess.run (these calls are not timed measurements).
+The rule behind every function here: HCA may only ever change the files the spec declares editable,
+and what it measures is exactly what it commits. So the candidate is never "whatever is in the
+checkout": it is a commit built in a *private* index (`GIT_INDEX_FILE`) from the last keep's tree plus
+the working-tree contents of the changed editable paths. The user's real index is never read to decide
+what the candidate is (S1: staged content used to slip into commits). Paths are always handed to git
+as explicit `:(literal)` lists, computed by our own glob matcher, never as globs or "everything".
+Remotes are never touched. Standard library only; every git call has a timeout.
 """
 
 from __future__ import annotations
 
+import contextlib
 import functools
+import itertools
 import os
 import re
 import subprocess
@@ -20,19 +24,27 @@ from .core import HcaError, digest
 CHUNK = 200                      # paths per git invocation, to stay clear of argv limits
 SPEC_FILE = "hca.toml"
 HCA_DIR = ".hca"
+GIT_TIMEOUT = 120                # seconds for any one git call: a hung hook must not hold the lock forever
+KEEP_SUBJECT = re.compile(r"hca keep \d{4}: ")
+RESTORE_SUBJECT = "hca revert to confirmed"
+_counter = itertools.count()
 
 
 # --- running git -----------------------------------------------------------------------------------
 
-def _run(argv, cwd, input=None, env=None):
+def _run(argv, cwd, input=None, env=None, timeout=GIT_TIMEOUT):
     """subprocess.run for git that can never wait for a human: no terminal prompt, no editor, stdin closed.
 
-    Hooks and commit signing are deliberately left enabled (they are the user's own settings); if one of
-    them fails, the commit fails with git's message and the caller reverts with that message as the reason.
+    Hooks and commit signing are the user's own settings and stay enabled for the commands that use them.
+    A call that outlives `timeout` raises HcaError (the child is killed) instead of holding the lock forever.
     """
     full_env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_EDITOR="true", **(env or {}))
-    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=full_env,
-                          **({"input": input} if input is not None else {"stdin": subprocess.DEVNULL}))
+    try:
+        return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=full_env, timeout=timeout,
+                              **({"input": input} if input is not None else {"stdin": subprocess.DEVNULL}))
+    except subprocess.TimeoutExpired:
+        raise HcaError(f"`{' '.join(argv[:4])}` did not finish within {timeout} s (a hook or credential helper may be "
+                       "waiting for input). Fix: run it by hand to see what it waits for.") from None
 
 
 def git(root, *args, check=True, input=None, env=None) -> str:
@@ -78,6 +90,27 @@ def current_branch(root) -> str:
 
 def branch_exists(root, name) -> bool:
     return _run(["git", "rev-parse", "--verify", "-q", f"refs/heads/{name}"], root).returncode == 0
+
+
+def branch_tip(root, name) -> str:
+    return git(root, "rev-parse", f"refs/heads/{name}").strip()
+
+
+def tree_of(root, sha) -> str:
+    return git(root, "rev-parse", f"{sha}^{{tree}}").strip()
+
+
+def refuse_unsupported(root) -> None:
+    """v1 does not handle submodules (a worktree arm would lack them) or a half-finished merge/rebase/cherry-pick."""
+    root = Path(root)
+    if (root / ".gitmodules").exists():
+        raise HcaError("this repo has submodules (.gitmodules), which hca v1 does not support: a baseline worktree would "
+                       "not have them. Fix: run hca in a repo without submodules, or vendor them.")
+    gitdir = Path(git(root, "rev-parse", "--absolute-git-dir").strip())
+    for name, what in (("MERGE_HEAD", "merge"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert"),
+                       ("rebase-merge", "rebase"), ("rebase-apply", "rebase (or git am)")):
+        if (gitdir / name).exists():
+            raise HcaError(f"a {what} is in progress in this repo. Fix: finish it (or abort it) first, then run hca again.")
 
 
 # --- glob matching ---------------------------------------------------------------------------------
@@ -150,10 +183,20 @@ def is_frozen(path: str, spec) -> bool:
     return path == SPEC_FILE or matches_any(path, spec.task.frozen)
 
 
+def is_noise(path: str) -> bool:
+    """Files hca never treats as edits: `__pycache__/` anywhere, `*.pyc`, `.DS_Store` (tools write them as a side effect of running)."""
+    parts = path.split("/")
+    return "__pycache__" in parts[:-1] or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store"
+
+
+def _in_hca(path: str) -> bool:
+    return path == HCA_DIR or path.startswith(HCA_DIR + "/")
+
+
 # --- working tree state ----------------------------------------------------------------------------
 
 def dirty_paths(root, ignore=()) -> list:
-    """Paths that make the tree unclean, ignoring `.hca/` (our own directory) and any `ignore` globs (the spec's links)."""
+    """Paths that make the tree unclean, ignoring `.hca/` (our own directory), noise files and any `ignore` globs (the spec's links)."""
     out = git(root, "status", "--porcelain", "-z", "--untracked-files=all")
     entries = _lines(out)
     paths, skip = [], False
@@ -164,7 +207,7 @@ def dirty_paths(root, ignore=()) -> list:
         code, path = entry[:2], entry[3:]
         if "R" in code or "C" in code:
             skip = True
-        if path == HCA_DIR or path.startswith(HCA_DIR + "/") or matches_any(path, ignore):
+        if _in_hca(path) or is_noise(path) or matches_any(path, ignore):
             continue
         paths.append(path)
     return paths
@@ -210,60 +253,142 @@ def checkout_branch(root, name) -> None:
     git(root, "checkout", "-q", name)
 
 
-def changed_paths(root, base) -> tuple:
-    """(tracked paths that differ from `base` in the index or tree, untracked non-ignored paths)."""
-    tracked = [p for p in _lines(git(root, "diff", "--name-only", "--no-renames", "-z", base)) if not _in_hca(p)]
-    untracked = [p for p in _lines(git(root, "ls-files", "--others", "--exclude-standard", "-z")) if not _in_hca(p)]
-    return sorted(set(tracked)), sorted(set(untracked))
+def staged_outside_editable(root, spec) -> list:
+    """Paths staged in the user's real index outside the editable scope (read only; hca ignores the index but says so)."""
+    out = git(root, "diff", "--cached", "--name-only", "--no-renames", "-z", env={"GIT_OPTIONAL_LOCKS": "0"})
+    return sorted(p for p in _lines(out) if not _in_hca(p) and not is_noise(p) and not is_editable(p, spec))
 
 
-def _in_hca(path: str) -> bool:
-    return path == HCA_DIR or path.startswith(HCA_DIR + "/")
+# --- the private index -----------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def private_index(root):
+    """A throwaway index file for `GIT_INDEX_FILE`, so the user's real index is never read or written to build a candidate."""
+    directory = Path(root) / HCA_DIR / "tmp"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"index.{os.getpid()}.{next(_counter)}"
+    try:
+        yield {"GIT_INDEX_FILE": str(path)}
+    finally:
+        for leftover in (path, path.with_name(path.name + ".lock")):
+            with contextlib.suppress(OSError):
+                leftover.unlink()
 
 
-def _tracked_and_untracked(root) -> list:
-    tracked = _lines(git(root, "ls-files", "-z"))
-    return sorted(set(tracked) | set(_lines(git(root, "ls-files", "--others", "--exclude-standard", "-z"))))
+def _overlay_lists(root, base, env) -> tuple:
+    """(tracked paths whose working-tree content differs from `base`, untracked non-ignored paths), `.hca/` and noise removed.
+
+    `read-tree base` fills the private index, so "tracked" means "in the base tree" and "untracked"
+    means "not in it": whatever the user's real index says is irrelevant. `git diff` (index vs working
+    tree) compares content when the stat data is absent, which a fresh index always is.
+    """
+    git(root, "read-tree", base, env=env)
+    tracked = _lines(git(root, "diff", "--name-only", "--no-renames", "-z", env=env))
+    untracked = _lines(git(root, "ls-files", "--others", "--exclude-standard", "-z", env=env))
+    keep = lambda p: not _in_hca(p) and not is_noise(p)       # noqa: E731
+    return sorted({p for p in tracked if keep(p)}), sorted({p for p in untracked if keep(p)})
 
 
 # --- frozen files and the scope check --------------------------------------------------------------
 
+def _glob_prefix(pattern: str) -> str:
+    """The leading literal directory part of a glob ('bench/**' -> 'bench', '**/x' -> ''), where a walk can start."""
+    pattern = pattern.strip()
+    while pattern.startswith("./"):
+        pattern = pattern[2:]
+    parts = []
+    for seg in pattern.rstrip("/").split("/"):
+        if any(c in seg for c in "*?["):
+            break
+        parts.append(seg)
+    return "/".join(parts)
+
+
 def frozen_hashes(root, spec) -> dict:
-    """sha256 of every present file the spec freezes (hca.toml included), keyed by repo-relative path."""
-    out = {}
-    for path in _tracked_and_untracked(root):
-        if is_frozen(path, spec) and (Path(root) / path).is_file():
-            out[path] = digest(Path(root) / path)
+    """sha256 of every present file the spec freezes (hca.toml included), keyed by repo-relative path.
+
+    This walks the filesystem, not git's listings: a gitignored dataset or a linked path that `frozen`
+    matches is hashed and protected too. Files stream in 1 MiB chunks. Symlinked directories are followed
+    (a linked dataset is the point), once each.
+    """
+    root = Path(root)
+    starts = sorted({_glob_prefix(p) for p in spec.task.frozen} | {SPEC_FILE})
+    if "" in starts:
+        starts = [""]
+    else:
+        starts = [s for s in starts if not any(s != o and s.startswith(o + "/") for o in starts)]
+    out, seen = {}, set()
+    for start in starts:
+        full = root / start if start else root
+        if full.is_file():
+            if is_frozen(start, spec):
+                out[start] = digest(full)
+            continue
+        if not full.is_dir():
+            continue
+        for current, dirs, files in os.walk(full, followlinks=True):
+            real = os.path.realpath(current)
+            if real in seen:
+                dirs[:] = []
+                continue
+            seen.add(real)
+            rel_dir = os.path.relpath(current, root).replace(os.sep, "/")
+            rel_dir = "" if rel_dir == "." else rel_dir
+            dirs[:] = sorted(d for d in dirs if d != ".git" and not (rel_dir == "" and d == HCA_DIR))
+            for name in sorted(files):
+                rel = f"{rel_dir}/{name}" if rel_dir else name
+                path = os.path.join(current, name)
+                if is_frozen(rel, spec) and os.path.isfile(path):
+                    out[rel] = digest(path)
     return out
+
+
+def tree_entries(root, sha) -> dict:
+    """{path: (mode, blob id)} of every file in commit `sha`."""
+    out = {}
+    for entry in _lines(git(root, "ls-tree", "-r", "-z", sha)):
+        meta, _, path = entry.partition("\t")
+        mode, _kind, oid = meta.split(" ")
+        out[path] = (mode, oid)
+    return out
+
+
+def frozen_blobs(root, spec, sha) -> dict:
+    """{path: blob id} of the frozen files that exist in commit `sha` (hca.toml included)."""
+    return {p: oid for p, (_, oid) in tree_entries(root, sha).items() if is_frozen(p, spec)}
 
 
 def scope_check(root, spec, state) -> dict:
     """Is every change inside the editable scope? Returns {ok, base, changed, untracked, untracked_outside_editable, violations}.
 
-    Violations name the path and the reason. The check covers: HEAD still being the last keep (the
-    agent must not commit), every changed or new path being editable and not frozen, and every frozen
-    file still having the sha256 recorded at init (so a frozen file cannot be edited and committed,
-    or deleted, or added, without being noticed).
+    Violations name the path and the reason. The check covers: HEAD still being the last keep (the agent
+    must not commit), every changed or new path in the working tree being editable and not frozen, and
+    every frozen file (tracked, untracked or ignored) still having the sha256 recorded at init. The change
+    list is computed against the last keep's tree in a private index, so staged-only changes in the user's
+    index cannot hide anything: they are not part of the candidate at all.
     """
     base = state["last_keep"]
     violations = []
     if head(root) != base:
         violations.append({"path": "(HEAD)", "reason": f"HEAD is {head(root)[:12]} but the last keep is {base[:12]}: "
-                           "do not commit or switch commits; hca owns this branch"})
-    tracked, untracked = changed_paths(root, base)
+                           "do not commit or switch commits; hca owns this branch. If a previous `hca try` was killed in the "
+                           "middle of a keep, run any hca command again: it finishes or discards the pending keep"})
+    with private_index(root) as env:
+        tracked, untracked = _overlay_lists(root, base, env)
     # CONTRACT NOTE: untracked paths under a declared `link` (node_modules, a venv) are infrastructure shared by
     # every arm, not agent edits, so they are exempt; otherwise a dependency directory that is not gitignored
     # would invalidate every try.
     untracked = [p for p in untracked if not matches_any(p, spec.task.link)]
     # CONTRACT NOTE: an untracked file outside the editable paths (a stray log, a scratch file) is recorded and
     # warned about, not a violation: it cannot be committed or measured as part of the change. Frozen paths and
-    # hca.toml stay strict, and so do tracked edits outside editable.
+    # hca.toml stay strict, and so do tracked edits outside editable (they cannot enter the snapshot, but an agent
+    # touching the evaluator or the readme is told so before anything is measured).
     outside = [p for p in untracked if not is_frozen(p, spec) and not matches_any(p, spec.task.editable)]
     untracked = [p for p in untracked if p not in outside]
     for path in tracked + untracked:
         if is_frozen(path, spec):
             violations.append({"path": path, "reason": "frozen file changed" if path in tracked else "new file in a frozen path"})
-        elif not matches_any(path, spec.task.editable):
+        elif not is_editable(path, spec):
             violations.append({"path": path, "reason": "outside the editable paths " + str(list(spec.task.editable))})
     recorded, now = state["frozen"], frozen_hashes(root, spec)
     flagged = {v["path"] for v in violations}
@@ -285,25 +410,40 @@ def editable_changes(scope) -> list:
     return sorted(set(scope["changed"]) | set(scope["untracked"]))
 
 
-# --- patch, keep, revert ---------------------------------------------------------------------------
+def verify_history(root, spec, init_sha, tip, blobs) -> list:
+    """Problems with the committed history init_sha..tip (empty list = fine). Used by confirm and, cheaply, by try.
 
-def stage(root, paths) -> None:
-    for chunk in _chunks(paths):
-        git(root, "add", "-A", "--", *_literal(chunk))
+    The recorded state is agent-writable, so the committed history is checked on its own terms: the tip
+    descends from the original, the diff touches only editable paths, every commit in between is one of
+    hca's own (an `hca keep` or `hca revert to confirmed`, never a merge), and the frozen files in both
+    commits are the blobs recorded at init.
+    """
+    problems = []
+    if init_sha == tip:
+        return problems
+    if _run(["git", "merge-base", "--is-ancestor", init_sha, tip], root).returncode != 0:
+        return [f"the last keep {tip[:12]} does not descend from the original {init_sha[:12]}"]
+    outside = [p for p in _lines(git(root, "diff", "--name-only", "--no-renames", "-z", init_sha, tip)) if not is_editable(p, spec)]
+    if outside:
+        problems.append("the committed change touches paths outside the editable scope: " + ", ".join(outside[:5])
+                        + (f" and {len(outside) - 5} more" if len(outside) > 5 else ""))
+    for line in git(root, "log", "--reverse", "--format=%H%x1f%P%x1f%s", f"{init_sha}..{tip}").splitlines():
+        sha, parents, subject = (line.split("\x1f") + ["", ""])[:3]
+        if len(parents.split()) != 1:
+            problems.append(f"commit {sha[:12]} is a merge or a root commit; only hca's own linear commits are allowed")
+        elif not (KEEP_SUBJECT.match(subject) or subject == RESTORE_SUBJECT):
+            problems.append(f"commit {sha[:12]} ({subject[:50]!r}) is not an hca keep or an hca restore commit")
+    for sha, label in ((init_sha, "the original"), (tip, "the last keep")):
+        entries = tree_entries(root, sha)
+        for path, oid in sorted(blobs.items()):
+            if path not in entries:
+                problems.append(f"frozen file {path} is missing in {label} {sha[:12]}")
+            elif entries[path][1] != oid:
+                problems.append(f"frozen file {path} differs from the recorded original in {label} {sha[:12]}")
+    return problems
 
 
-def capture_patch(root, spec, base) -> tuple:
-    """Stage the changed editable paths and return (patch text, those paths). `git diff --cached <base>`."""
-    tracked, untracked = changed_paths(root, base)
-    paths = [p for p in sorted(set(tracked) | set(untracked)) if is_editable(p, spec)]
-    stage(root, paths)
-    return git(root, "diff", "--cached", base), paths
-
-
-def raw_patch(root, base) -> str:
-    """Tracked differences from `base`, unstaged and unfiltered (for attempts that failed the scope check)."""
-    return git(root, "diff", base)
-
+# --- snapshots, patch, keep, revert ----------------------------------------------------------------
 
 def _identity_args(root) -> list:
     """Fallback committer identity, only if the user has none configured (commit would otherwise fail)."""
@@ -312,45 +452,110 @@ def _identity_args(root) -> list:
     return [] if have else ["-c", "user.name=hca", "-c", "user.email=hca@localhost"]
 
 
-def commit(root, message, allow_empty=False) -> str:
-    args = [*_identity_args(root), "commit", "-q", "-m", message]
-    if allow_empty:
-        args.append("--allow-empty")
-    git(root, *args)
-    return head(root)
+def commit_tree(root, tree, parent, message) -> str:
+    """A commit object for `tree` on top of `parent` (no branch moves, no hooks).
+
+    CONTRACT NOTE: because a keep is `commit-tree` + `update-ref` (A2.1), the user's pre-commit / commit-msg hooks
+    and commit signing do not run on hca's commits. The measured tree is committed byte for byte; a hook that
+    rewrote or rejected it would break "committed tree == measured tree". The old `git commit` path ran hooks.
+    """
+    return git(root, *_identity_args(root), "commit-tree", tree, "-p", parent, "-m", message).strip()
 
 
-def keep(root, spec, scope, message) -> str:
-    """Commit exactly the changed editable paths on the branch and return the new sha."""
-    paths = [p for p in editable_changes(scope) if is_editable(p, spec)]
-    stage(root, paths)
-    return commit(root, message)
+def _update_index(root, env, paths) -> None:
+    for chunk in _chunks(paths):
+        git(root, "update-index", "--add", "--remove", "-z", "--stdin", env=env, input="\0".join(chunk) + "\0")
+
+
+def snapshot(root, spec, base, message, paths) -> dict:
+    """The candidate commit: `base`'s tree with the working-tree contents of `paths` (editable) overlaid.
+
+    Built in a private index: `read-tree base`, then `update-index --add --remove` per path (a missing file is
+    removed), `write-tree`, `commit-tree -p base`. Returns {sha, tree, paths}. Nothing in the user's repo moves.
+    """
+    paths = [p for p in paths if is_editable(p, spec) and not is_noise(p)]
+    with private_index(root) as env:
+        git(root, "read-tree", base, env=env)
+        _update_index(root, env, paths)
+        tree = git(root, "write-tree", env=env).strip()
+    return {"sha": commit_tree(root, tree, base, message), "tree": tree, "paths": paths}
+
+
+def working_tree_hash(root, spec, base) -> str:
+    """The tree `snapshot` would produce right now (no commit). Keep compares this with the measured snapshot's tree."""
+    with private_index(root) as env:
+        tracked, untracked = _overlay_lists(root, base, env)
+        _update_index(root, env, [p for p in tracked + untracked if is_editable(p, spec)])
+        return git(root, "write-tree", env=env).strip()
+
+
+def uncommitted_patch(root, spec, base) -> str:
+    """The working tree's editable changes against `base` as a patch (built from a private-index tree, nothing staged)."""
+    with private_index(root) as env:
+        tracked, untracked = _overlay_lists(root, base, env)
+        _update_index(root, env, [p for p in tracked + untracked if is_editable(p, spec)])
+        tree = git(root, "write-tree", env=env).strip()
+    return git(root, "diff", "--no-renames", base, tree)
+
+
+def attempt_ref(n: int) -> str:
+    return f"refs/hca/attempts/{n:04d}"
+
+
+def set_ref(root, ref, sha) -> None:
+    git(root, "update-ref", ref, sha)
+
+
+def patch_between(root, base, sha) -> str:
+    return git(root, "diff", "--no-renames", base, sha)
+
+
+def raw_patch(root, base) -> str:
+    """Tracked differences between the working tree and `base`, for attempts that failed the scope check (private index)."""
+    with private_index(root) as env:
+        git(root, "read-tree", base, env=env)
+        return git(root, "diff", "--no-renames", env=env)
+
+
+def advance_branch(root, branch, new_sha, old_sha) -> None:
+    """Move the branch to the measured snapshot, then reset the index to it (mixed: the working tree already matches on editable paths).
+
+    CONTRACT NOTE: the mixed reset (as A2.1 specifies) resets the whole index, so anything the user had staged
+    outside the editable paths becomes an unstaged working-tree change. `hca try` warns about such staging first.
+    """
+    git(root, "update-ref", "-m", "hca keep", f"refs/heads/{branch}", new_sha, old_sha)
+    git(root, "reset", "-q", new_sha)
+
+
+def finish_advance(root, sha) -> None:
+    """Idempotent second half of advance_branch, used when a crash left the branch moved but the index not."""
+    git(root, "reset", "-q", sha)
 
 
 def revert(root, spec, last_keep) -> dict:
     """Put the editable paths back to `last_keep`; touch nothing else.
 
-    Unstage the changed editable paths, check them out from `last_keep` (tracked ones), and delete
-    untracked files that match an editable glob (these are only files the agent created). Anything
-    outside the editable globs, including untracked files of the user's, is left exactly as it was.
+    Editable paths that differ from `last_keep` are restored from it through a private index
+    (`checkout-index`), and untracked files that match an editable glob are deleted (only files the
+    agent created). The user's real index is then reset for exactly those paths so nothing stays staged.
+    Anything outside the editable globs, including untracked files of the user's, is left as it was.
     """
-    tracked, untracked = changed_paths(root, last_keep)
-    touched = [p for p in sorted(set(tracked) | set(untracked)) if is_editable(p, spec)]
-    for chunk in _chunks(touched):
+    with private_index(root) as env:
+        tracked, untracked = _overlay_lists(root, last_keep, env)
+        restore = [p for p in tracked if is_editable(p, spec)]
+        remove = [p for p in untracked if is_editable(p, spec)]
+        for chunk in _chunks(restore):
+            git(root, "checkout-index", "-f", "-q", "-z", "--stdin", env=env, input="\0".join(chunk) + "\0")
+    for chunk in _chunks(sorted(restore + remove)):
         git(root, "reset", "-q", "--", *_literal(chunk))
-    in_keep = set(_lines(git(root, "ls-tree", "-r", "--name-only", "-z", last_keep)))
-    for chunk in _chunks([p for p in touched if p in in_keep]):
-        git(root, "checkout", last_keep, "--", *_literal(chunk))
     deleted = []
-    for path in _lines(git(root, "ls-files", "--others", "--exclude-standard", "-z")):   # after the reset: also files the agent had `git add`ed
-        if _in_hca(path) or not is_editable(path, spec):
-            continue                                # also skips frozen and linked paths
+    for path in remove:
         full = Path(root) / path
         if full.is_file() or full.is_symlink():
             full.unlink()
             deleted.append(path)
             _remove_empty_parents(Path(root), full.parent)
-    return {"restored": [p for p in touched if p in in_keep], "deleted": deleted}
+    return {"restored": restore, "deleted": deleted}
 
 
 def _remove_empty_parents(root: Path, directory: Path) -> None:
@@ -365,21 +570,34 @@ def _remove_empty_parents(root: Path, directory: Path) -> None:
         directory = directory.parent
 
 
+def restore_commit(root, spec, target, message) -> dict:
+    """A commit on top of HEAD whose editable paths equal those at `target`, built in a private index. Returns {sha, here}."""
+    here = head(root)
+    want, have = tree_entries(root, target), tree_entries(root, here)
+    with private_index(root) as env:
+        git(root, "read-tree", here, env=env)
+        for path in sorted(set(want) | set(have)):
+            if not is_editable(path, spec) or want.get(path) == have.get(path):
+                continue
+            if path in want:
+                mode, oid = want[path]
+                git(root, "update-index", "--add", "--cacheinfo", f"{mode},{oid},{path}", env=env)
+            else:
+                git(root, "update-index", "--force-remove", "--", path, env=env)
+        tree = git(root, "write-tree", env=env).strip()
+    return {"sha": commit_tree(root, tree, here, message), "here": here}
+
+
 def restore_to(root, spec, target, message) -> str:
     """Make the editable paths equal to those at `target` as a new commit on the branch; return its sha.
 
-    Used by a failed confirm. It first reverts uncommitted editable edits to HEAD, then restores or
-    removes only the editable files that differ between HEAD and `target`.
+    Used by a failed confirm: build the restore commit privately, move the branch to it, then sync the
+    working tree's editable paths (which also discards uncommitted editable edits).
     """
-    here = head(root)
-    revert(root, spec, here)
-    differing = [p for p in _lines(git(root, "diff", "--name-only", "--no-renames", "-z", target, here)) if is_editable(p, spec)]
-    in_target = set(_lines(git(root, "ls-tree", "-r", "--name-only", "-z", target)))
-    for chunk in _chunks([p for p in differing if p in in_target]):
-        git(root, "checkout", target, "--", *_literal(chunk))
-    for chunk in _chunks([p for p in differing if p not in in_target]):
-        git(root, "rm", "-q", "-f", "--", *_literal(chunk))
-    return commit(root, message, allow_empty=True)
+    made = restore_commit(root, spec, target, message)
+    advance_branch(root, current_branch(root), made["sha"], made["here"])
+    revert(root, spec, made["sha"])
+    return made["sha"]
 
 
 def diff_stat(root, base, tip) -> str:

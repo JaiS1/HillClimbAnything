@@ -62,7 +62,7 @@ class InitTests(repokit.RepoTestCase):
         self.assertTrue((self.root / ".hca" / "noise.json").is_file())
         self.assertTrue((self.root / ".hca" / "VERDICTS.md").is_file())
         self.assertTrue((self.root / ".hca" / "arms" / state["init_sha"][:12]).is_dir())
-        self.assertIn("Baseline A/A (5 blocks", text)
+        self.assertIn("Baseline A/A (8 blocks", text)
         self.assertIn("Useful effect 5%: OK", text)
         with self.assertRaises(HcaError) as caught:
             self.init()
@@ -266,38 +266,37 @@ class TryTests(repokit.RepoTestCase):
         self.set_speed(21)
         self.assertEqual(self.try_("one")[0], 0)
         one12 = self.repo.head()[:12]
-        self.assertEqual(self.arm_dirs(), {init12})                      # init is always kept; keep one's own arm is built lazily
+        self.assertEqual(self.arm_dirs(), {init12, one12})               # the keep's own arm (the candidate) is the next baseline
         self.set_speed(14)
         self.assertEqual(self.try_("two")[0], 0)
-        self.assertEqual(self.arm_dirs(), {init12})                      # keep one was the baseline for this try, now pruned
         two12 = self.repo.head()[:12]
+        self.assertEqual(self.arm_dirs(), {init12, two12})               # keep one was the baseline for this try, now pruned
         self.assertEqual(self.confirm()[0], 0)
-        self.assertEqual(self.arm_dirs(), {init12, two12})               # confirm builds the last keep's arm; it is also last_confirmed
+        self.assertEqual(self.arm_dirs(), {init12, two12})               # confirm: init and the last keep, which is also last_confirmed
         self.set_speed(10)
         self.assertEqual(self.try_("three")[0], 0)
         three12 = self.repo.head()[:12]
-        self.assertEqual(self.arm_dirs(), {init12, two12})
+        self.assertEqual(self.arm_dirs(), {init12, two12, three12})
         self.set_speed("10.0000001")
         self.assertEqual(self.try_("noop")[0], 1)
-        self.assertEqual(self.arm_dirs(), {init12, two12, three12})      # reverts do not prune: the baseline is still the last keep
+        self.assertEqual(self.arm_dirs(), {init12, two12, three12})      # the reverted candidate's worktree is pruned after the record
         listed = self.repo.git("worktree", "list")
         self.assertNotIn(one12, listed)
         self.assertEqual(len(listed.splitlines()), 4)                    # the checkout plus three arms
 
-    def test_a_failing_commit_hook_turns_a_keep_into_a_revert_with_gits_message(self):
+    def test_a_keep_does_not_run_the_users_commit_hooks(self):
+        # CONTRACT NOTE (A2): the keep is `commit-tree` + `update-ref`, so pre-commit and commit-msg hooks do not run on
+        # hca's commits. The measured snapshot is committed byte for byte; a hook that rewrites or rejects it would break that.
         hook = self.root / ".git" / "hooks" / "pre-commit"
-        hook.write_text("#!/bin/sh\necho 'no commits today' >&2\nexit 1\n")
+        hook.write_text("#!/bin/sh\necho ran > \"$HOOKOUT\"\nexit 1\n")
         hook.chmod(0o755)
-        before = self.repo.head()
+        out = self.tmp / "hook.out"
         self.set_speed(21)
-        code, text = self.try_("faster")
-        self.assertEqual(code, 1, text)
-        self.assertIn("commit failed", text)
-        self.assertIn("no commits today", text)
-        self.assertEqual(self.repo.head(), before)
-        self.assertEqual(self.repo.read("src/speed.txt"), "30\n")
-        self.assertEqual(self.state()["last_keep"], before)
-        self.assertEqual(self.attempt(1)["verdict"], "revert")
+        with env(HOOKOUT=str(out)):
+            code, text = self.try_("faster")
+        self.assertEqual(code, 0, text)
+        self.assertFalse(out.exists())
+        self.assertEqual(self.state()["last_keep"], self.repo.head())
 
     def test_a_second_keep_is_measured_against_the_first(self):
         self.set_speed(21)
@@ -308,7 +307,7 @@ class TryTests(repokit.RepoTestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(self.attempt(2)["base"], first)
         self.assertEqual(self.repo.git("log", "-1", "--format=%P"), first)
-        self.assertEqual(self.arm_dirs(), {self.state()["init_sha"][:12]})   # the first keep's baseline was pruned after the second keep
+        self.assertEqual(self.arm_dirs(), {self.state()["init_sha"][:12], self.repo.head()[:12]})   # the first keep's arm was pruned after the second keep
         self.assertAlmostEqual(self.attempt(2)["estimate"], -33.3, delta=4)  # 21 -> 14 is a 33% cut, measured against the first keep (not -53% from the original)
 
 
@@ -393,18 +392,21 @@ class BuildTests(repokit.RepoTestCase):
     def test_builds_run_once_per_baseline_sha_and_once_per_try(self):
         log = self.tmp / "state" / "builds.log"
         self.with_build("import os; d = os.environ['BENCH_STATE']; os.makedirs(d, exist_ok=True); "
-                        "open(os.path.join(d, 'builds.log'), 'a').write(os.environ['HCA_ARM'] + chr(10))")
-        arm_builds = lambda: sorted(log.read_text().split())
-        self.assertEqual(arm_builds(), ["baseline", "candidate"])
+                        "open(os.path.join(d, 'builds.log'), 'a').write(os.path.basename(os.getcwd()) + chr(10))")
+        arm_builds = lambda: log.read_text().split()
+        init12 = self.state()["init_sha"][:12]
+        self.assertEqual(len(arm_builds()), 2)                          # init: the baseline arm and the A/A candidate arm, one build each
+        self.assertIn(init12, arm_builds())
         self.set_speed(21)
         self.assertEqual(self.try_("one")[0], 0)
-        self.assertEqual(arm_builds(), ["baseline", "candidate", "candidate"])
+        one12 = self.repo.head()[:12]
+        self.assertEqual(arm_builds()[2:], [one12])                     # the candidate is built once, in its own worktree
         self.set_speed(14)
-        self.assertEqual(self.try_("two")[0], 0)                        # a new last_keep sha: one more baseline build
-        self.assertEqual(arm_builds(), ["baseline", "baseline", "candidate", "candidate", "candidate"])
+        self.assertEqual(self.try_("two")[0], 0)                        # keep one's arm is the baseline now: already built, not rebuilt
+        two12 = self.repo.head()[:12]
+        self.assertEqual(arm_builds()[3:], [two12])
         markers = sorted(p.name for p in (self.root / ".hca" / "arms").glob("*.built"))
-        self.assertEqual(markers, [self.state()["init_sha"][:12] + ".built"])   # the markers and logs of pruned arms went with them
-        self.assertEqual(sorted(p.name for p in (self.root / ".hca" / "arms").glob("*.build")), [self.state()["init_sha"][:12] + ".build"])
+        self.assertEqual(markers, sorted([init12 + ".built", two12 + ".built"]))   # the markers of pruned arms went with them
 
 
 class GuardTests(repokit.RepoTestCase):
@@ -483,7 +485,7 @@ class ExtensionAndDeadlineTests(repokit.RepoTestCase):
         with env(BENCH_JITTER="0.10"):
             self.assertEqual(self.init(force=True)[0], 0)
             self.set_speed(28.5)
-            code, text = self.try_("small win", seed=4)
+            code, text = self.try_("small win", seed=1)
         a = self.attempt(1)
         self.assertTrue(a["extended"], a)
         self.assertEqual((a["blocks"], a["look"], a["looks"]), (20, 2, 2))
@@ -497,7 +499,7 @@ class ExtensionAndDeadlineTests(repokit.RepoTestCase):
         with env(BENCH_JITTER="0.10"):
             self.assertEqual(self.init(force=True)[0], 0)
             self.set_speed(28.8)
-            code, text = self.try_("tiny win", seed=1)
+            code, text = self.try_("tiny win", seed=4)
         a = self.attempt(1)
         self.assertTrue(a["extended"])
         self.assertEqual((code, a["verdict"], a["blocks"]), (1, "revert", 20), text)
@@ -507,7 +509,7 @@ class ExtensionAndDeadlineTests(repokit.RepoTestCase):
         with env(BENCH_JITTER="0.08"):
             self.assertEqual(self.init(force=True)[0], 0)
             self.set_speed(29.4)
-            code, text = self.try_("maybe", seed=2)
+            code, text = self.try_("maybe", seed=5)
         a = self.attempt(1)
         self.assertEqual((code, a["verdict"], a["extended"]), (1, "revert", False), text)
         self.assertTrue(a["includes_useful"])
@@ -535,7 +537,7 @@ class ExtensionAndDeadlineTests(repokit.RepoTestCase):
         self.assertEqual((code, a["verdict"]), (2, "void"), text)
         self.assertTrue(any("try_seconds" in r for r in a["reasons"]), a["reasons"])
         self.assertLess(a["wall_seconds"], 10)                           # it stopped; it did not run all 20 runs (>= 5 s)
-        self.assertEqual(self.repo.read("src/speed.txt"), "30\n")        # void -> reverted
+        self.assertEqual(self.repo.read("src/speed.txt"), "21\n")        # A2: void keeps the edits (nothing was decided)
         self.assertEqual(self.repo.head(), self.state()["last_keep"])
 
 

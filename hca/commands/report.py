@@ -3,7 +3,9 @@
 The headline is the confirmed delta against the original (if a confirm has passed), then the
 unconfirmed cumulative. The attempts table includes the invalid ones, because a validity rate that
 hides them would flatter the run. Reverts whose interval still allowed the useful effect are called
-out: no evidence is not no effect.
+out: no evidence is not no effect. It also says how many false keeps chance alone allows so far
+(tries x 1%), and `--referee` shows a human what the referee store holds (the confirm detail the agent is
+never shown, the reset log).
 """
 
 from __future__ import annotations
@@ -17,6 +19,8 @@ from ..spec import load_spec
 
 def add_report_arguments(parser) -> None:
     parser.add_argument("--md", help="also write the report as markdown to this path")
+    parser.add_argument("--referee", action="store_true",
+                        help="show the referee store's detail (confirm numbers, reset log). For the human, not the agent")
 
 
 def add_status_arguments(parser) -> None:
@@ -80,10 +84,12 @@ def build(root, spec, state, attempts, confirms) -> dict:
     unproven = [a for a in attempts if a.get("verdict") == "revert" and a.get("valid") and a.get("includes_useful")]
     mech = _mechanism(attempts, spec.mechanism.metrics) if spec else []
     sliced = next((c for c in reversed(confirms) if c.get("slices")), None)
+    tries = ledger.tries_used(root, state["task"])
     tip = state.get("last_confirmed") or state["last_keep"]
     stat = gitops.diff_stat(root, state["init_sha"], tip) if tip != state["init_sha"] else ""
     return {"mode": mode, "headline": head, "rows": rows, "valid": valid, "total": total, "unproven": unproven,
-            "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip}
+            "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip, "tries": max(tries, total),
+            "resets": (ledger.load_store(state["task"]) or {}).get("resets", [])}
 
 
 def render_text(state, spec, data) -> str:
@@ -104,6 +110,9 @@ def render_text(state, spec, data) -> str:
     pct = 100 * data["valid"] / data["total"] if data["total"] else 0
     lines += ["", f"Validity rate: {data['valid']} of {data['total']} tries valid ({pct:.0f}%). "
               "Invalid = scope violation, no change, build/guard failure, crash, or an unfinished measurement."]
+    lines += ["", expected_false_keeps(data["tries"])]
+    if data["resets"]:
+        lines += [f"The baseline was re-initialised {len(data['resets'])} time(s) (see `hca report --referee`): the original is the latest one."]
     if data["mechanism"]:
         lines += ["", "Mechanism metrics (kept attempts, baseline -> candidate medians)"] + ["  " + m for m in data["mechanism"]]
     if data["slices"]:
@@ -139,7 +148,7 @@ def render_markdown(state, spec, data) -> str:
     else:
         out.append("None yet.")
     pct = 100 * data["valid"] / data["total"] if data["total"] else 0
-    out += ["", f"**Validity rate:** {data['valid']} of {data['total']} tries valid ({pct:.0f}%)."]
+    out += ["", f"**Validity rate:** {data['valid']} of {data['total']} tries valid ({pct:.0f}%).", "", expected_false_keeps(data["tries"])]
     if data["mechanism"]:
         out += ["", "## Mechanism metrics", ""] + [f"- {m}" for m in data["mechanism"]]
     if data["slices"]:
@@ -157,8 +166,40 @@ def render_markdown(state, spec, data) -> str:
     return "\n".join(out) + "\n"
 
 
+def expected_false_keeps(tries) -> str:
+    """The family-wise honesty line: each try is a 1% test, so chance alone allows about tries x 1% false keeps."""
+    return (f"Expected false keeps so far <= {tries} tries x 1% = {tries * 0.01:.2f} "
+            "(an upper bound from chance alone; `hca confirm` is the check).")
+
+
+def render_referee(task, root) -> str:
+    """What the referee store holds, for a human: the store record, every confirm in full (minus per-item and per-block arrays), resets."""
+    store = ledger.load_store(task)
+    lines = [f"Referee store for {task}: {ledger.store_dir(task)}", ""]
+    if store is None:
+        return "\n".join(lines + ["No record."]) + "\n"
+    lines += [f"original {str(store.get('init_sha'))[:12]}, confirms used {store.get('confirms_used', 0)}, "
+              f"attempts recorded {len(store.get('attempts', []))}, frozen files {len(store.get('frozen', {}))}"]
+    for r in store.get("resets", []):
+        lines.append(f"reset at {r.get('at')}: {str(r.get('previous_init_sha'))[:12]} -> {str(r.get('new_init_sha'))[:12]} "
+                     f"(confirms used then: {r.get('confirms_used')}; HCA_ALLOW_RESET set: {r.get('allowed_by_env')})")
+    lines += ["", "Confirms"]
+    confirms = ledger.read_confirms(task)
+    if not confirms:
+        lines.append("  none")
+    for c in confirms:
+        bulky = {k: v for k, v in c.items() if k not in ("scores", "per_item", "arm_medians", "slices")}
+        lines.append("  " + ", ".join(f"{k}={v}" for k, v in bulky.items()))
+    lines.append("")
+    lines.append(f"Per-block scores, per-item values and slices are in {ledger.store_dir(task) / 'confirms.jsonl'}.")
+    return "\n".join(lines) + "\n"
+
+
 def run(args, out=print, cwd=None) -> int:
     root, spec, state = _context(cwd)
+    if getattr(args, "referee", False):
+        out(render_referee(state["task"], root).rstrip("\n"))
+        return 0
     attempts = ledger.read_attempts(root)
     data = build(root, spec, state, attempts, ledger.read_confirms(state["task"]))
     out(render_text(state, spec, data).rstrip("\n"))
@@ -180,7 +221,7 @@ def run_status(args=None, out=print, cwd=None) -> int:
     out(f"task {state['task']}  branch {state['branch']}" + ("" if here == state["branch"] else f"  (you are on {here})"))
     out(f"init {state['init_sha'][:12]}  last keep {state['last_keep'][:12]}  last confirmed "
         + (state["last_confirmed"][:12] if state.get("last_confirmed") else "none"))
-    out(f"tries {len(attempts)} / {max_tries}  (kept {kept}, valid {sum(1 for a in attempts if a.get('valid'))})   "
+    out(f"tries {max(len(attempts), ledger.tries_used(root, state['task']))} / {max_tries}  (kept {kept}, valid {sum(1 for a in attempts if a.get('valid'))})   "
         f"confirms {ledger.confirms_used(state, state['task'])} / {max_confirms}")
     out(ledger.headline(state, attempts)["text"])
     return 0

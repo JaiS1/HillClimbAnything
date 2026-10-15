@@ -8,7 +8,7 @@ import statistics
 from pathlib import Path
 
 from .. import gitops, ledger, paired, stats
-from ..core import HcaError
+from ..core import HcaError, read_json, write_json
 from ..spec import load_spec
 
 ITEMS_ALPHA = 0.02          # two-sided, so the one-sided lower bound sits at 1%: the same per-try level as blocks mode
@@ -16,18 +16,91 @@ ITEMS_MIN_UNITS = 8
 EXIT_KEEP, EXIT_REVERT, EXIT_INVALID, EXIT_USAGE = 0, 1, 2, 3
 
 
-def open_session(cwd=None, on_branch=True) -> tuple:
-    """(root, spec, state) for the repo that holds `cwd`, checking we are on the task branch."""
+PENDING_KEEP = "pending-keep.json"
+
+
+def pending_path(root) -> Path:
+    return ledger.hca_dir(root) / PENDING_KEEP
+
+
+def write_pending(root, data) -> None:
+    ledger.hca_dir(root).mkdir(parents=True, exist_ok=True)
+    write_json(pending_path(root), data)
+
+
+def clear_pending(root) -> None:
+    pending_path(root).unlink(missing_ok=True)
+
+
+def open_session(cwd=None, on_branch=True, out=print) -> tuple:
+    """(root, spec, state) for the repo that holds `cwd`, checking we are on the task branch.
+
+    Also: refuses repos hca v1 cannot handle, makes `state` agree with the referee store (the store wins, with a
+    warning), and finishes or discards a keep that an earlier run was killed in the middle of.
+    """
     root = gitops.repo_root(cwd)
     state = ledger.load_state(root)
     spec = load_spec(root / "hca.toml")
     if spec.task.name != state["task"]:
         raise HcaError(f"hca.toml says task {spec.task.name!r} but this session is {state['task']!r}. "
                        "Fix: restore hca.toml (it is frozen), or run `hca init --reset`.")
+    gitops.refuse_unsupported(root)
+    ledger.reconcile_state(state, state["task"], out)
+    reconcile_pending(root, spec, state, out)
     if on_branch and gitops.current_branch(root) != state["branch"]:
         raise HcaError(f"you are on {gitops.current_branch(root)!r} but this session lives on {state['branch']!r}. "
                        f"Fix: `git checkout {state['branch']}`.")
     return root, spec, state
+
+
+def reconcile_pending(root, spec, state, out=print) -> None:
+    """Finish or discard a keep (or a confirm restore) whose process died after writing `.hca/pending-keep.json`.
+
+    CONTRACT NOTE: A2.5 describes the marker for `try`; confirm's reset-to-confirmed commit uses the same marker
+    (`kind: restore`) because it has the same window between moving the branch and saving the state.
+
+    The marker is written before the branch moves. If the branch tip is now the snapshot, the move happened: adopt it
+    (index reset, state, attempt record). If the tip is still the old keep, it never happened: drop the marker. Anything
+    else is left alone for a human, and the HEAD-mismatch message points back here.
+    """
+    path = pending_path(root)
+    if not path.exists():
+        return
+    try:
+        pending = read_json(path)
+        sha, old, kind = pending["snapshot_sha"], pending["last_keep"], pending.get("kind", "keep")
+    except (ValueError, KeyError, TypeError):
+        path.unlink(missing_ok=True)
+        out("warning: removed an unreadable .hca/pending-keep.json.")
+        return
+    tip = gitops.branch_tip(root, state["branch"])
+    adir = ledger.attempt_path(root, pending["n"]) if kind == "keep" and "n" in pending else None
+    if tip == sha and state["last_keep"] == old:
+        gitops.finish_advance(root, sha)
+        state["last_keep"] = sha
+        if kind == "keep":
+            record = dict(pending.get("record") or {})
+            record.update(n=pending["n"], verdict="keep", valid=True, commit=sha, confirm="pending")
+            record["reasons"] = list(record.get("reasons", [])) + ["recovered: hca was stopped after moving the branch and before writing this record"]
+            adir.mkdir(parents=True, exist_ok=True)
+            write_json(adir / "verdict.json", record)
+        else:
+            for a in ledger.read_attempts(root):
+                if a.get("confirm") == "pending":
+                    ledger.update_attempt(root, a["n"], confirm="unconfirmed")
+        ledger.refresh_verdicts(root, state, spec)
+        path.unlink(missing_ok=True)
+        out(f"warning: finished an interrupted {'keep' if kind == 'keep' else 'confirm reset'}: the branch is at {sha[:12]}.")
+    elif tip == old:
+        if adir is not None and not (adir / "verdict.json").exists():
+            adir.mkdir(parents=True, exist_ok=True)
+            record = dict(pending.get("record") or {"n": pending["n"]})
+            record.update(verdict="void", valid=False, reasons=["hca was stopped before the keep was applied; nothing was committed"])
+            record.pop("commit", None)
+            write_json(adir / "verdict.json", record)
+            ledger.refresh_verdicts(root, state, spec)
+        path.unlink(missing_ok=True)
+        out("warning: discarded a pending keep that was never applied.")
 
 
 def make_rng(seed=None) -> tuple:

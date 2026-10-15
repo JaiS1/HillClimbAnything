@@ -62,14 +62,14 @@ class QuickTests(unittest.TestCase):
         self.assertRegex(text, r"Your useful effect 5%: (needs 20 blocks|OK|too noisy)")
 
     def test_command_without_metric_is_measured_by_wall_time(self):
-        code, text = self.quick(sys.executable, "-c", "pass", blocks=5)
+        code, text = self.quick(sys.executable, "-c", "pass", blocks=8)
         self.assertEqual(code, 0)
         self.assertIn("wall time", text)
-        self.assertIn("5 A/A blocks", text)
+        self.assertIn("8 A/A blocks", text)
 
     def test_item_json_is_measured(self):
         line = '{"metric":"lat","items":[{"id":"a","runs":[10,11]},{"id":"b","runs":[20,19]}]}'
-        code, text = self.quick(sys.executable, "-c", f"print({line!r})", blocks=5)
+        code, text = self.quick(sys.executable, "-c", f"print({line!r})", blocks=8)
         self.assertEqual(code, 0)
         self.assertIn("item JSON (lat)", text)
         self.assertIn("No noise seen at all", text)
@@ -90,9 +90,9 @@ class QuickTests(unittest.TestCase):
         self.assertIn("Raise --budget-seconds", "\n".join(lines))
 
     def test_save_is_opt_in(self):
-        self.quick(*self.jitter(0.002), blocks=5)
+        self.quick(*self.jitter(0.002), blocks=8)
         self.assertFalse((self.tmp / ".hca").exists())
-        args = Namespace(blocks=5, budget_seconds=60.0, useful="5%", direction="min", metric=None, save=True,
+        args = Namespace(blocks=8, budget_seconds=60.0, useful="5%", direction="min", metric=None, save=True,
                          command=list(self.jitter(0.002)))
         quick.run(args, out=lambda _: None)
         self.assertTrue((self.tmp / ".hca" / "quick.json").is_file())
@@ -100,7 +100,7 @@ class QuickTests(unittest.TestCase):
     def test_cli_splits_the_command_at_double_dash(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = cli.main(["quick", "--blocks", "5", "--useful", "10%", "--", sys.executable, "-c", "print('METRIC x=1')", "--blocks"])
+            code = cli.main(["quick", "--blocks", "8", "--useful", "10%", "--", sys.executable, "-c", "print('METRIC x=1')", "--blocks"])
         self.assertEqual(code, 0)
         self.assertIn("METRIC x", buffer.getvalue())
         self.assertIn("Your useful effect 10%", buffer.getvalue())
@@ -110,6 +110,7 @@ class QuickTests(unittest.TestCase):
         with contextlib.redirect_stderr(err):
             self.assertEqual(cli.main(["quick", "--"]), 3)
             self.assertEqual(cli.main(["quick", "--blocks", "2", "--", "true"]), 3)
+            self.assertEqual(cli.main(["quick", "--blocks", "7", "--", "true"]), 3)             # A2: noise needs at least 8 A/A blocks
             for name in ("init", "try", "confirm", "report", "status"):
                 self.assertEqual(cli.main([name]), 3)
         self.assertIn("not inside a git repository", err.getvalue())    # the part-B commands need a repo and a spec

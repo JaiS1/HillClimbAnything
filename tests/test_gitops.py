@@ -110,7 +110,7 @@ class GitopsTests(repokit.RepoTestCase):
         hook.write_text('#!/bin/sh\n{ echo "$GIT_TERMINAL_PROMPT"; echo "$GIT_EDITOR"; readlink /proc/self/fd/0; } > "$HOOKOUT"\n')
         hook.chmod(0o755)
         with repokit.env(HOOKOUT=str(out)):
-            gitops.commit(self.root, "hook probe", allow_empty=True)
+            gitops.git(self.root, "commit", "-q", "--allow-empty", "-m", "hook probe")
         prompt, editor, stdin = out.read_text().split()
         self.assertEqual((prompt, stdin), ("0", "/dev/null"))
         self.assertIn(editor, ("true", ":"))                              # git itself sets : for hooks of a commit with -m
@@ -120,8 +120,56 @@ class GitopsTests(repokit.RepoTestCase):
         hook.write_text('#!/bin/sh\necho "lint says no" >&2\nexit 1\n')
         hook.chmod(0o755)
         with self.assertRaises(HcaError) as caught:
-            gitops.commit(self.root, "will fail", allow_empty=True)
+            gitops.git(self.root, "commit", "-q", "--allow-empty", "-m", "will fail")
         self.assertIn("lint says no", str(caught.exception))
+
+    def test_git_calls_have_a_timeout_that_surfaces_as_an_hca_error(self):
+        with self.assertRaises(HcaError) as caught:
+            gitops._run(["sh", "-c", "sleep 5"], self.root, timeout=0.3)
+        self.assertIn("did not finish within", str(caught.exception))
+        self.assertEqual(gitops.GIT_TIMEOUT, 120)
+
+    def test_noise_files_are_ignored_everywhere(self):
+        for path in ("src/__pycache__/x.cpython-311.pyc", "src/a.pyc", ".DS_Store", "src/sub/.DS_Store", "__pycache__/m.py"):
+            self.assertTrue(gitops.is_noise(path), path)
+        for path in ("src/pycache.py", "src/a.py", "src/DS_Store"):
+            self.assertFalse(gitops.is_noise(path), path)
+
+    def test_refuses_submodules_and_unfinished_merges(self):
+        gitops.refuse_unsupported(self.root)
+        self.repo.write(".gitmodules", "[submodule \"x\"]\n")
+        with self.assertRaises(HcaError) as caught:
+            gitops.refuse_unsupported(self.root)
+        self.assertIn("submodules", str(caught.exception))
+        (self.root / ".gitmodules").unlink()
+        for name, word in (("MERGE_HEAD", "merge"), ("CHERRY_PICK_HEAD", "cherry-pick")):
+            marker = self.root / ".git" / name
+            marker.write_text(self.base + "\n")
+            with self.assertRaises(HcaError) as caught:
+                gitops.refuse_unsupported(self.root)
+            self.assertIn(word, str(caught.exception))
+            marker.unlink()
+        (self.root / ".git" / "rebase-merge").mkdir()
+        with self.assertRaises(HcaError) as caught:
+            gitops.refuse_unsupported(self.root)
+        self.assertIn("rebase", str(caught.exception))
+
+    def test_frozen_hashes_walk_the_filesystem_including_ignored_and_linked_paths(self):
+        # A2.2: a gitignored dataset can be both linked and protected; git's listings never see it.
+        self.repo.write("hca.toml", repokit.toml(frozen='["bench/**", "data/**"]', extra_task='link = ["data"]'))
+        self.repo.write(".gitignore", "data/\n")
+        self.repo.commit_all("ignored frozen dataset")
+        s = specmod.load_spec(self.root / "hca.toml")
+        self.repo.write("data/big.bin", "x" * 3_000_000)               # larger than one 1 MiB chunk
+        hashes = gitops.frozen_hashes(self.root, s)
+        self.assertEqual(set(hashes), {"hca.toml", "bench/run.sh", "bench/items.py", "data/big.bin"})
+        import hashlib
+        self.assertEqual(hashes["data/big.bin"], hashlib.sha256(b"x" * 3_000_000).hexdigest())
+        state = {"last_keep": self.repo.head(), "frozen": hashes}
+        self.assertTrue(gitops.scope_check(self.root, s, state)["ok"])
+        self.repo.write("data/big.bin", "tampered")
+        reasons = {v["path"]: v["reason"] for v in gitops.scope_check(self.root, s, state)["violations"]}
+        self.assertIn("differs from the sha256 recorded", reasons["data/big.bin"])
 
     def test_ignored_files_are_not_scope_violations(self):
         # an untracked file that the user's own .gitignore covers never shows up in `ls-files --others --exclude-standard`
@@ -162,25 +210,52 @@ class GitopsTests(repokit.RepoTestCase):
         self.assertEqual(self.reasons(self.scope())["bench/items.py"], "frozen file deleted")
 
     # --- patch, keep, revert ------------------------------------------------------------------
-    def test_patch_capture_covers_edits_and_new_files_but_not_other_paths(self):
+    def test_snapshot_covers_edits_and_new_files_but_not_other_paths_and_touches_nothing(self):
         self.set_speed(20)
         self.repo.write("src/extra.txt", "new\n")
         self.repo.write("README.md", "not editable\n")
-        patch, paths = gitops.capture_patch(self.root, self.spec, self.base)
-        self.assertEqual(paths, ["src/extra.txt", "src/speed.txt"])
+        self.repo.write("src/__pycache__/x.cpython-311.pyc", "noise")
+        index_before = (self.root / ".git" / "index").read_bytes()
+        scope = self.scope()
+        changes = gitops.editable_changes(scope)
+        self.assertFalse(scope["ok"])                                                    # README.md is outside editable: a violation
+        self.assertEqual([c for c in changes if gitops.is_editable(c, self.spec)], ["src/extra.txt", "src/speed.txt"])
+        snap = gitops.snapshot(self.root, self.spec, self.base, "hca keep 0001: x", changes)
+        patch = gitops.patch_between(self.root, self.base, snap["sha"])
         self.assertIn("+20", patch)
         self.assertIn("src/extra.txt", patch)
         self.assertNotIn("README.md", patch)
+        self.assertNotIn("pycache", patch)
+        self.assertEqual(self.repo.git("rev-parse", f"{snap['sha']}^"), self.base)       # a commit on top of the base
+        self.assertEqual(self.repo.head(), self.base)                                    # no branch moved
+        self.assertEqual((self.root / ".git" / "index").read_bytes(), index_before)      # the real index was never written
+        self.assertEqual(gitops.working_tree_hash(self.root, self.spec, self.base), snap["tree"])
 
-    def test_keep_commits_only_the_changed_editable_paths(self):
+    def test_keep_moves_the_branch_to_the_snapshot_and_resets_the_index_only(self):
         self.set_speed(20)
         self.repo.write("src/extra.txt", "new\n")
+        self.repo.write("notes.txt", "my own untracked file\n")
         scope = self.scope()
-        sha = gitops.keep(self.root, self.spec, scope, "hca keep 0001: faster")
-        self.assertEqual(self.repo.head(), sha)
+        snap = gitops.snapshot(self.root, self.spec, self.base, "hca keep 0001: faster", gitops.editable_changes(scope))
+        gitops.advance_branch(self.root, "main", snap["sha"], self.base)
+        self.assertEqual(self.repo.head(), snap["sha"])
         self.assertEqual(self.repo.git("log", "-1", "--format=%s"), "hca keep 0001: faster")
         self.assertEqual(sorted(self.repo.git("show", "--name-only", "--format=", "HEAD").splitlines()), ["src/extra.txt", "src/speed.txt"])
-        self.assertEqual(self.status_lines(), [])
+        self.assertEqual(sorted(self.status_lines()), ["?? notes.txt"])                    # the work tree already equalled the snapshot
+        self.assertEqual(self.repo.git("rev-parse", "HEAD^{tree}"), snap["tree"])
+
+    def test_a_staged_only_change_is_not_part_of_the_candidate(self):
+        # A2.6 #1 at unit level (S1): the index says one thing, the working tree another; only the working tree counts.
+        original = self.repo.read("bench/run.sh")
+        self.repo.write("bench/run.sh", "# tampered\n")
+        self.repo.git("add", "bench/run.sh")
+        self.repo.write("bench/run.sh", original)                       # worktree == base, index == tampered ("MM" -> "M ")
+        self.set_speed(20)
+        scope = self.scope()
+        self.assertTrue(scope["ok"], scope)
+        self.assertEqual(gitops.staged_outside_editable(self.root, self.spec), ["bench/run.sh"])
+        snap = gitops.snapshot(self.root, self.spec, self.base, "hca keep 0001: x", gitops.editable_changes(scope))
+        self.assertEqual(self.repo.git("diff", "--name-only", self.base, snap["sha"]), "src/speed.txt")
 
     def test_revert_restores_editable_paths_and_touches_nothing_else(self):
         self.set_speed(20)                                              # modified

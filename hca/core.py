@@ -31,8 +31,19 @@ def write_json(path, data):
     os.replace(temp, path)
 
 
+CHUNK_BYTES = 1024 * 1024
+
+
 def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    """sha256 of a file, streamed in 1 MiB chunks so a multi-GB dataset never has to fit in memory."""
+    sha = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(CHUNK_BYTES)
+            if not chunk:
+                break
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def read_tail(path, limit=4096):

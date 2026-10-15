@@ -34,7 +34,10 @@ class ParseTests(unittest.TestCase):
         self.assertIn("non-numeric", measure.parse_output("METRIC lat=fast\n", "lat").problem)
         self.assertEqual(measure.parse_output("just logs\n", "lat").kind, "none")
         self.assertIsNone(measure.parse_output("", "lat").problem)
-        self.assertEqual(measure.parse_output("METRIC lat=1\nMETRIC lat=2\n", "lat").value, 2.0)   # last wins
+        # A2: the objective metric must be reported exactly once (a second line is how a candidate fakes a number)
+        twice = measure.parse_output("METRIC lat=1\nMETRIC lat=2\n", "lat")
+        self.assertIn("printed 2 times", twice.problem)
+        self.assertEqual(measure.parse_output("METRIC bytes=1\nMETRIC bytes=2\nMETRIC lat=3\n", "lat").metrics["bytes"], 2.0)   # mechanism: last wins
         self.assertTrue(math.isnan(measure.parse_output("METRIC lat=nan\n", "lat").value))
 
     def test_item_json_on_the_last_line(self):
@@ -47,8 +50,11 @@ class ParseTests(unittest.TestCase):
 
     def test_item_json_wins_over_metric_lines_and_score_form_works(self):
         line = json.dumps({"items": [{"id": "x", "score": 3.5}, {"id": 7, "runs": [1, 5, 2]}]})
-        parsed = measure.parse_output("METRIC lat=1\n" + line, "lat")
+        parsed = measure.parse_output("METRIC other=1\n" + line, "lat")
         self.assertEqual([(i.id, i.value) for i in parsed.items], [("x", 3.5), ("7", 2)])
+        clash = measure.parse_output("METRIC lat=1\n" + line, "lat")                      # A2: JSON plus an objective METRIC line is ambiguous
+        self.assertEqual(clash.kind, "none")
+        self.assertIn("METRIC line", clash.problem)
         self.assertEqual(measure.parse_output(line + "\nMETRIC lat=1\n", "lat").kind, "metrics")   # JSON is not last
 
     def test_malformed_item_json_is_a_problem_not_a_crash(self):
@@ -219,22 +225,35 @@ class BlockTests(ArmTestCase):
         ids = [f"i{k}" for k in range(10)]
         self.base.say(items_json(**{k: 10 for k in ids}))
         self.cand.say(items_json(**{k: 5 for k in ids}))
-        one = {k: 5 for k in ids}
+        one = {k: 10 for k in ids}
         one["i0"] = (999, "infra_invalid")                                  # junk value must not count anywhere
-        self.cand.say(items_json(**one), block=2)
+        self.base.say(items_json(**one), block=2)                            # the baseline's harness flaked on one item
         result = self.blocks()
         self.assertEqual(result.voided_blocks, [])                           # 1 of 10 = 10%, not more than 10%
         self.assertAlmostEqual(result.scores[2], math.log(2))
-        self.assertEqual(result.item_medians["i0"]["candidate"], 5.0)
+        self.assertEqual(result.item_medians["i0"]["baseline"], 10.0)
+
+    def test_candidate_side_infra_invalid_is_scored_as_candidate_invalid_not_dropped(self):
+        # A2.3, S13: an item the baseline scored fine but the candidate's run flags infra_invalid is the candidate's problem.
+        ids = [f"i{k}" for k in range(10)]
+        self.base.say(items_json(**{k: 10 for k in ids}))
+        self.cand.say(items_json(**{k: 5 for k in ids}))
+        flagged = {k: 5 for k in ids}
+        flagged["i0"] = (5, "infra_invalid")
+        self.cand.say(items_json(**flagged), block=2)
+        result = self.blocks()
+        self.assertEqual(result.voided_blocks, [])
+        self.assertEqual(result.candidate_invalid_blocks, [2])
+        self.assertEqual(result.candidate_failures, 0)                       # the run itself was fine; one item counts against the candidate
 
     def test_more_than_ten_percent_infra_invalid_voids_the_block(self):
         ids = [f"i{k}" for k in range(10)]
         self.base.say(items_json(**{k: 10 for k in ids}))
         self.cand.say(items_json(**{k: 5 for k in ids}))
-        two = {k: 5 for k in ids}
-        two["i0"] = (5, "infra_invalid")
-        two["i1"] = (5, "infra_invalid")
-        self.cand.say(items_json(**two), block=1)
+        two = {k: 10 for k in ids}
+        two["i0"] = (10, "infra_invalid")
+        two["i1"] = (10, "infra_invalid")
+        self.base.say(items_json(**two), block=1)
         base_bad = {k: 10 for k in ids}
         base_bad["i3"] = (10, "infra_invalid")
         base_bad["i4"] = (10, "infra_invalid")

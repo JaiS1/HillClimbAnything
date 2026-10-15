@@ -15,7 +15,7 @@ from .. import measure, runner, stats
 from ..core import HcaError, write_json
 from ..spec import DEFAULT_DENY
 
-MIN_BLOCKS, MAX_BLOCKS = 5, 20
+MIN_BLOCKS, MAX_BLOCKS = stats.NOISE_MIN_BLOCKS, 20     # 8 A/A blocks is the least a noise estimate may rest on
 NOISY_FIXES = ("report more items per run (the median over items cancels noise)",
                "make each run longer than about a second",
                "close other load (browser, game, indexers, other builds) and check `hca doctor`")
@@ -43,12 +43,15 @@ def run(args, out=print) -> int:
     with tempfile.TemporaryDirectory(prefix="hca-quick-") as tmp:
         tmp = Path(tmp)
         started = time.monotonic()
-        probe = runner.run(command, cwd, tmp / "probe", "probe", budget, deny=DEFAULT_DENY)   # also a warm-up
+        probe_result = tmp / "probe" / "probe.result"
+        probe_result.parent.mkdir(parents=True, exist_ok=True)
+        probe = runner.run(command, cwd, tmp / "probe", "probe", budget, deny=DEFAULT_DENY,
+                           env_extra={"HCA_RESULT_FILE": str(probe_result)})                 # also a warm-up
         if not probe.ok:
             why = "timed out" if probe.timed_out else f"exited with status {probe.returncode}"
             out(f"The command {why} on its first run, so there is nothing to measure. Last stderr:\n{probe.error_tail}")
             return 2
-        metric, source = _choose_metric(probe, args.metric)
+        metric, source = _choose_metric(probe, args.metric, probe_result)
         per_run = max(probe.seconds, 1e-3)
         if args.blocks:
             blocks, deadline = args.blocks, None
@@ -79,9 +82,9 @@ def run(args, out=print) -> int:
     return 0
 
 
-def _choose_metric(probe, wanted):
+def _choose_metric(probe, wanted, result_file=None):
     """(metric name, 'metric'|'items'|'wall') from the first run's stdout."""
-    parsed = measure.parse_output(measure._read_stdout(probe.stdout_path), wanted)
+    parsed = measure.parse_output(measure.read_output(probe.stdout_path, result_file), wanted)
     if parsed.kind == "items":
         return wanted or parsed.metric or "metric", "items"
     if parsed.kind == "none" and parsed.problem and parsed.problem.startswith("item JSON"):

@@ -2,8 +2,10 @@
 
 The A/A at init is the instrument check: if identical code differs by more than the useful effect
 can survive, every later try would come back inconclusive, so init refuses (unless --force) and says
-why. It compares the baseline worktree with the repo root, the same pair of directories later tries
-use, so any asymmetry between arms shows up here and not as a phantom win.
+why. It compares the baseline worktree with a second worktree of the same tree (an empty snapshot commit), the
+same kind of pair later tries use, so any asymmetry between arms shows up here and not as a phantom win.
+The referee store records the original sha, the spec hash and the frozen hashes; a second init of the same
+task is a reset, which the store refuses once it holds confirms unless a human sets HCA_ALLOW_RESET=1.
 """
 
 from __future__ import annotations
@@ -37,6 +39,14 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     spec = load_spec(root / "hca.toml")
     task = spec.task.name
     branch = f"hca/{task}"
+    gitops.refuse_unsupported(root)
+    # CONTRACT NOTE: the confirm-cap guard applies to any init of a task whose store holds confirms, not only `--reset`:
+    # otherwise `rm -rf .hca && hca init` would be the same loophole under another name.
+    if ledger.reset_blocked(task):
+        raise HcaError(f"the referee store already holds confirms for {task!r}, so starting over is refused: re-baselining would let "
+                       "the confirm cap and the original baseline be rewritten by whoever runs this (the agent included). "
+                       "Fix: if a human really wants a fresh start, run `HCA_ALLOW_RESET=1 hca init --reset` (the reset is logged in the "
+                       "store and the confirm count is never reset).")
     has_state = ledger.state_path(root).exists()
     if has_state and not args.reset:
         raise HcaError(f"this repo is already initialised for {ledger.read_json(ledger.state_path(root)).get('task')!r}. "
@@ -65,7 +75,6 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
         _archive_ledger(root, out)
         if exists and gitops.current_branch(root) != branch:
             gitops.checkout_branch(root, branch)
-    ledger.archive_old_confirms(task)                    # a new session starts a new confirm count
     gitops.ensure_exclude(root)
     init_sha = gitops.head(root)
     mode = spec.objective.mode
@@ -75,20 +84,27 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
         shutil.rmtree(noise_dir)
     env = {"HCA_ITEMS": "dev"}
 
-    built = arms.build_candidate(root, spec, noise_dir)
-    if built is not None and not built.ok:
-        raise HcaError(f"the build fails on the original code (exit {built.returncode}). Last stderr:\n{built.error_tail}\n"
-                       f"Fix: make `[build] command` pass at {init_sha[:12]} before starting.")
-    baseline = arms.ensure_arm(root, spec, init_sha)
+    # CONTRACT NOTE: the A/A needs two distinct directories like every later pair, so the candidate is an empty snapshot
+    # commit (same tree, different commit) in its own worktree. It costs a second build at init.
+    # Two worktrees of the same tree: the baseline at the original commit and a candidate at an empty snapshot commit
+    # (same tree, different commit), built and linked identically, like every later pair of arms.
+    aa_sha = gitops.commit_tree(root, gitops.tree_of(root, init_sha), init_sha, "hca A/A")
+    try:
+        baseline = arms.ensure_arm(root, spec, init_sha, "baseline", warn=out)
+        candidate = arms.ensure_arm(root, spec, aa_sha, "candidate", logs=noise_dir, warn=out)
+    except arms.ArmBuildError as exc:
+        raise HcaError(f"the build fails on the original code (exit {exc.result.returncode}). Last stderr:\n{exc.result.error_tail}\n"
+                       f"Fix: make `[build] command` pass at {init_sha[:12]} before starting.") from None
 
     noise, lines = None, []
     if mode == "blocks":
         n = aa_blocks or (spec.limits.extend_to if spec.limits.extend_to > 0 else spec.limits.blocks)
-        result = measure.run_blocks(spec, baseline, root, n, rng, env, noise_dir)
+        result = measure.run_blocks(spec, baseline, candidate, n, rng, env, noise_dir, warmup=True)
         for line in result.warnings:
             out(f"warning: {line}")
-        if result.void or len(result.scores) < 5:
-            out(f"The baseline could not be measured: only {len(result.scores)} usable A/A blocks of {result.blocks_run}. "
+        if result.void or len(result.scores) < stats.NOISE_MIN_BLOCKS:
+            out(f"The baseline could not be measured: only {len(result.scores)} usable A/A blocks of {result.blocks_run} "
+                f"(at least {stats.NOISE_MIN_BLOCKS} are needed). "
                 f"Fix the objective command so it runs cleanly on the original code (see {common.rel(noise_dir / 'runs.jsonl', root)}).")
             return common.EXIT_INVALID
         report = stats.noise_report(result.scores, spec.objective.useful)
@@ -101,7 +117,7 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
                 + ". Or rerun with --force to accept inconclusive tries.")
             return common.EXIT_INVALID
     else:
-        pair = measure.run_item_pair(spec, baseline, root, rng, env, noise_dir)
+        pair = measure.run_item_pair(spec, baseline, candidate, rng, env, noise_dir, warmup=True)
         if pair.void or pair.candidate_failed:
             out("The baseline could not be measured: " + "; ".join(pair.reasons) + ". Fix the objective command so it runs cleanly on the original code.")
             return common.EXIT_INVALID
@@ -129,14 +145,19 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
         ledger.archive_heldout(task)                     # a stale set from an earlier session of the same name must not be used silently
         heldout_path = None
     frozen = gitops.frozen_hashes(root, spec)
+    entries = gitops.tree_entries(root, init_sha)
+    blobs = {p: entries[p][1] for p in frozen if p in entries}
+    spec_hash = digest(root / "hca.toml")
+    ledger.init_store(task, init_sha, spec_hash, frozen, blobs)         # the referee store is the source of truth; state.json is a cache
     state = {"version": ledger.STATE_VERSION, "task": task, "branch": branch, "init_sha": init_sha, "last_keep": init_sha,
-             "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen,
-             "spec_hash": digest(root / "hca.toml"), "base_branch": None if base_branch in (branch, "HEAD") else base_branch, "mode": mode, "metric": spec.objective.metric,
+             "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen, "frozen_blobs": blobs,
+             "spec_hash": spec_hash, "base_branch": None if base_branch in (branch, "HEAD") else base_branch, "mode": mode, "metric": spec.objective.metric,
              "direction": spec.objective.direction, "useful_effect": spec.objective.useful_effect,
              "heldout": heldout_path is not None, "noise": noise, "created": ledger.now(), "verdict_history": []}
     ledger.save_state(root, state)
     ledger.write_record(ledger.hca_dir(root), "noise.json", {"mode": mode, "noise": noise, "at": ledger.now()})
     ledger.refresh_verdicts(root, state, spec)
+    arms.prune_unused(root, [init_sha])                  # drops the A/A candidate's worktree
     out(f"Initialised task {task!r} on branch {branch} at {init_sha[:12]}.")
     for line in lines:
         out(line)

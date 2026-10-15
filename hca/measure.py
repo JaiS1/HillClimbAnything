@@ -51,9 +51,20 @@ class Parsed:
 
 
 def parse_output(stdout_text: str, spec_metric: str | None) -> Parsed:
-    """Item JSON on the last non-empty line wins; otherwise METRIC lines (see the objective output contract)."""
+    """Item JSON on the last non-empty line wins; otherwise METRIC lines (see the objective output contract).
+
+    The objective metric must appear exactly once. A second `METRIC <objective>` line (a candidate that
+    prints its own number after the evaluator's, S8) is an invalid run, and so is item JSON that comes with
+    a METRIC line for the objective: the stream is a shared channel, so ambiguity is never resolved in the
+    writer's favour. Other (mechanism) metrics: the last line wins. `HCA_RESULT_FILE` avoids the problem.
+    """
     lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
     json_problem = None
+    counts = {}
+    for line in lines:
+        match = METRIC_LINE.match(line)
+        if match:
+            counts[match.group(1)] = counts.get(match.group(1), 0) + 1
     if lines and lines[-1].startswith("{"):
         try:
             obj = json.loads(lines[-1])
@@ -61,6 +72,11 @@ def parse_output(stdout_text: str, spec_metric: str | None) -> Parsed:
             json_problem = f"the last stdout line looks like JSON but does not parse ({exc})"
         else:
             if isinstance(obj, dict) and "items" in obj:
+                names = {n for n in (spec_metric, obj.get("metric")) if isinstance(n, str)}
+                clash = sorted(n for n in names if counts.get(n))
+                if clash:
+                    return Parsed("none", None, {}, (), f"item JSON came with a METRIC line for {clash[0]!r}; the objective metric "
+                                  "must be reported once (write the result to HCA_RESULT_FILE to keep it out of the shared stdout)")
                 return _parse_items(obj, spec_metric)
     metrics, bad = {}, []
     for line in lines:
@@ -75,7 +91,10 @@ def parse_output(stdout_text: str, spec_metric: str | None) -> Parsed:
     if not metrics and not bad:
         return Parsed("none", None, {}, (), json_problem)
     problem = None
-    if spec_metric is not None and spec_metric not in metrics:
+    if spec_metric is not None and counts.get(spec_metric, 0) > 1:
+        problem = (f"METRIC {spec_metric} was printed {counts[spec_metric]} times; the objective must report its metric exactly "
+                   "once (write the result to HCA_RESULT_FILE to keep it out of the shared stdout)")
+    elif spec_metric is not None and spec_metric not in metrics:
         problem = (f"METRIC {spec_metric} has a non-numeric value" if spec_metric in bad else
                    f"no METRIC line named {spec_metric!r} (found: {', '.join(sorted(metrics)) or 'none'})")
     return Parsed("metrics", metrics.get(spec_metric) if spec_metric else None, metrics, (), problem)
@@ -155,23 +174,54 @@ class _Run:
     loadavg: tuple | None = None
 
 
-def run_blocks(spec, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir, first_block=0, deadline=None) -> BlockResult:
+def run_blocks(spec, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir, first_block=0, deadline=None,
+               warmup=False) -> BlockResult:
     """Measure `spec.objective` in `n_blocks` randomised blocks of baseline vs candidate."""
     return measure_blocks(spec.objective.command, spec.objective.metric, spec.objective.direction, baseline_dir,
                           candidate_dir, n_blocks, rng, env_extra, out_dir, spec.limits.command_seconds,
-                          spec.env.deny, first_block=first_block, deadline=deadline)
+                          spec.env.deny, first_block=first_block, deadline=deadline, warmup=warmup)
+
+
+# CONTRACT NOTE: A2.3 says try_seconds covers builds, guards and blocks; every command run (including each objective run)
+# is therefore given at most the time left in the try, never less than one second.
+def _capped(timeout, deadline):
+    """A command's timeout, shortened so it cannot run past the try's deadline (never below one second)."""
+    return timeout if deadline is None else max(1.0, min(timeout, deadline - time.monotonic()))
+
+
+def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None) -> None:
+    """One discarded objective run per arm, before block 0: cold caches and fresh worktrees must not land in a measured block.
+
+    Both arms get exactly one, in a fixed order; the results are logged as `warmup` and never scored.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for arm in ARMS:
+        result_file = out_dir / "runs" / f"warmup-{arm}.result"
+        result_file.parent.mkdir(parents=True, exist_ok=True)
+        result_file.unlink(missing_ok=True)
+        env = dict(env_extra or {}, HCA_RESULT_FILE=str(result_file))
+        result = runner.run(command, dirs[arm], out_dir / "runs", f"warmup-{arm}", _capped(timeout, deadline), env_extra=env, deny=deny)
+        _append(out_dir / "runs.jsonl", {"kind": "warmup", "arm": arm, "wall_seconds": round(result.seconds, 6),
+                                         "returncode": result.returncode, "timed_out": result.timed_out})
+        for path in (result.stdout_path, result.stderr_path, result_file):
+            path.unlink(missing_ok=True)
 
 
 def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir,
-                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False) -> BlockResult:
+                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False, warmup=False) -> BlockResult:
     """The engine under run_blocks, usable without a spec (quick). `wall_fallback` scores the command's
-    own wall time when it prints neither item JSON nor a METRIC line (the zero-config case)."""
+    own wall time when it prints neither item JSON nor a METRIC line (the zero-config case). `warmup` runs
+    one discarded objective run per arm first. `HCA_ARM` is deliberately not exported: the benchmark must not
+    be able to tell the arms apart (the arm stays in runs.jsonl)."""
     if direction not in ("min", "max") or not metric or n_blocks < 1:
         raise HcaError("measure_blocks needs direction min|max, a metric name and at least one block")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     log = out_dir / "runs.jsonl"
     dirs = {"baseline": Path(baseline_dir), "candidate": Path(candidate_dir)}
+    if warmup:
+        warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline)
     start = time.monotonic()
     blocks = []                     # each: {"baseline": _Run, "candidate": _Run}
     dropped = set()
@@ -182,8 +232,8 @@ def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_bl
         rng.shuffle(order)
         pair = {}
         for position, arm in enumerate(order):
-            env = dict(env_extra or {}, HCA_ARM=arm)
-            run = _execute(command, metric, dirs[arm], out_dir, index, arm, position, env, timeout, deny, wall_fallback)
+            run = _execute(command, metric, dirs[arm], out_dir, index, arm, position, dict(env_extra or {}),
+                           _capped(timeout, deadline), deny, wall_fallback)
             dropped.update(run.result.dropped_env)
             pair[arm] = run
             _append(log, _run_record(run))
@@ -191,16 +241,31 @@ def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_bl
     return _score(blocks, direction, metric, log, start, tuple(sorted(dropped)))
 
 
+def read_output(stdout_path, result_file) -> str:
+    """What the objective reported: the result file if it is non-empty (the evaluator's own channel), else stdout."""
+    try:
+        if result_file is not None and Path(result_file).stat().st_size > 0:
+            with open(result_file, "rb") as handle:
+                return handle.read(MAX_STDOUT_BYTES).decode("utf-8", errors="replace")
+    except OSError:
+        pass
+    return _read_stdout(stdout_path)
+
+
 def _execute(command, metric, cwd, out_dir, block, arm, order, env, timeout, deny, wall_fallback) -> _Run:
-    result = runner.run(command, cwd, out_dir / "runs", f"b{block:04d}-{arm}", timeout, env_extra=env, deny=deny)
+    stem = f"b{block:04d}-{arm}"
+    result_file = out_dir / "runs" / f"{stem}.result"          # fresh per run: removed before the command starts
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+    result_file.unlink(missing_ok=True)
+    result = runner.run(command, cwd, out_dir / "runs", stem, timeout, env_extra=dict(env, HCA_RESULT_FILE=str(result_file)), deny=deny)
     run = _Run(block, arm, order, result, loadavg=_loadavg())
     parsed = None
     if result.timed_out:
-        run.problem = f"timed out after {timeout} s"
+        run.problem = f"timed out after {timeout:g} s"
     elif result.returncode != 0:
         run.problem = f"exit status {result.returncode}"
     else:
-        parsed = parse_output(_read_stdout(result.stdout_path), metric)
+        parsed = parse_output(read_output(result.stdout_path, result_file), metric)
         if parsed.kind == "none" and wall_fallback:      # even a malformed-looking last line: it is just program output
             parsed = Parsed("metrics", result.seconds, {metric: result.seconds}, (), None)
         elif parsed.problem:
@@ -217,7 +282,7 @@ def _execute(command, metric, cwd, out_dir, block, arm, order, env, timeout, den
             run.items = {item.id: item for item in parsed.items}
     run.ok = run.problem is None
     if run.ok:                       # keep the stdout/stderr files only for runs someone may need to read
-        for path in (result.stdout_path, result.stderr_path):
+        for path in (result.stdout_path, result.stderr_path, result_file):
             path.unlink(missing_ok=True)
     return run
 
@@ -288,10 +353,12 @@ def _item_score(base, cand, direction, worst_items):
     for ident in sorted(ids):
         b = base.items.get(ident)
         c = cand.items.get(ident) if cand.ok else None
-        if b is None or b.status != "valid" or not _positive(b.value) or (c is not None and c.status == "infra_invalid"):
+        if b is None or b.status != "valid" or not _positive(b.value):
             infra.add(ident)
             continue
         base_values[ident] = b.value
+        # A candidate-side infra_invalid on an item the baseline scored fine is not the harness's fault as far as we can
+        # tell (the candidate can influence what the evaluator relays, S13): it scores as candidate_invalid, never dropped.
         if c is None or c.status != "valid" or not _positive(c.value):
             cand_values[ident] = worst_items[ident]
             cand_bad = True
@@ -386,7 +453,7 @@ class ItemPair:
     wall_seconds: float
 
 
-def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, block=0) -> ItemPair:
+def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, block=0, deadline=None, warmup=False) -> ItemPair:
     """Items mode: run each arm once in random order and return the per-item values.
 
     This does not go through block scoring on purpose: deterministic scores such as accuracy can be
@@ -402,14 +469,15 @@ def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, bl
     out_dir.mkdir(parents=True, exist_ok=True)
     log = out_dir / "runs.jsonl"
     dirs = {"baseline": Path(baseline_dir), "candidate": Path(candidate_dir)}
+    if warmup:
+        warm_up(obj.command, dirs, out_dir, spec.limits.command_seconds, spec.env.deny, env_extra, deadline)
     start = time.monotonic()
     order = ["baseline", "candidate"]
     rng.shuffle(order)
     runs = {}
     for position, arm in enumerate(order):
-        env = dict(env_extra or {}, HCA_ARM=arm)
-        runs[arm] = _execute(obj.command, obj.metric, dirs[arm], out_dir, block, arm, position, env,
-                             spec.limits.command_seconds, spec.env.deny, False)
+        runs[arm] = _execute(obj.command, obj.metric, dirs[arm], out_dir, block, arm, position, dict(env_extra or {}),
+                             _capped(spec.limits.command_seconds, deadline), spec.env.deny, False)
         _append(log, _run_record(runs[arm]))
     base, cand = runs["baseline"], runs["candidate"]
 
@@ -436,7 +504,7 @@ def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, bl
     infra, bad, base_values, cand_values, tags = [], [], {}, {}, {}
     for ident in ids:
         b, c = base.items.get(ident), cand.items.get(ident)
-        if b is None or b.status != "valid" or not _finite(b.value) or (c is not None and c.status == "infra_invalid"):
+        if b is None or b.status != "valid" or not _finite(b.value):
             infra.append(ident)
             continue
         base_values[ident], tags[ident] = b.value, dict(b.tags)

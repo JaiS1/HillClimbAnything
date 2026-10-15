@@ -74,7 +74,9 @@ class ConfirmTests(repokit.RepoTestCase):
         code, text = self.confirm()
         self.assertEqual(code, 1, text)
         self.assertIn("CONFIRM 1: FAIL", text)
-        self.assertRegex(text, r"estimate t_ms [+-]\d+\.\d% \((better|worse|unchanged)\) vs the original")
+        self.assertNotRegex(text, r"\d+\.\d%")                          # A2.4: a FAIL shows the agent no numbers ...
+        self.assertNotIn("estimate", text)
+        self.assertIn("estimate", self.records()[0])                     # ... the detail is in the referee store
         self.assertNotIn("heldout", text.lower())
         state = self.state()
         self.assertIsNone(state["last_confirmed"])
@@ -95,6 +97,46 @@ class ConfirmTests(repokit.RepoTestCase):
         self.set_speed(21)
         self.assertEqual(self.try_("an honest change")[0], 0)
         self.assertEqual(self.attempt(2)["base"], state["last_keep"])
+
+    def test_report_referee_shows_the_numbers_a_failed_confirm_withheld(self):
+        # A2.4: FAIL prints no numbers to the agent; the human reads them with `hca report --referee`.
+        from argparse import Namespace
+        from hca.commands import report
+        self.init(heldout=self.heldout())
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.assertEqual(self.try_("game the dev items")[0], 0)
+        self.assertEqual(self.confirm()[0], 1)
+        lines = []
+        report.run(Namespace(md=None, referee=True), out=lines.append, cwd=self.root)
+        text = "\n".join(lines)
+        self.assertIn("Referee store for speedy", text)
+        self.assertIn("outcome=fail", text)
+        self.assertRegex(text, r"estimate=-?\d+\.\d+")
+        self.assertIn("confirms used 1", text)
+
+    def test_a_confirm_with_too_few_usable_blocks_is_inconclusive_not_a_fail(self):
+        # A2.3: `insufficient` must never reset the branch as if the change had failed.
+        from hca import measure
+        from unittest import mock
+        self.init()
+        self.set_speed(21)
+        self.assertEqual(self.try_("faster")[0], 0)
+        keep = self.repo.head()
+        result = measure.BlockResult([0.3] * 6, list(range(6)), [6, 7, 8, 9], False, 10, {"baseline": {}, "candidate": {}}, {}, 0, [], 0.01, 0.2)
+        with mock.patch.object(measure, "run_blocks", return_value=result):
+            code, text = self.confirm()
+        self.assertEqual(code, 2, text)
+        self.assertIn("INCONCLUSIVE", text)
+        self.assertEqual(self.repo.head(), keep)
+        self.assertEqual(self.records()[0]["outcome"], "void")
+
+    def test_a_confirm_pass_shows_the_estimate_and_bound(self):
+        self.init()
+        self.set_speed(21)
+        self.try_("faster")
+        code, text = self.confirm()
+        self.assertEqual(code, 0, text)
+        self.assertRegex(text, r"PASS - estimate t_ms -\d+\.\d% \(better\) vs the original")
 
     def test_without_a_heldout_set_confirm_uses_fresh_dev_blocks_so_the_dev_hack_survives(self):
         self.init()

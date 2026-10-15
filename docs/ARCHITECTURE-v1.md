@@ -356,3 +356,28 @@ Where this amendment and the sections above disagree, this one wins.
 14. Candidate-side `infra_invalid` is scored as `candidate_invalid`.
 15. **End-to-end calibration:** 100 no-op tries through the real `hca try` on the fixture keep at
     most 3 times (as a seeded, deterministic fixture).
+
+### A2 implementation notes (where the code settled a question the amendment left open)
+
+- **Clean tree.** `init` refuses tracked modifications and untracked files that are editable, frozen or
+  `hca.toml`. Other untracked files only produce a warning, and the same rule applies to a try: they are left
+  out of the candidate.
+- **Scope.** A tracked edit outside `editable` (or to a frozen file) is still an invalid try with nothing
+  measured, even though the snapshot could not contain it. Staged-only changes are not edits at all.
+- **Void keeps the edits.** Every `void` verdict (blocks that cannot reject, `try_seconds`, an arm or an
+  editable file changed during the run) leaves the working tree alone and nothing committed. This replaces
+  "stop + revert on exceed". A `revert` is the only verdict that restores files.
+- **Exit codes.** 0 keep or pass, 1 revert or fail, 2 invalid / void / interrupted / refused, 3 usage, 4 internal
+  error. SIGINT exits 130, SIGTERM 143, SIGHUP 129 after cleaning up.
+- **Keep commits skip hooks.** The keep is `commit-tree` plus `update-ref`, so the user's pre-commit and
+  commit-msg hooks (and commit signing) do not run on hca's commits: the measured tree is committed byte for byte.
+- **`init --reset`** re-baselines at the current branch tip (the last keep), not at the original commit. The old
+  baseline stays in the store's reset log, and a re-init is refused outright once the store holds confirms
+  (unless `HCA_ALLOW_RESET=1`), whether or not `--reset` is given.
+- **A/A at init** compares the baseline worktree with a second worktree of the same tree (an empty snapshot
+  commit), so it measures the same pair of directory kinds as every later try. Warm-up runs also precede the
+  blocks at init and confirm.
+- **Untracked editable files** are created by the agent and deleted by a revert, anywhere under `editable`: do not
+  work in the same checkout while the loop runs.
+- **Held-out data** is outside the repo but its path (`HCA_HELDOUT_DIR`) reaches the benchmark during confirm,
+  so candidate code could read it. This is not a security boundary.

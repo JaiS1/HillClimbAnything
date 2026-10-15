@@ -14,8 +14,9 @@ referee or work around it. A win it can't confirm is not a win.
 
 1. Find or write the **one command that prints the number**. It either prints
    `METRIC <name>=<value>` lines, or prints item JSON as its last line (see
-   [spec reference](references/spec.md)). If there is no such command, writing one is the first
-   task.
+   [spec reference](references/spec.md)). Have it write the result to the file named by
+   `HCA_RESULT_FILE` where it can, and print the metric exactly once otherwise. If there is no such
+   command, writing one is the first task.
 2. Run `hca quick -- <command>`. It reports the noise and the smallest win it can detect in about
    2 minutes. If it says **too noisy**, fix the measurement first (more items, longer runs, fewer
    background jobs). Do not start climbing.
@@ -45,11 +46,15 @@ Loop:
    changes small enough that a verdict says something about the idea.
 3. **Edit only `editable` paths**, then run `hca try -m "<the change and its mechanism>"`.
 4. **Accept the verdict.** `keep` means the change beat the noise and is committed. `revert`
-   means it is gone; the attempt record keeps the patch. A revert whose interval still includes the
+   means it is gone; the attempt record keeps the patch. `void` and `interrupted` mean nothing was
+   decided and your edits are still in place: fix what the message says and try again. An edit identical
+   to an earlier attempt is refused unless you pass `--again`, and every try counts, so do not re-roll a
+   verdict. A revert whose interval still includes the
    useful effect is **no evidence, not "no effect"**. Note it, and retry it later in a stronger
    form if it was promising.
-5. Run `hca confirm` after every ~3 keeps and at the end. **Only confirmed gains count.** If
-   confirm fails, the referee rolls back to the last confirmed state. Ask what was overfit.
+5. Run `hca confirm` after every ~3 keeps and at the end. **Only confirmed gains count.** It prints
+   PASS (with the confirmed estimate) or FAIL (with no numbers). If confirm fails, the referee rolls
+   back to the last confirmed state. Ask what was overfit.
 
 Rules:
 
@@ -58,8 +63,10 @@ Rules:
   the best path forward needs a frozen file changed, stop and ask the user.
 - **Explore broadly.** Try genuinely different mechanisms, not ten variants of one. Don't drop an
   idea after one weak test.
-- **Never look at held-out data** or `~/.hca/` and never ask for per-item confirm detail. The
-  held-out set must stay held out.
+- **Never look at held-out data** or `~/.hca/`, never run `hca report --referee` (it is for the human),
+  and never ask for per-item confirm detail. The held-out set must stay held out.
+- **Never run `hca init --reset`, edit `.hca/`, or touch the arm directories under `.hca/arms/`.** The
+  referee keeps its own record, so they only get you refused. Do not commit on the `hca/` branch.
 - **Report honestly.** Quote confirmed deltas with their intervals and the number of tries. Never
   report a raw best score.
 

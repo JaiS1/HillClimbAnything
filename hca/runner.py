@@ -21,6 +21,12 @@ from .core import HcaError, read_tail
 
 TAIL_BYTES = 4096
 GRACE_SECONDS = 2.0     # SIGTERM first, SIGKILL after this
+# Variables that carry hca's own channels. They are never inherited from the caller's environment (a stray
+# HCA_HELDOUT_DIR would leak the held-out set into dev runs); only an explicit env_extra sets them. HCA_ARM is
+# not exported at all any more: a benchmark must not be able to tell which arm it is running in.
+# CONTRACT NOTE: stripping these four from the *inherited* environment (A2 only asks to stop exporting HCA_ARM) closes
+# the same hole for a user shell that happens to have them set.
+RESERVED_ENV = ("HCA_ARM", "HCA_ITEMS", "HCA_HELDOUT_DIR", "HCA_RESULT_FILE")
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,7 @@ class RunResult:
 def build_env(deny=(), env_extra=None, base=None):
     """(env, dropped): `base` minus names matching any `deny` glob, plus `env_extra` (which always wins)."""
     base = os.environ if base is None else base
+    base = {name: value for name, value in base.items() if name not in RESERVED_ENV}
     dropped = tuple(sorted(name for name in base if any(fnmatch.fnmatchcase(name, pat) for pat in deny)))
     env = {name: value for name, value in base.items() if name not in dropped}
     for name, value in (env_extra or {}).items():
@@ -79,20 +86,29 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
             expired, done = threading.Event(), threading.Event()
             timer = threading.Timer(timeout, expired.set)
             timer.daemon = True
-            timer.start()
-            watcher = threading.Thread(target=_enforce_deadline, args=(proc.pid, expired, done), daemon=True)
-            watcher.start()
-            returncode = proc.wait()
-            seconds = time.monotonic() - start
-            done.set()
-            timer.cancel()
-            timed_out = expired.is_set()
-            expired.set()                        # release the watcher if the command finished in time
-            watcher.join()
-            if timed_out:
-                _terminate_group(proc)           # grandchildren may outlive the leader
-            else:
-                orphans = _group_alive(proc.pid) and _kill_group(proc.pid, signal.SIGKILL)
+            finished = False
+            try:
+                timer.start()
+                watcher = threading.Thread(target=_enforce_deadline, args=(proc.pid, expired, done), daemon=True)
+                watcher.start()
+                returncode = proc.wait()
+                finished = True
+                seconds = time.monotonic() - start
+                done.set()
+                timer.cancel()
+                timed_out = expired.is_set()
+                expired.set()                    # release the watcher if the command finished in time
+                watcher.join()
+                if timed_out:
+                    _terminate_group(proc)       # grandchildren may outlive the leader
+                else:
+                    orphans = _group_alive(proc.pid) and _kill_group(proc.pid, signal.SIGKILL)
+            finally:
+                if not finished:                 # Ctrl-C, SIGTERM, any exception: never leave the benchmark running
+                    done.set()
+                    timer.cancel()
+                    expired.set()
+                    _terminate_group(proc)
     if proc is None:
         seconds = time.monotonic() - start
     return RunResult(argv, returncode, timed_out, seconds, stdout_path, stderr_path,

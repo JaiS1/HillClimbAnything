@@ -20,30 +20,38 @@ from pathlib import Path
 from unittest import mock
 
 BLOCKS_BENCH = '''
-speed=$(cat src/speed.txt)
-mkdir -p "$BENCH_STATE"
+read speed < src/speed.txt
+[ -d "$BENCH_STATE" ] || mkdir -p "$BENCH_STATE"
 n=0
-[ -f "$BENCH_STATE/count" ] && n=$(cat "$BENCH_STATE/count")
+[ -f "$BENCH_STATE/count" ] && read n < "$BENCH_STATE/count"
 n=$((n + 1))
 echo "$n" > "$BENCH_STATE/count"
+[ -n "$BENCH_PIDFILE" ] && echo "$$" >> "$BENCH_PIDFILE"
+[ -n "$BENCH_TAMPER" ] && echo 99 > "$BENCH_TAMPER"
+warm=1
+[ -f cache/warm ] && warm=0.5
 if [ -f src/crash.txt ]; then
   echo "candidate crashed on purpose" >&2
   exit 3
 fi
 mode="${HCA_ITEMS:-dev}"
 hack=1
-if [ "$mode" = dev ] && [ -f src/dev_hack.txt ]; then hack=$(cat src/dev_hack.txt); fi
+if [ "$mode" = dev ] && [ -f src/dev_hack.txt ]; then read hack < src/dev_hack.txt; fi
 scale=1
-if [ "$mode" = heldout ]; then scale=$(cat "$HCA_HELDOUT_DIR/scale.txt") || exit 4; fi
+if [ "$mode" = heldout ]; then read scale < "$HCA_HELDOUT_DIR/scale.txt" || exit 4; fi
 if [ -n "$BENCH_SLEEP_MS" ]; then sleep "$(awk -v ms="$BENCH_SLEEP_MS" 'BEGIN { print ms / 1000 }')"; fi
-awk -v speed="$speed" -v n="$n" -v jit="${BENCH_JITTER:-0.02}" -v hack="$hack" -v scale="$scale" 'BEGIN {
-  m = 67108859                      # prime below 2^26, so x * x stays exact in a double (identical in every awk)
-  x = n + 12345
-  for (i = 0; i < 4; i++) x = (x * x + 7) % m
-  r = 2 * x / m - 1                 # uniform in (-1, 1), deterministic per run number
-  printf "METRIC t_ms=%.4f\\n", speed * (1 + jit * r) * hack * scale
-}'
-if [ -f src/size.txt ]; then echo "METRIC size_kb=$(cat src/size.txt)"; fi
+emit() {
+  awk -v speed="$speed" -v n="$n" -v jit="${BENCH_JITTER:-0.02}" -v hack="$hack" -v scale="$scale" -v warm="$warm" 'BEGIN {
+    m = 67108859                      # prime below 2^26, so x * x stays exact in a double (identical in every awk)
+    x = n + 12345
+    for (i = 0; i < 4; i++) x = (x * x + 7) % m
+    r = 2 * x / m - 1                 # uniform in (-1, 1), deterministic per run number
+    printf "METRIC t_ms=%.4f\\n", speed * (1 + jit * r) * hack * scale * warm
+  }'
+}
+if [ -n "$BENCH_RESULT_FILE" ]; then emit > "$HCA_RESULT_FILE"; else emit; fi
+if [ -f src/echo_metric.txt ]; then echo "METRIC t_ms=0.5"; fi
+if [ -f src/size.txt ]; then read size < src/size.txt; echo "METRIC size_kb=$size"; fi
 exit 0
 '''
 
@@ -59,6 +67,8 @@ for i in range(12):
 if os.path.exists("src/break.txt"):
     for entry in items[:3]:
         entry["status"] = "candidate_invalid"
+if os.path.exists("src/infra.txt"):
+    items[5]["status"] = "infra_invalid"
 print(json.dumps({"metric": "acc", "items": items}))
 '''
 
@@ -151,13 +161,13 @@ class RepoTestCase(unittest.TestCase):
         code = module.run(Namespace(**kwargs.pop("args", {})), out=self.out, cwd=cwd or self.root, **kwargs)
         return code, "\n".join(self.lines[start:])
 
-    def init(self, aa_blocks=5, seed=1, heldout=None, force=False, reset=False):
+    def init(self, aa_blocks=8, seed=1, heldout=None, force=False, reset=False):
         from hca.commands import init
         return self.hca(init, args={"heldout": heldout, "force": force, "reset": reset}, aa_blocks=aa_blocks, seed=seed)
 
-    def try_(self, message="change", seed=1):
+    def try_(self, message="change", seed=1, again=False):
         from hca.commands import try_
-        return self.hca(try_, args={"message": message}, seed=seed)
+        return self.hca(try_, args={"message": message, "again": again}, seed=seed)
 
     def confirm(self, seed=1):
         from hca.commands import confirm

@@ -21,6 +21,7 @@ from .core import HcaError
 DEFAULT_ALPHA = 0.01        # one-sided, per try
 MIN_BLOCKS = 10             # below this the exact test cannot reach small alphas
 EXTENDED_BLOCKS = 20        # an inconclusive try may extend once to this many blocks
+NOISE_MIN_BLOCKS = 8        # noise_report needs this many A/A blocks: a robust SD from fewer is not a planning number
 
 
 def log_ratio(baseline: float, candidate: float, direction: str) -> float:
@@ -100,7 +101,10 @@ def hodges_lehmann(scores) -> float:
 def walsh_lower_bound(scores, alpha: float) -> float:
     """One-sided (1 - alpha) lower confidence bound for the shift; -inf if n is too small.
 
-    Exact for untied scores; with ties it is the usual approximation (the test itself is exact).
+    Exact for untied scores; with ties it is the usual approximation (the test itself is exact). The tie case
+    can disagree with the test: with heavily quantised scores the test may reject (p <= alpha) while this bound is
+    still <= 0 (about 0.1% of tied-score tries in the Phase 1 review). Callers that print a KEEP whose bound is
+    not positive should say "bound not shown (tied scores)", not "no improvement shown" (see ledger.fmt_bound).
     """
     scores = _finite_list(scores)
     walsh = sorted(_walsh(scores))
@@ -172,6 +176,7 @@ def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA / 2, pow
     """From A/A block scores: the noise floor and the smallest shift detectable at 10 and 20 blocks.
 
     The default alpha is the per-look level of the two-look keep rule (keep_decision with looks=2).
+    At least NOISE_MIN_BLOCKS (8) A/A blocks are required; callers (quick, init) enforce it before measuring.
 
     Uses a robust SD (1.4826 * MAD) and the normal approximation to the signed-rank test's power
     with its 0.955 relative efficiency. It is a planning number, not a guarantee; heavy tails
@@ -179,8 +184,8 @@ def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA / 2, pow
     roughly as stated.
     """
     scores = _finite_list(aa_scores)
-    if len(scores) < 5:
-        raise HcaError("noise needs at least five A/A blocks")
+    if len(scores) < NOISE_MIN_BLOCKS:
+        raise HcaError(f"noise needs at least {NOISE_MIN_BLOCKS} A/A blocks (a robust SD from fewer is not a planning number)")
     centre = statistics.median(scores)
     mad = statistics.median(abs(s - centre) for s in scores)
     sd = 1.4826 * mad
