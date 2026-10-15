@@ -5,7 +5,8 @@ then resolves to the live checkout in both arms, and every try measures the same
 
 Leaked environment (PYTHONPATH pointing at the candidate, a different virtualenv, LD_PRELOAD) and a
 busy machine are the usual reasons a benchmark disagrees with itself; Windows-native has no process
-groups, so timeouts could not be enforced. Errors make the exit status 1; warnings do not.
+groups, so timeouts could not be enforced. A `skill` line per agent folder says whether `hca setup` has installed
+the agent skill and whether it is current (warnings only). Errors make the exit status 1; warnings do not.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from ..core import HcaError
 from ..spec import DEFAULT_DENY, load_spec
+from . import setup as skill_setup
 
 LOAD_WARN_PER_CPU = 0.30        # 1-minute load per core above this adds visible noise
 ALWAYS_SUSPECT = ("PYTHONPATH", "LD_PRELOAD")
@@ -66,7 +68,7 @@ def editable_installs(interpreter, env) -> list:
     return out
 
 
-def checks(cwd: Path, env, platform=None, loadavg=None, python=None) -> list:
+def checks(cwd: Path, env, platform=None, loadavg=None, python=None, home=None) -> list:
     """[(level, name, message)] with level ok | warn | error. Arguments are injectable for tests."""
     platform = platform or sys.platform
     python = python or sys.version_info
@@ -127,6 +129,8 @@ def checks(cwd: Path, env, platform=None, loadavg=None, python=None) -> list:
             "Fix: close games, browsers and builds, then rerun.")
     else:
         add("ok", "load", f"1-minute load {load[0]:.2f} on {cpus} CPUs")
+    for level, message in skill_setup.skill_checks(cwd, home):         # warnings only: a missing skill never breaks measuring
+        add(level, "skill", message)
     return results
 
 

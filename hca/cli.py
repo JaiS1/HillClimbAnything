@@ -20,10 +20,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hca", description="HillClimbAnything: a noise-aware referee for hill-climbing any metric.")
     parser.add_argument("--version", action="version", version=f"hca {__version__}")
     sub = parser.add_subparsers(dest="cmd", metavar="<command>")
-    from .commands import doctor, quick
+    from .commands import doctor, quick, setup
     quick.add_arguments(sub.add_parser("quick", help="measure how noisy a command is (A/A), no spec needed",
                                        description="Usage: hca quick [options] -- <cmd...>"))
     doctor.add_arguments(sub.add_parser("doctor", help="check the environment for things that corrupt measurements"))
+    setup.add_arguments(sub.add_parser("setup", help="install the hca skill so your coding agents can use it",
+                                       description="Install (or --uninstall) the hca agent skill in ~/.claude/skills and ~/.agents/skills."))
     from .commands import confirm, init, report, try_
     init.add_arguments(sub.add_parser("init", help="validate hca.toml, create the branch, run the baseline A/A"))
     try_.add_arguments(sub.add_parser("try", help="measure the current edits against the last keep; keep or revert"))
@@ -74,6 +76,9 @@ def _dispatch(args, parser) -> int:
     if args.cmd == "doctor":
         from .commands import doctor
         return doctor.run(args)
+    if args.cmd == "setup":
+        from .commands import setup
+        return setup.run(args)
     if args.cmd == "init":
         from .commands import init
         return init.run(args)
