@@ -16,7 +16,9 @@ README.md(commit b9bad05)를 번역한 문서입니다. 수치는 영어 README�
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>아무것도 설치하지 않고 써 보세요: 벤치마크의 노이즈는 얼마나 되고, 어느 정도의 개선을 감지할 수 있을까요?</sub>
 
 <br /><br />
 
@@ -44,16 +46,39 @@ HillClimbAnything은 이 루프의 **심판**입니다.
 **1. 설치** (Python 3.11+; Linux와 WSL에서 테스트했고 macOS는 테스트하지 않음):
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # not on PyPI yet
-npx skills add JaiS1/HillClimbAnything --skill hca             # optional: the agent skill
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # 또는: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # 에이전트 스킬 추가(먼저 계획을 보여 줍니다)
 ```
+
+`hca setup`은 에이전트가 찾는 위치에 스킬을 둡니다: `~/.claude/skills/hca`(Claude Code)와
+`~/.agents/skills/hca`(Codex, Cursor, Gemini CLI, Copilot). 교체하는 항목은 백업하며,
+`hca setup --uninstall`로 다시 제거할 수 있습니다. [`uv`](https://docs.astral.sh/uv/getting-started/installation/)나 [`pipx`](https://pipx.pypa.io/stable/installation/)가 없나요? 일반
+`pip install`은 가상 환경 안에서는 동작하지만, 많은 시스템이 환경 밖에서는 거부합니다(PEP 668).
+
+<details>
+<summary>스킬을 추가하는 다른 방법</summary>
+
+**Claude Code 플러그인:**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+어느 쪽이든 스킬은 `hca` CLI를 구동하므로 CLI도 설치하세요.
+</details>
 
 **2. 에이전트에게 요청하기:**
 
 ```text
-HillClimbAnything(github.com/JaiS1/HillClimbAnything)을 설치하고 skills/hca/SKILL.md를 따라 주세요.
-`python bench.py`를 더 빠르게 만들고 싶습니다. 먼저 `hca quick`을 실행하고, 저와 함께 hca.toml을 작성한 뒤,
-`hca try`로 개선해 나가고, `hca confirm`을 통과한 결과만 보고해 주세요.
+hca 스킬(HillClimbAnything)을 사용해 `python bench.py`를 더 빠르게 만들어 주세요. 먼저 `hca quick`을 실행하고,
+저와 함께 hca.toml을 작성한 뒤, `hca try`로 개선해 나가고, `hca confirm`을 통과한 결과만 보고해 주세요.
 ```
 
 **3. 또는 직접 실행하기:**

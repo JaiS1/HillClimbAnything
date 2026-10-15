@@ -16,7 +16,9 @@ Traducido de README.md en el commit b9bad05. El README en inglés es la referenc
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>Pruébalo sin instalar nada: ¿qué tan ruidoso es tu benchmark y qué mejora podrías detectar?</sub>
 
 <br /><br />
 
@@ -47,16 +49,39 @@ Tu agente propone y HCA decide. HCA es una CLI de Python pequeña y sin dependen
 **1. Instala** (Python 3.11+; probado en Linux y WSL, macOS sin probar):
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # aún no está en PyPI
-npx skills add JaiS1/HillClimbAnything --skill hca             # opcional: el skill del agente
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # o: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # añade el skill del agente (muestra antes su plan)
 ```
+
+`hca setup` coloca el skill donde los agentes lo buscan: `~/.claude/skills/hca` (Claude Code) y
+`~/.agents/skills/hca` (Codex, Cursor, Gemini CLI, Copilot). Hace una copia de seguridad de lo que reemplaza,
+y `hca setup --uninstall` lo quita de nuevo. ¿Sin [`uv`](https://docs.astral.sh/uv/getting-started/installation/) ni [`pipx`](https://pipx.pypa.io/stable/installation/)? `pip install` a secas
+funciona dentro de un entorno virtual; muchos sistemas lo rechazan fuera de uno (PEP 668).
+
+<details>
+<summary>Otras formas de añadir el skill</summary>
+
+**Plugin de Claude Code:**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+En ambos casos el skill maneja la CLI `hca`, así que instala también la CLI.
+</details>
 
 **2. Pídeselo a tu agente:**
 
 ```text
-Instala HillClimbAnything (github.com/JaiS1/HillClimbAnything) y sigue su skills/hca/SKILL.md.
-Haz que `python bench.py` sea más rápido: ejecuta primero `hca quick`, escribe hca.toml conmigo,
-escala con `hca try` y reporta solo lo que `hca confirm` dé por bueno.
+Usa el skill hca (HillClimbAnything) para hacer más rápido `python bench.py`: ejecuta primero
+`hca quick`, escribe hca.toml conmigo, escala con `hca try` y reporta solo lo que `hca confirm` dé por bueno.
 ```
 
 **3. O úsalo tú mismo:**

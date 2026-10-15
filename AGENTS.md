@@ -20,6 +20,17 @@ project, read [`skills/hca/SKILL.md`](skills/hca/SKILL.md) instead.
 | `showcases/` | recorded climbs with their ledgers and reproduction scripts |
 | `spikes/phase0/` | the calibration experiment behind the statistics |
 
+## Setup
+
+```bash
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # or: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # copies the skill to ~/.claude/skills/hca and ~/.agents/skills/hca
+```
+
+Try it first without installing: `uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- <cmd>`.
+`hca setup --uninstall` removes the skill. Claude Code plugin alternative: `/plugin marketplace add JaiS1/HillClimbAnything`
+then `/plugin install hca@hillclimbanything`. To work on this repo itself, use the checkout and `python3 -m hca`.
+
 ## Commands
 
 ```bash

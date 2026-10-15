@@ -16,7 +16,9 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>Hiçbir şey kurmadan deneyin: kıyaslamanız ne kadar gürültülü ve hangi kazancı tespit edebilirsiniz?</sub>
 
 <br /><br />
 
@@ -44,16 +46,39 @@ Ajanınız öneri getirir, HCA karar verir. HCA, bağımlılığı olmayan küç
 **1. Kurulum** (Python 3.11+; Linux ve WSL'de test edildi, macOS test edilmedi):
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # henüz PyPI'da yok
-npx skills add JaiS1/HillClimbAnything --skill hca             # isteğe bağlı: ajan skill'i
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # ya da: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # ajan skill'ini ekler (önce planını gösterir)
 ```
+
+`hca setup`, skill'i ajanların aradığı yere koyar: `~/.claude/skills/hca` (Claude Code) ve
+`~/.agents/skills/hca` (Codex, Cursor, Gemini CLI, Copilot). Değiştirdiği her şeyin yedeğini alır,
+ve `hca setup --uninstall` onu yeniden kaldırır. [`uv`](https://docs.astral.sh/uv/getting-started/installation/) ya da [`pipx`](https://pipx.pypa.io/stable/installation/) yok mu? Düz
+`pip install` bir sanal ortam içinde çalışır; birçok sistem ortam dışında reddeder (PEP 668).
+
+<details>
+<summary>Skill'i eklemenin diğer yolları</summary>
+
+**Claude Code eklentisi:**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+Hangisini seçerseniz seçin skill `hca` CLI'ını yönetir, bu yüzden CLI'ı da kurun.
+</details>
 
 **2. Ajanınıza söyleyin:**
 
 ```text
-HillClimbAnything'i (github.com/JaiS1/HillClimbAnything) kur ve skills/hca/SKILL.md dosyasını izle.
-`python bench.py` komutunu hızlandır: önce `hca quick` çalıştır, hca.toml dosyasını benimle birlikte yaz,
-`hca try` ile tırman ve yalnızca `hca confirm`'ün geçirdiklerini raporla.
+hca skill'ini (HillClimbAnything) kullanarak `python bench.py` komutunu hızlandır: önce `hca quick` çalıştır,
+hca.toml dosyasını benimle birlikte yaz, `hca try` ile tırman ve yalnızca `hca confirm`'ün geçirdiklerini raporla.
 ```
 
 **3. Ya da kendiniz kullanın:**

@@ -16,7 +16,9 @@ README.md（commit b9bad05）からの翻訳です。数値は英語版 README �
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>何もインストールせずに試せます：ベンチマークのノイズはどれくらいか、どれだけの改善を検出できるか。</sub>
 
 <br /><br />
 
@@ -44,16 +46,39 @@ HillClimbAnything は、このループの**審判**です。
 **1. インストール**（Python 3.11+。Linux と WSL で動作確認済み、macOS は未確認）：
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # not on PyPI yet
-npx skills add JaiS1/HillClimbAnything --skill hca             # optional: the agent skill
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # または: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # エージェント用スキルを追加（先に計画を表示します）
 ```
+
+`hca setup` は、エージェントが探す場所にスキルを置きます：`~/.claude/skills/hca`（Claude Code）と
+`~/.agents/skills/hca`（Codex、Cursor、Gemini CLI、Copilot）。置き換えるものはバックアップし、
+`hca setup --uninstall` で元に戻せます。[`uv`](https://docs.astral.sh/uv/getting-started/installation/) も [`pipx`](https://pipx.pypa.io/stable/installation/) もない場合：通常の
+`pip install` は仮想環境の中なら動きます。環境の外では拒否するシステムが多いです（PEP 668）。
+
+<details>
+<summary>スキルを追加するその他の方法</summary>
+
+**Claude Code プラグイン：**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+どちらの方法でも、スキルは `hca` CLI を操作するので、CLI もインストールしてください。
+</details>
 
 **2. エージェントに頼む：**
 
 ```text
-HillClimbAnything（github.com/JaiS1/HillClimbAnything）をインストールし、skills/hca/SKILL.md に従ってください。
-`python bench.py` を速くしたいです。まず `hca quick` を実行し、私と一緒に hca.toml を書き、
-`hca try` で山登りして、`hca confirm` を通ったものだけを報告してください。
+hca スキル（HillClimbAnything）を使って `python bench.py` を速くしてください。まず `hca quick` を実行し、
+私と一緒に hca.toml を書き、`hca try` で山登りして、`hca confirm` を通ったものだけを報告してください。
 ```
 
 **3. 自分で操作する：**

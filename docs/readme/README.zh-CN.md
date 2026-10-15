@@ -16,7 +16,9 @@
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>无需安装即可试用：你的基准测试噪声有多大，你能检测到多大的提升？</sub>
 
 <br /><br />
 
@@ -44,16 +46,39 @@ agent 负责提出改动，HCA 负责裁决。HCA 是一个零依赖的小型 Py
 **1. 安装**（Python 3.11+；在 Linux 和 WSL 上测试过，macOS 未测试）：
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # not on PyPI yet
-npx skills add JaiS1/HillClimbAnything --skill hca             # optional: the agent skill
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # 或: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # 添加 agent skill（会先显示它的计划）
 ```
+
+`hca setup` 会把 skill 放到 agent 查找它的位置：`~/.claude/skills/hca`（Claude Code）和
+`~/.agents/skills/hca`（Codex、Cursor、Gemini CLI、Copilot）。它会备份被替换的内容，
+`hca setup --uninstall` 可再次移除。没有 [`uv`](https://docs.astral.sh/uv/getting-started/installation/) 或 [`pipx`](https://pipx.pypa.io/stable/installation/)？普通的
+`pip install` 在虚拟环境中可用；许多系统在虚拟环境之外会拒绝它（PEP 668）。
+
+<details>
+<summary>添加 skill 的其他方式</summary>
+
+**Claude Code 插件：**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+无论哪种方式，skill 驱动的都是 `hca` CLI，所以也请安装 CLI。
+</details>
 
 **2. 告诉你的 agent：**
 
 ```text
-安装 HillClimbAnything（github.com/JaiS1/HillClimbAnything），并按照它的 skills/hca/SKILL.md 操作。
-让 `python bench.py` 更快：先运行 `hca quick`，和我一起写好 hca.toml，用
-`hca try` 逐步爬升，最后只汇报 `hca confirm` 通过的结果。
+使用 hca skill（HillClimbAnything）让 `python bench.py` 更快：先运行 `hca quick`，和我一起写好 hca.toml，
+用 `hca try` 逐步爬升，最后只汇报 `hca confirm` 通过的结果。
 ```
 
 **3. 或者自己动手：**

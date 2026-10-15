@@ -16,7 +16,9 @@
 
 [Quick start](#quick-start) · [Showcase](#showcase-python-markdown-2-faster) · [How it works](#how-it-works) · [For agents](#for-agents) · [FAQ](#faq)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>Try it without installing anything: how noisy is your benchmark, and what win could you detect?</sub>
 
 <br /><br />
 
@@ -47,16 +49,40 @@ Your agent proposes, and HCA decides. HCA is a small Python CLI with no dependen
 **1. Install** (Python 3.11+; tested on Linux and WSL, macOS untested):
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # not on PyPI yet
-npx skills add JaiS1/HillClimbAnything --skill hca             # optional: the agent skill
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # or: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # add the agent skill (shows its plan first)
 ```
+
+`hca setup` puts the skill where agents look for it: `~/.claude/skills/hca` (Claude Code) and
+`~/.agents/skills/hca` (Codex, Cursor, Gemini CLI, Copilot). It backs up anything it replaces, and
+`hca setup --uninstall` removes it again. No [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+or [`pipx`](https://pipx.pypa.io/stable/installation/)? Plain `pip install` works inside a
+virtualenv; many systems refuse it outside one (PEP 668).
+
+<details>
+<summary>Other ways to add the skill</summary>
+
+**Claude Code plugin:**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+Either way, the skill drives the `hca` CLI, so install the CLI too.
+</details>
 
 **2. Ask your agent:**
 
 ```text
-Install HillClimbAnything (github.com/JaiS1/HillClimbAnything) and follow its skills/hca/SKILL.md.
-Make `python bench.py` faster: run `hca quick` first, write hca.toml with me, climb with
-`hca try`, and report only what `hca confirm` passes.
+Use the hca skill (HillClimbAnything) to make `python bench.py` faster: run `hca quick` first,
+write hca.toml with me, climb with `hca try`, and report only what `hca confirm` passes.
 ```
 
 **3. Or drive it yourself:**

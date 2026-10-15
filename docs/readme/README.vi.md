@@ -16,7 +16,9 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>pip install git+https://github.com/JaiS1/HillClimbAnything && hca quick -- python bench.py</code>
+<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+
+<sub>Dùng thử mà không cần cài gì: benchmark của bạn nhiễu đến đâu, và bạn có thể phát hiện mức cải thiện nào?</sub>
 
 <br /><br />
 
@@ -44,16 +46,39 @@ Agent của bạn đề xuất, còn HCA quyết định. HCA là một CLI Pyth
 **1. Cài đặt** (Python 3.11+; đã thử trên Linux và WSL, chưa thử trên macOS):
 
 ```bash
-pip install git+https://github.com/JaiS1/HillClimbAnything     # chưa có trên PyPI
-npx skills add JaiS1/HillClimbAnything --skill hca             # tùy chọn: skill cho agent
+uv tool install git+https://github.com/JaiS1/HillClimbAnything   # hoặc: pipx install git+https://github.com/JaiS1/HillClimbAnything
+hca setup                                                        # thêm skill cho agent (hiện kế hoạch của nó trước)
 ```
+
+`hca setup` đặt skill ở nơi các agent tìm nó: `~/.claude/skills/hca` (Claude Code) và
+`~/.agents/skills/hca` (Codex, Cursor, Gemini CLI, Copilot). Nó sao lưu mọi thứ bị thay thế,
+và `hca setup --uninstall` gỡ nó đi. Không có [`uv`](https://docs.astral.sh/uv/getting-started/installation/) hoặc [`pipx`](https://pipx.pypa.io/stable/installation/)? `pip install`
+thông thường chạy được trong virtualenv; nhiều hệ thống từ chối ngoài virtualenv (PEP 668).
+
+<details>
+<summary>Các cách khác để thêm skill</summary>
+
+**Plugin Claude Code:**
+
+```text
+/plugin marketplace add JaiS1/HillClimbAnything
+/plugin install hca@hillclimbanything
+```
+
+**[skills.sh](https://github.com/vercel-labs/skills):**
+
+```bash
+npx skills add JaiS1/HillClimbAnything --skill hca
+```
+
+Dù cách nào, skill điều khiển CLI `hca`, nên hãy cài cả CLI.
+</details>
 
 **2. Nhờ agent của bạn:**
 
 ```text
-Cài HillClimbAnything (github.com/JaiS1/HillClimbAnything) và làm theo skills/hca/SKILL.md.
-Làm cho `python bench.py` chạy nhanh hơn: chạy `hca quick` trước, cùng tôi viết hca.toml,
-leo bằng `hca try`, và chỉ báo cáo những gì `hca confirm` cho qua.
+Dùng skill hca (HillClimbAnything) để làm `python bench.py` nhanh hơn: chạy `hca quick` trước,
+cùng tôi viết hca.toml, leo bằng `hca try`, và chỉ báo cáo những gì `hca confirm` cho qua.
 ```
 
 **3. Hoặc tự chạy:**

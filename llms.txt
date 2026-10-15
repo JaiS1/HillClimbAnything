@@ -12,6 +12,13 @@ Do not use it when there is no repeatable command that prints the number, or for
 
 Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; never commit yourself (HCA commits keeps); no caches keyed on benchmark content or special-casing of inputs; report only confirmed results with their bound and the number of tries.
 
+## Install
+
+- Try without installing: `uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- <cmd>`
+- Install the CLI: `uv tool install git+https://github.com/JaiS1/HillClimbAnything` (or `pipx install git+https://github.com/JaiS1/HillClimbAnything`), then `hca setup` to copy the agent skill to `~/.claude/skills/hca` and `~/.agents/skills/hca` (it shows its plan first; `hca setup --uninstall` removes it)
+- Claude Code plugin instead of `hca setup`: `/plugin marketplace add JaiS1/HillClimbAnything` then `/plugin install hca@hillclimbanything` (install the CLI too)
+- Skill source: [SKILL.md](https://github.com/JaiS1/HillClimbAnything/blob/main/skills/hca/SKILL.md)
+
 ## Docs
 
 - [Agent skill (the method)](https://github.com/JaiS1/HillClimbAnything/blob/main/skills/hca/SKILL.md): premise checks, the climb loop, rules, reporting
