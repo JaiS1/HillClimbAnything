@@ -16,7 +16,7 @@ Traduzido de README.md no commit b9bad05. O README em inglês é a referência p
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Experimente sem instalar nada: quão ruidoso é o seu benchmark e que ganho você conseguiria detectar?</sub>
 
@@ -49,7 +49,7 @@ Seu agente propõe e o HCA decide. O HCA é uma CLI em Python pequena e sem depe
 **1. Instale** (Python 3.11+; testado em Linux e WSL, macOS não testado):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # ou: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # ou: pipx install hillclimbanything
 hca setup                                                        # adiciona a skill do agente (mostra o plano antes)
 ```
 

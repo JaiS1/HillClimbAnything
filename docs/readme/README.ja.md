@@ -16,7 +16,7 @@ README.md（commit b9bad05）からの翻訳です。数値は英語版 README �
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>何もインストールせずに試せます：ベンチマークのノイズはどれくらいか、どれだけの改善を検出できるか。</sub>
 
@@ -46,7 +46,7 @@ HillClimbAnything は、このループの**審判**です。
 **1. インストール**（Python 3.11+。Linux と WSL で動作確認済み、macOS は未確認）：
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # または: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # または: pipx install hillclimbanything
 hca setup                                                        # エージェント用スキルを追加（先に計画を表示します）
 ```
 

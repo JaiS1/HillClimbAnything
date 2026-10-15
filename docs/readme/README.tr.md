@@ -16,7 +16,7 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Hiçbir şey kurmadan deneyin: kıyaslamanız ne kadar gürültülü ve hangi kazancı tespit edebilirsiniz?</sub>
 
@@ -46,7 +46,7 @@ Ajanınız öneri getirir, HCA karar verir. HCA, bağımlılığı olmayan küç
 **1. Kurulum** (Python 3.11+; Linux ve WSL'de test edildi, macOS test edilmedi):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # ya da: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # ya da: pipx install hillclimbanything
 hca setup                                                        # ajan skill'ini ekler (önce planını gösterir)
 ```
 

@@ -16,7 +16,7 @@
 
 [Quick start](#quick-start) · [Showcase](#showcase-python-markdown-2-faster) · [How it works](#how-it-works) · [For agents](#for-agents) · [FAQ](#faq)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Try it without installing anything: how noisy is your benchmark, and what win could you detect?</sub>
 
@@ -49,7 +49,7 @@ Your agent proposes, and HCA decides. HCA is a small Python CLI with no dependen
 **1. Install** (Python 3.11+; tested on Linux and WSL, macOS untested):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # or: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # or: pipx install hillclimbanything
 hca setup                                                        # add the agent skill (shows its plan first)
 ```
 

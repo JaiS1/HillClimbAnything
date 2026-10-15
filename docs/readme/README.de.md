@@ -16,7 +16,7 @@
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Ohne Installation ausprobieren: Wie verrauscht ist dein Benchmark, und welchen Gewinn könntest du erkennen?</sub>
 
@@ -50,7 +50,7 @@ Skill (reines Markdown), der einem Coding-Agenten die Methode beibringt. Es wurd
 **1. Installieren** (Python 3.11+; getestet unter Linux und WSL, macOS ungetestet):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # oder: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # oder: pipx install hillclimbanything
 hca setup                                                        # den Agent-Skill hinzufügen (zeigt vorher seinen Plan)
 ```
 

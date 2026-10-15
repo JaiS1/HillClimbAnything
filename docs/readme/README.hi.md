@@ -16,7 +16,7 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>बिना कुछ install किए आज़माएँ: आपका benchmark कितना noisy है, और आप कितना सुधार पकड़ सकते हैं?</sub>
 
@@ -46,7 +46,7 @@ HillClimbAnything इस loop का **रेफ़री** है:
 **1. Install करें** (Python 3.11+; Linux और WSL पर test किया गया, macOS पर test नहीं हुआ):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # या: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # या: pipx install hillclimbanything
 hca setup                                                        # agent skill जोड़ें (पहले अपनी योजना दिखाता है)
 ```
 

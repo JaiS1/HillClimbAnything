@@ -16,7 +16,7 @@
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>不必安裝即可試用：你的基準測試雜訊有多大，你能偵測到多大的提升？</sub>
 
@@ -46,7 +46,7 @@ agent 負責提出變更，HCA 負責裁決。HCA 是一個零相依的小型 Py
 **1. 安裝**（Python 3.11+；已在 Linux 和 WSL 上測試，macOS 尚未測試）：
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # 或: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # 或: pipx install hillclimbanything
 hca setup                                                        # 加入 agent skill（會先顯示它的計畫）
 ```
 

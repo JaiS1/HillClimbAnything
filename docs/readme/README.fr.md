@@ -16,7 +16,7 @@ Traduit de README.md au commit b9bad05. Le README anglais fait foi pour les chif
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Essayez sans rien installer : quel est le bruit de votre benchmark, et quel gain pourriez-vous détecter ?</sub>
 
@@ -50,7 +50,7 @@ skill (du Markdown brut) qui enseigne la méthode à un agent de code. Il a ét�
 **1. Installez** (Python 3.11+ ; testé sous Linux et WSL, macOS non testé) :
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # ou: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # ou: pipx install hillclimbanything
 hca setup                                                        # ajouter le skill de l'agent (montre d'abord son plan)
 ```
 

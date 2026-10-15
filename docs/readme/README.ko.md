@@ -16,7 +16,7 @@ README.md(commit b9bad05)를 번역한 문서입니다. 수치는 영어 README�
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>아무것도 설치하지 않고 써 보세요: 벤치마크의 노이즈는 얼마나 되고, 어느 정도의 개선을 감지할 수 있을까요?</sub>
 
@@ -46,7 +46,7 @@ HillClimbAnything은 이 루프의 **심판**입니다.
 **1. 설치** (Python 3.11+; Linux와 WSL에서 테스트했고 macOS는 테스트하지 않음):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # 또는: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # 또는: pipx install hillclimbanything
 hca setup                                                        # 에이전트 스킬 추가(먼저 계획을 보여 줍니다)
 ```
 

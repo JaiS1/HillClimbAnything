@@ -14,8 +14,8 @@ Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; neve
 
 ## Install
 
-- Try without installing: `uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- <cmd>`
-- Install the CLI: `uv tool install git+https://github.com/JaiS1/HillClimbAnything` (or `pipx install git+https://github.com/JaiS1/HillClimbAnything`), then `hca setup` to copy the agent skill to `~/.claude/skills/hca` and `~/.agents/skills/hca` (it shows its plan first; `hca setup --uninstall` removes it)
+- Try without installing: `uvx --from hillclimbanything hca quick -- <cmd>`
+- Install the CLI: `uv tool install hillclimbanything` (or `pipx install hillclimbanything`), then `hca setup` to copy the agent skill to `~/.claude/skills/hca` and `~/.agents/skills/hca` (it shows its plan first; `hca setup --uninstall` removes it)
 - Claude Code plugin instead of `hca setup`: `/plugin marketplace add JaiS1/HillClimbAnything` then `/plugin install hca@hillclimbanything` (install the CLI too)
 - Skill source: [SKILL.md](https://github.com/JaiS1/HillClimbAnything/blob/main/skills/hca/SKILL.md)
 

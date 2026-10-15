@@ -16,7 +16,7 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
-<code>uvx --from git+https://github.com/JaiS1/HillClimbAnything hca quick -- python bench.py</code>
+<code>uvx --from hillclimbanything hca quick -- python bench.py</code>
 
 <sub>Coba tanpa menginstal apa pun: seberapa berisik benchmark Anda, dan peningkatan apa yang bisa Anda deteksi?</sub>
 
@@ -46,7 +46,7 @@ Agent Anda mengusulkan, HCA yang memutuskan. HCA adalah CLI Python kecil tanpa d
 **1. Instal** (Python 3.11+; diuji di Linux dan WSL, macOS belum diuji):
 
 ```bash
-uv tool install git+https://github.com/JaiS1/HillClimbAnything   # atau: pipx install git+https://github.com/JaiS1/HillClimbAnything
+uv tool install hillclimbanything   # atau: pipx install hillclimbanything
 hca setup                                                        # tambahkan skill agent (menampilkan rencananya lebih dulu)
 ```
 
