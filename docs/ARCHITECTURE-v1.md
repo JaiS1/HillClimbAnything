@@ -215,3 +215,144 @@ are fast (< 0.05 s per run) and deterministic enough. Required scenarios:
 - an env denylist removal;
 - a timeout killing the process group;
 - revert leaves files outside editable untouched (including untracked user files).
+
+---
+
+## Amendment A2 (2026-10-15): snapshot arms and a referee that verifies itself
+
+**Why.** The Phase 1 adversarial code review (4 blockers, all reproduced) found three ways
+`confirm` could pass a no-op at about -53%:
+
+1. a staged (index-only) change to a frozen file;
+2. editing the reused baseline worktree;
+3. editing `.hca/state.json`.
+
+It also found that the candidate ran in the live root while the baseline ran in a clean worktree,
+so any ignored or untracked file the benchmark reads was a one-sided win. Other findings:
+
+- files changed during measurement were committed unmeasured;
+- the candidate could print the metric itself;
+- replays went uncounted;
+- interrupts left benchmarks running.
+
+Where this amendment and the sections above disagree, this one wins.
+
+### A2.1 Snapshot arms (replaces "Arms" and the keep/revert mechanics in "Git operations")
+
+- **The candidate is a commit, built privately.** Take the last keep's tree, overlay the
+  working-tree contents of the changed editable paths, and commit it. Use a temporary index
+  (`GIT_INDEX_FILE`: `read-tree last_keep`, then `update-index --add/--remove` per editable path,
+  `write-tree`, `commit-tree -p last_keep`). The user's real index is never read or written.
+  Scope is computed from this snapshot vs `last_keep`, so it covers editable paths only by
+  construction. Staged changes in the user's index outside editable produce a warning ("your
+  index has staged changes outside editable; HCA ignores the index").
+- **Both arms are detached worktrees under `.hca/arms/<sha12>/`**: the baseline at `last_keep`
+  (or `init_sha` for confirm), the candidate at the snapshot sha.
+  - The structure is identical: each gets the same `link` symlinks and the same build. Neither is
+    the repo root.
+  - A benchmark walking its cwd sees only that worktree.
+  - **Before every measurement, each arm is verified:** `HEAD == sha` and no modified tracked files
+    (`git -C arm status --porcelain --untracked-files=no` empty). Otherwise the arm is removed and
+    recreated, with a warning. Untracked build outputs are allowed.
+  - **Warm-up:** one discarded objective run per arm per try, before block 0.
+- **Keep** first re-checks that the working tree's editable files still equal the snapshot. Any
+  difference means the files changed during measurement: the try is `void` and the edits are left
+  as they are. Then it moves the branch to the snapshot commit with `git update-ref`, followed by
+  `git reset -q <snapshot>`. The reset is mixed: it resets the index only, and the working tree
+  already equals the snapshot on editable paths. Commit message: `hca keep NNNN: <msg>`. The
+  committed tree is exactly the measured tree.
+- **Revert:** unchanged (restore editable paths to `last_keep`, delete untracked editable files).
+  The snapshot ref is kept as `refs/hca/attempts/NNNN` so the patch stays reproducible.
+- **Restore on a failed confirm:** build a snapshot commit whose editable paths equal
+  `last_confirmed` (or `init_sha`), on top of HEAD, by the same private-index method. Move the
+  branch to it, then sync the working tree's editable paths.
+- **Paths HCA always ignores** in scope and snapshots: `__pycache__/`, `*.pyc`, `.DS_Store`, and
+  anything git ignores. Linked paths are excluded too.
+- **Pruning:** worktrees outside {`init_sha`, `last_confirmed`, `last_keep`} are pruned after the
+  attempt record and state are written. Pruning is best-effort and never fails a try.
+- **v1 refuses** to start on repos with submodules (`.gitmodules`) or an in-progress
+  merge/rebase/cherry-pick, with a clear message.
+
+### A2.2 Frozen files and the referee store
+
+- **Frozen hashing** walks the filesystem: tracked, untracked and ignored files under `frozen`
+  globs, plus `hca.toml`. It streams in 1 MiB chunks. Linked paths matched by `frozen` are hashed
+  too, so a gitignored dataset can be both linked and protected.
+- **The referee store `$HCA_HOME/<task>/` is the source of truth** for `init_sha`, the spec hash,
+  the frozen hashes, `confirms_used`, the reset log and the attempt tree hashes. `.hca/state.json`
+  is a cache. On any disagreement the store wins and a warning is printed. It is not a security
+  boundary; the aim is that tampering takes deliberate effort and leaves a trace.
+- **`confirm` verifies before measuring:**
+  - `git diff --name-only init_sha last_keep` touches only editable paths;
+  - `last_keep` descends from `init_sha`;
+  - every commit in between is an `hca keep` / `hca revert to confirmed` commit;
+  - frozen files at both shas match the stored hashes.
+
+  Otherwise it refuses (exit 2) and says what is wrong.
+- **`init --reset`** refuses when the store records any confirm, unless `HCA_ALLOW_RESET=1` is set
+  in the environment, which marks it as a human decision. Every reset is logged in the store with
+  a timestamp, and `confirms_used` is never reset.
+
+### A2.3 Measurement integrity
+
+- **Result channel:** the objective may write its result (METRIC lines or item JSON) to the file
+  named by `HCA_RESULT_FILE`, which is fresh per run. If that file is non-empty it is used and
+  stdout is ignored. Otherwise stdout is parsed as before, but **the objective metric appearing on
+  more than one METRIC line is an invalid run**. In the candidate arm that means `candidate_invalid`.
+  Item JSON must be the last line with no METRIC line for the objective metric. The docs recommend
+  `HCA_RESULT_FILE`.
+- **`HCA_ARM` is no longer exported** to children; it stays in `runs.jsonl` only.
+  `HCA_ITEMS` and `HCA_HELDOUT_DIR` are still exported.
+- **A candidate-side `infra_invalid`** on an item that is valid in the baseline is scored as
+  `candidate_invalid`.
+- **`insufficient`** (too few scored blocks to reject) is `void`: edits kept, not a valid try.
+- **`try_seconds`** covers builds, guards and blocks. Exceeding it gives `void`, with the edits kept.
+
+### A2.4 Tries, replays and confirm output
+
+- Each attempt records the snapshot **tree hash** (in `.hca/` and in the store). A try whose
+  tree hash equals any earlier attempt's is refused (exit 2, nothing measured) unless `--again` is
+  given; `--again` is recorded and counted.
+- `void` and `invalid` attempts count toward `max_tries`. Past `max_tries`, `try` still runs but
+  prints a warning on every try. `report` prints "expected false keeps so far <= tries x 1%".
+- **`confirm` shows the agent only PASS or FAIL.** On PASS it also prints the confirmed estimate
+  and bound, which become the headline anyway. On FAIL it prints no numbers; the detail goes to
+  the referee store, and `hca report --referee` shows it to a human.
+
+### A2.5 Robustness
+
+- **Signals:** `cli.main` turns SIGTERM and SIGHUP into `KeyboardInterrupt`. `runner.run` kills its
+  process group in a `finally`, on any exit path. An interrupted try records verdict
+  `interrupted`, keeps the edits and releases the lock.
+- **Crash between keep and state write:** before `update-ref`, write `.hca/pending-keep.json`
+  (`{n, snapshot_sha, last_keep}`). `open_session` reconciles it:
+  - if the branch tip equals the snapshot, the keep is adopted (state and record finished);
+  - if it still equals `last_keep`, the marker is discarded.
+
+  The HEAD-mismatch message names this.
+- **Exit codes:** 0 keep or pass, 1 revert or fail, 2 invalid/void/refused, 3 usage, **4 internal
+  error**. Any unexpected exception prints `hca: internal error: ...` with the traceback path
+  (written to `.hca/crash-<ts>.log`).
+- **Git calls** get a 120 s timeout. The lock records pid + `/proc/<pid>/stat` start time, so PID
+  reuse can't make a stale lock look live; the error message mentions `rm .hca/lock`.
+- **`noise_report`** needs at least 8 A/A blocks.
+
+### A2.6 Tests required (each finding gets a regression test)
+
+1. An index-only change to a frozen file is never committed.
+2. A tampered baseline worktree is detected and recreated.
+3. A tampered `state.json` is overridden by the store, and confirm refuses an out-of-scope history.
+4. `init --reset` with confirms refuses without `HCA_ALLOW_RESET`.
+5. An ignored file in the repo root no longer advantages the candidate (both arms are worktrees).
+6. A file changed during measurement gives `void`, with nothing committed.
+7. SIGINT and SIGTERM during a run kill the benchmark group and record `interrupted`.
+8. A crash between `update-ref` and the state write is reconciled.
+9. A candidate printing the objective METRIC a second time is `candidate_invalid`, and
+   `HCA_RESULT_FILE` takes precedence.
+10. A replayed tree is refused without `--again`.
+11. An internal error exits with 4.
+12. `__pycache__` under editable is ignored.
+13. `insufficient` gives `void`.
+14. Candidate-side `infra_invalid` is scored as `candidate_invalid`.
+15. **End-to-end calibration:** 100 no-op tries through the real `hca try` on the fixture keep at
+    most 3 times (as a seeded, deterministic fixture).
