@@ -4,16 +4,44 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hillclimbanything"
-version = "0.2.0.dev0"
-description = "A noise-aware referee for hill-climbing any metric with your coding agent"
-readme = "README.md"
+version = "0.2.0"
+description = "The harness to get you to hill-climb any technical challenge: a noise-aware referee for your coding agent."
+readme = {file = "docs/pypi-readme.md", content-type = "text/markdown"}
 license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = []
+authors = [{name = "Jai Singh"}]
+keywords = ["benchmarking", "performance", "statistics", "ai-agents", "coding-agents", "autoresearch", "hill-climbing", "a-b-testing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Benchmark",
+]
+
+[project.urls]
+Homepage = "https://github.com/JaiS1/HillClimbAnything"
+Showcase = "https://github.com/JaiS1/HillClimbAnything/blob/main/showcases/python-markdown/README.md"
+Limits = "https://github.com/JaiS1/HillClimbAnything/blob/main/docs/LIMITS.md"
+Issues = "https://github.com/JaiS1/HillClimbAnything/issues"
 
 [project.scripts]
 hca = "hca.cli:main"
 hillclimbanything = "hca.cli:main"
 
 [tool.setuptools]
-packages = ["hca", "hca.commands"]
+packages = ["hca", "hca.commands", "hca.skill"]
+
+[tool.setuptools.package-dir]
+"hca.skill" = "skills/hca"            # the agent skill ships inside the wheel; skills/hca stays the one source
+
+[tool.setuptools.package-data]
+"hca.skill" = ["*.md", "references/*.md"]
