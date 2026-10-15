@@ -27,6 +27,12 @@ def add_arguments(parser) -> None:
 
 
 def run(args=None, out=print, cwd=None, seed=None) -> int:
+    root = gitops.repo_root(cwd)
+    with ledger.lock(root, "confirm", out):
+        return _run(args, out, cwd, seed)
+
+
+def _run(args=None, out=print, cwd=None, seed=None) -> int:
     root, spec, state = common.open_session(cwd)
     task, mode = state["task"], spec.objective.mode
     if gitops.head(root) != state["last_keep"]:
@@ -75,10 +81,10 @@ def run(args=None, out=print, cwd=None, seed=None) -> int:
         if result.void or len(result.scores) < 2:
             outcome, detail = "void", {"reasons": result.warnings}
         else:
-            decision = stats.keep_decision(result.scores, useful, alpha=ALPHA, look=1, looks=1)
+            decision = stats.keep_decision(result.scores, useful, alpha=ALPHA, look=1, looks=1, direction=spec.objective.direction)
             clean = not (result.candidate_failures or result.candidate_invalid_blocks)
             outcome = "pass" if decision["verdict"] == "keep" and clean else "fail"
-            fields = common.blocks_fields(decision, result.scores, useful, ALPHA)
+            fields = common.blocks_fields(decision, result.scores, useful, ALPHA, spec.objective.direction)
             reasons = list(decision["reasons"]) + ([] if clean else ["the candidate failed or reported invalid items in some blocks"])
             detail = {**fields, "reasons": reasons, "p": decision["p_value"], "scores": result.scores,
                       "arm_medians": result.arm_medians,
@@ -94,8 +100,9 @@ def run(args=None, out=print, cwd=None, seed=None) -> int:
             f"It counts against the {spec.limits.confirms} confirms.")
         return common.EXIT_INVALID
     shown = {"estimate": detail.get("estimate"), "lower": detail.get("lower")}
-    text = (f"estimate {ledger.fmt_effect(shown['estimate'], mode)} vs the original, "
-            f"lower bound {ledger.fmt_effect(shown['lower'], mode)}")
+    direction = spec.objective.direction
+    text = (f"estimate {ledger.fmt_change(shown['estimate'], mode, direction, spec.objective.metric)} vs the original, "
+            f"{ledger.fmt_bound(shown['lower'], mode, direction)}")
     attempts = ledger.read_attempts(root)
     if outcome == "pass":
         state["last_confirmed"] = state["last_keep"]
@@ -105,6 +112,7 @@ def run(args=None, out=print, cwd=None, seed=None) -> int:
         for a in attempts:
             if a.get("confirm") == "pending":
                 ledger.update_attempt(root, a["n"], confirm="confirmed")
+        arms.prune_unused(root, [state["init_sha"], state["last_confirmed"], state["last_keep"]])
         ledger.refresh_verdicts(root, state, spec)
         out(f"CONFIRM {number}: PASS - {text} ({used + 1} of {spec.limits.confirms} confirms used).")
         return 0
@@ -119,6 +127,7 @@ def run(args=None, out=print, cwd=None, seed=None) -> int:
     for a in attempts:
         if a.get("confirm") == "pending":
             ledger.update_attempt(root, a["n"], confirm="unconfirmed")
+    arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])
     ledger.refresh_verdicts(root, state, spec)
     out(f"CONFIRM {number}: FAIL - {text}. The editable paths were reset to "
         f"{'the last confirmed commit' if state.get('last_confirmed') else 'the original'} ({target[:12]}) as commit {sha[:12]}; "

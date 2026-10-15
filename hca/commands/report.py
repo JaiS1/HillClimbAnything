@@ -108,7 +108,7 @@ def render_text(state, spec, data) -> str:
         lines += ["", "Mechanism metrics (kept attempts, baseline -> candidate medians)"] + ["  " + m for m in data["mechanism"]]
     if data["slices"]:
         c = data["slices"]
-        lines += ["", f"Slices from confirm {c['n']} (median item log ratio per tag value, % better)"]
+        lines += ["", f"Slices from confirm {c['n']} (median item change per tag value, the metric's own %)"]
         for name, s in sorted(c["slices"].items()):
             lines.append(f"  {name}: {_cell(s['median_pct'], 'blocks')} over {s['items']} item(s)" + (f" ({s['skipped']} skipped)" if s["skipped"] else ""))
     if data["unproven"]:

@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import repokit
@@ -36,7 +37,7 @@ class ReportTests(repokit.RepoTestCase):
         self.repo.write("src/size.txt", "90\n")
         self.assertEqual(self.try_("shrink the loop")[0], 0)
         code, text = self.report()
-        self.assertIn("No confirmed result yet. Unconfirmed cumulative +", text)        # a keep, but not yet confirmed
+        self.assertIn("No confirmed result yet. Unconfirmed cumulative -", text)        # a keep, but not yet confirmed
         self.assertEqual(self.confirm()[0], 0)
         self.set_speed("21.0000001")
         self.assertEqual(self.try_("reformat")[0], 1)
@@ -52,11 +53,11 @@ class ReportTests(repokit.RepoTestCase):
         code, text = self.report(md=str(md_path))
         self.assertEqual(code, 0)
         # headline and table
-        self.assertIn("Confirmed: +", text)
-        self.assertIn("lower bound", text)
+        self.assertIn("Confirmed: t_ms -", text)
+        self.assertIn("cut of at least", text)
         for column in ("n", "verdict", "estimate", "p", "blocks", "wall", "message"):
             self.assertIn(column, text.splitlines()[text.splitlines().index("Attempts") + 1])
-        self.assertRegex(text, r"0001\s+keep \(confirmed\)\s+\+\d+\.\d%\s+0\.\d+\s+10\s+\d+\.\ds\s+shrink the loop")
+        self.assertRegex(text, r"0001\s+keep \(confirmed\)\s+-\d+\.\d%\s+0\.\d+\s+10\s+\d+\.\ds\s+shrink the loop")
         self.assertRegex(text, r"0002\s+revert\s")
         self.assertRegex(text, r"0003\s+invalid\s+-\s+-\s+-\s")
         self.assertIn("micro-tune", text)
@@ -102,7 +103,7 @@ class ReportTests(repokit.RepoTestCase):
         self.confirm()
         verdicts = (self.root / ".hca" / "VERDICTS.md").read_text()
         current = verdicts.split("## Current verdict")[1].split("##")[0]
-        self.assertIn("Confirmed: +", current)
+        self.assertIn("Confirmed: t_ms -", current)
         self.assertIn("~~No confirmed result yet. Unconfirmed cumulative", verdicts.split("## Superseded")[1])
         self.assertIn("- 0001 keep", verdicts)
 
@@ -116,7 +117,33 @@ class ReportTests(repokit.RepoTestCase):
         head = ledger.headline(self.state(), ledger.read_attempts(self.root))
         expected = (1 + a1["estimate"] / 100) * (1 + a2["estimate"] / 100) - 1
         self.assertAlmostEqual(head["cumulative"] / 100, expected, places=6)
-        self.assertGreater(head["cumulative"], 100)                      # 30 -> 14 is more than +100%
+        self.assertLess(head["cumulative"], -50)                         # 30 -> 14 is a 53% cut
+
+
+class FormatTests(unittest.TestCase):
+    def test_changes_read_in_the_metrics_own_terms_with_a_better_or_worse_word(self):
+        f = ledger.fmt_change
+        self.assertEqual(f(-30.0, "blocks", "min", "t_ms"), "t_ms -30.0% (better)")
+        self.assertEqual(f(4.2, "blocks", "min", "t_ms"), "t_ms +4.2% (worse)")
+        self.assertEqual(f(3.2, "blocks", "max", "accuracy"), "accuracy +3.2% (better)")
+        self.assertEqual(f(-1.0, "blocks", "max", "accuracy"), "accuracy -1.0% (worse)")
+        self.assertEqual(f(0.0, "blocks", "max", "accuracy"), "accuracy +0.0% (unchanged)")
+        self.assertEqual(f(0.0875, "items", "max", "acc"), "+0.0875")           # items mode: a plain score difference
+
+    def test_bounds_say_how_much_improvement_is_established(self):
+        b = ledger.fmt_bound
+        self.assertEqual(b(-27.1, "blocks", "min"), "cut of at least 27.1%")
+        self.assertEqual(b(1.9, "blocks", "max"), "gain of at least 1.9%")
+        self.assertEqual(b(1.4, "blocks", "min"), "+1.4%, no improvement shown")   # the bound for a time that might be worse
+        self.assertEqual(b(-0.5, "blocks", "max"), "-0.5%, no improvement shown")
+        self.assertEqual(b(0.0642, "items", "max"), "at least +0.0642")
+        self.assertEqual(b(None, "blocks", "min"), "n/a")
+
+    def test_a_cumulative_compounds_in_the_direction_of_the_metric(self):
+        cut = math.log(1 / 0.7)
+        self.assertAlmostEqual(ledger.cumulative("blocks", [cut, cut], "min"), -51.0)      # 0.7 * 0.7 = 0.49
+        self.assertAlmostEqual(ledger.cumulative("blocks", [math.log(1.1)] * 2, "max"), 21.0)
+        self.assertAlmostEqual(ledger.cumulative("items", [0.1, 0.2], "max"), 0.3)
 
 
 class ItemsReportTests(repokit.RepoTestCase):

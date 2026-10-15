@@ -16,7 +16,7 @@ from .. import arms, gitops, ledger, measure, runner, stats
 from ..core import HcaError
 from . import common
 
-NO_EVIDENCE = ("No evidence, not no effect: the interval [{lo}, {hi}] still allows the useful effect ({useful}). "
+NO_EVIDENCE = ("No evidence, not no effect: the interval {interval} still allows the useful effect ({useful}). "
                "More blocks or a lower-noise measurement could tell; this is not proof that the idea fails.")
 
 
@@ -25,6 +25,12 @@ def add_arguments(parser) -> None:
 
 
 def run(args, out=print, cwd=None, seed=None) -> int:
+    root = gitops.repo_root(cwd)
+    with ledger.lock(root, "try", out):
+        return _run(args, out, cwd, seed)
+
+
+def _run(args, out=print, cwd=None, seed=None) -> int:
     message = (getattr(args, "message", None) or "").strip()
     if not message:
         raise HcaError('hca try needs a message. Fix: hca try -m "what changed and why".')
@@ -36,6 +42,8 @@ def run(args, out=print, cwd=None, seed=None) -> int:
     n, adir = ledger.new_attempt(root)
     (adir / "message.txt").write_text(message + "\n", encoding="utf-8")
     ledger.write_record(adir, "scope.json", scope)
+    if scope["untracked_outside_editable"]:
+        out(common.untracked_warning(scope["untracked_outside_editable"]))
     rng, used_seed = common.make_rng(seed)
     rec = {"n": n, "message": message, "at": ledger.now(), "mode": mode, "unit": "%" if mode == "blocks" else "", "base": state["last_keep"],
            "verdict": None, "valid": False, "reasons": [], "seed": used_seed, "confirm": None}
@@ -112,7 +120,7 @@ def _measure_and_decide(root, spec, state, adir, rec, out, baseline, rng, starte
 # --- the two measurement modes ---------------------------------------------------------------------
 
 def _decide_blocks(spec, baseline, root, rng, env, adir, deadline) -> dict:
-    limits, useful = spec.limits, spec.objective.useful
+    limits, useful, direction = spec.limits, spec.objective.useful, spec.objective.direction
     looks = 2 if limits.extend_to > limits.blocks else 1
     fields = {"extended": False, "blocks": 0, "blocks_run": 0}
     timeout = "try_seconds ({}) ran out before the measurement finished".format(limits.try_seconds)
@@ -126,7 +134,7 @@ def _decide_blocks(spec, baseline, root, rng, env, adir, deadline) -> dict:
         return void(result.warnings or ["too few usable blocks"], result)
     if result.blocks_run < limits.blocks:
         return void([timeout], result)
-    decision = stats.keep_decision(result.scores, useful, look=1, looks=looks)
+    decision = stats.keep_decision(result.scores, useful, look=1, looks=looks, direction=direction)
     if decision["verdict"] == "extend" and (result.candidate_failures or result.candidate_invalid_blocks):
         decision["verdict"] = "revert"                  # a flaky candidate is never kept, so do not spend blocks extending it
         decision["reasons"].append("not extended: the candidate already failed in some blocks")
@@ -141,7 +149,7 @@ def _decide_blocks(spec, baseline, root, rng, env, adir, deadline) -> dict:
             return void(result.warnings or ["too few usable blocks"], result)
         if result.blocks_run < limits.extend_to:
             return void([timeout + " during the extension"], result)
-        decision = stats.keep_decision(result.scores, useful, look=2, looks=2)
+        decision = stats.keep_decision(result.scores, useful, look=2, looks=2, direction=direction)
     reasons = list(decision["reasons"])
     valid = True
     if result.candidate_failures or result.candidate_invalid_blocks:
@@ -149,8 +157,8 @@ def _decide_blocks(spec, baseline, root, rng, env, adir, deadline) -> dict:
         reasons.append(f"the candidate failed or reported invalid items in {len(set(result.candidate_invalid_blocks))} of "
                        f"{result.blocks_run} blocks (scored as the worst value; a candidate that is flaky is never kept)")
     keep = decision["verdict"] == "keep" and valid
-    fields.update(common.blocks_fields(decision, result.scores, useful, decision["alpha"]))
-    fields.update(blocks=len(result.scores), look=decision["look"], looks=looks, useful=stats.to_percent(useful))
+    fields.update(common.blocks_fields(decision, result.scores, useful, decision["alpha"], direction))
+    fields.update(blocks=len(result.scores), look=decision["look"], looks=looks, useful=stats.metric_change_pct(useful, direction))
     if decision["verdict"] == "insufficient":
         reasons.append("the measurement is too small to decide")
     return {"verdict": "keep" if keep else "revert", "valid": valid, "reasons": reasons, "fields": fields,
@@ -235,6 +243,7 @@ def _finish(root, spec, state, adir, rec, out, verdict, reasons, started, valid=
         else:
             state["last_keep"] = sha
             rec.update(commit=sha, confirm="pending")
+            arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), sha])
             action.append(f"kept as commit {sha[:12]} on {state['branch']}")
     if revert:
         result = gitops.revert(root, spec, state["last_keep"])
@@ -243,12 +252,11 @@ def _finish(root, spec, state, adir, rec, out, verdict, reasons, started, valid=
     _record(root, spec, state, adir, rec, verdict, reasons, started, valid=valid)
     wall = rec["wall_seconds"]
     useful_text = spec.objective.useful_effect
-    out(_headline(rec, verdict, mode, wall))
+    out(_headline(rec, verdict, mode, wall, spec))
     for reason in reasons:
         out("  - " + reason)
     if verdict == "revert" and rec.get("valid") and rec.get("includes_useful") and rec.get("estimate") is not None:
-        out("  " + NO_EVIDENCE.format(lo=ledger.fmt_effect(rec.get("lower"), mode), hi=ledger.fmt_effect(rec.get("upper"), mode),
-                                      useful=useful_text))
+        out("  " + NO_EVIDENCE.format(interval=_interval_text(rec, mode), useful=useful_text))
     if verdict == "invalid":
         out("  Nothing was measured and your edits are untouched. Fix the above and run `hca try` again."
             if note == "scope" else "  Make an edit inside the editable paths, then run `hca try` again.")
@@ -257,7 +265,16 @@ def _finish(root, spec, state, adir, rec, out, verdict, reasons, started, valid=
     return {"keep": common.EXIT_KEEP, "revert": common.EXIT_REVERT}.get(verdict, common.EXIT_INVALID)
 
 
-def _headline(rec, verdict, mode, wall) -> str:
+def _interval_text(rec, mode) -> str:
+    """The estimate's two-sided interval in display units, smaller end first ('unbounded' if the data cannot bound an end)."""
+    ends = [rec.get("lower"), rec.get("upper")]
+    if any(e is None for e in ends):
+        return "(unbounded on at least one side)"
+    lo, hi = sorted(ends)
+    return f"[{ledger.fmt_effect(lo, mode)}, {ledger.fmt_effect(hi, mode)}]"
+
+
+def _headline(rec, verdict, mode, wall, spec) -> str:
     label = verdict.upper()
     if verdict == "invalid":
         return f"attempt {rec['n']:04d}  INVALID  (no measurement)"
@@ -266,9 +283,14 @@ def _headline(rec, verdict, mode, wall) -> str:
     if rec.get("estimate") is None:
         return f"attempt {rec['n']:04d}  {label}  (not measured to a verdict; {wall:.1f} s)"
     p = f", p = {rec['p']:.3g}" if rec.get("p") is not None else ""
-    blocks = f"{rec['blocks']} blocks" + (" after extending" if rec.get("extended") else "") if mode == "blocks" else f"{rec.get('items')} items"
+    if mode == "blocks":
+        direction, blocks = spec.objective.direction, f"{rec['blocks']} blocks" + (" after extending" if rec.get("extended") else "")
+        word = ledger.fmt_change(rec["estimate"], mode, direction, spec.objective.metric)
+        head, tail = word[:word.rindex("(")], word[word.rindex("(") + 1:-1]
+        bound = ledger.fmt_bound(rec.get("lower"), mode, direction)
+        return f"attempt {rec['n']:04d}  {label}  {head}({tail}; {bound}{p}, {blocks}, {wall:.1f} s)"
     return (f"attempt {rec['n']:04d}  {label}  {ledger.fmt_effect(rec['estimate'], mode)} "
-            f"(lower bound {ledger.fmt_effect(rec.get('lower'), mode)}{p}, {blocks}, {wall:.1f} s)")
+            f"(lower bound {ledger.fmt_effect(rec.get('lower'), mode)}{p}, {rec.get('items')} items, {wall:.1f} s)")
 
 
 def _discard(adir) -> None:

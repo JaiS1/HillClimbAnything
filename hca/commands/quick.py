@@ -35,7 +35,7 @@ def run(args, out=print) -> int:
     command = list(args.command)
     if not command:
         raise HcaError("hca quick needs a command after `--`, e.g. `hca quick -- python3 bench.py`.")
-    useful = stats.parse_effect(args.useful)
+    useful = stats.parse_effect(args.useful, args.direction)
     if args.blocks is not None and args.blocks < MIN_BLOCKS:
         raise HcaError(f"--blocks must be at least {MIN_BLOCKS} (noise needs a few A/A blocks to estimate).")
     budget = args.budget_seconds
@@ -68,7 +68,7 @@ def run(args, out=print) -> int:
             "See the warnings above; fix the command and rerun.")
         return 2
     report = stats.noise_report(result.scores, useful)
-    for line in _lines(report, result, metric, source, args.useful):
+    for line in _lines(report, result, metric, source, args.useful, args.direction):
         out(line)
     if args.save:
         target = cwd / ".hca"
@@ -99,9 +99,9 @@ def _choose_metric(probe, wanted):
     return measure.WALL_METRIC, "wall"
 
 
-def _lines(report, result, metric, source, useful_text):
+def _lines(report, result, metric, source, useful_text, direction="min"):
     n10, n20 = stats.MIN_BLOCKS, stats.EXTENDED_BLOCKS
-    d = report["detectable_pct"]
+    d = {k: abs(stats.metric_change_pct(v, direction)) for k, v in report["detectable"].items()}   # in the metric's own %
     t = 2 * result.median_run_seconds
     what = {"wall": "the command's own wall time (it printed no METRIC line or item JSON)",
             "metric": f"METRIC {metric}", "items": f"item JSON ({metric})"}[source]

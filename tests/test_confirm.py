@@ -42,7 +42,7 @@ class ConfirmTests(repokit.RepoTestCase):
         keep = self.repo.head()
         code, text = self.confirm()
         self.assertEqual(code, 0, text)
-        self.assertRegex(text, r"CONFIRM 1: PASS - estimate \+\d+\.\d% vs the original, lower bound \+\d+\.\d% \(1 of 3 confirms used\)\.")
+        self.assertRegex(text, r"CONFIRM 1: PASS - estimate t_ms -\d+\.\d% \(better\) vs the original, cut of at least \d+\.\d% \(1 of 3 confirms used\)\.")
         state = self.state()
         self.assertEqual((state["last_confirmed"], state["last_keep"], state["confirms_used"]), (keep, keep, 1))
         self.assertEqual(self.attempt(1)["confirm"], "confirmed")
@@ -51,7 +51,7 @@ class ConfirmTests(repokit.RepoTestCase):
         self.assertEqual(len(record["scores"]), 20)                      # full detail lives in the store only
         self.assertNotIn("scores", text)
         self.assertTrue((self.store() / "confirms" / "01" / "runs.jsonl").is_file())
-        self.assertIn("Confirmed: +", (self.root / ".hca" / "VERDICTS.md").read_text())
+        self.assertIn("Confirmed: t_ms -", (self.root / ".hca" / "VERDICTS.md").read_text())
         self.assertEqual(self.state()["last_confirmed_result"]["n"], 1)
 
     def test_confirm_uses_commits_not_the_working_tree(self):
@@ -61,7 +61,7 @@ class ConfirmTests(repokit.RepoTestCase):
         self.set_speed(5)                                                # an uncommitted edit: would read as +500% if measured
         code, text = self.confirm()
         self.assertEqual(code, 0, text)
-        self.assertLess(self.records()[0]["estimate"], 100)
+        self.assertGreater(self.records()[0]["estimate"], -40)             # about -30%; the 5 in the working tree would read -83%
         self.assertEqual(self.repo.read("src/speed.txt"), "5\n")         # a passing confirm leaves the edit alone
 
     def test_heldout_dir_is_passed_to_the_objective_and_a_dev_only_win_fails_to_confirm(self):
@@ -74,7 +74,7 @@ class ConfirmTests(repokit.RepoTestCase):
         code, text = self.confirm()
         self.assertEqual(code, 1, text)
         self.assertIn("CONFIRM 1: FAIL", text)
-        self.assertRegex(text, r"estimate [+-]\d+\.\d% vs the original, lower bound [+-]\d+\.\d%")
+        self.assertRegex(text, r"estimate t_ms [+-]\d+\.\d% \((better|worse|unchanged)\) vs the original")
         self.assertNotIn("heldout", text.lower())
         state = self.state()
         self.assertIsNone(state["last_confirmed"])
@@ -125,7 +125,7 @@ class ConfirmTests(repokit.RepoTestCase):
         self.assertFalse((self.root / "src" / "dev_hack.txt").exists())
         self.assertEqual([self.attempt(1)["confirm"], self.attempt(2)["confirm"]], ["confirmed", "unconfirmed"])
         verdicts = (self.root / ".hca" / "VERDICTS.md").read_text()
-        self.assertIn("Confirmed: +", verdicts)                          # the confirmed result is still the headline
+        self.assertIn("Confirmed: t_ms -", verdicts)                          # the confirmed result is still the headline
         self.assertIn("~~0002 keep", verdicts)
 
     def test_confirm_cap_is_enforced_from_the_referee_store(self):

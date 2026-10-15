@@ -82,16 +82,46 @@ class GitopsTests(repokit.RepoTestCase):
 
     def test_scope_violations_are_named(self):
         self.repo.write("README.md", "edited\n")
-        self.repo.write("bench/run.py", "# tampered\n")
+        self.repo.write("bench/run.sh", "# tampered\n")
         self.repo.write("hca.toml", "# tampered\n")
         self.repo.write("bench/new.py", "x")
         self.repo.write("stray.txt", "x")
         reasons = self.reasons(self.scope())
         self.assertIn("outside the editable", reasons["README.md"])
-        self.assertEqual(reasons["bench/run.py"], "frozen file changed")
+        self.assertEqual(reasons["bench/run.sh"], "frozen file changed")
         self.assertEqual(reasons["hca.toml"], "frozen file changed")
         self.assertEqual(reasons["bench/new.py"], "new file in a frozen path")
-        self.assertIn("outside the editable", reasons["stray.txt"])      # untracked, not ignored, not editable
+        self.assertNotIn("stray.txt", reasons)                           # an untracked stray file is a warning, not a violation
+        self.assertEqual(self.scope()["untracked_outside_editable"], ["stray.txt"])
+
+    def test_init_cleanliness_blocks_on_tracked_edits_and_untracked_editable_or_frozen_files_only(self):
+        self.repo.write("stray.txt", "x\n")
+        self.repo.write("notes/todo.md", "x\n")
+        state = gitops.dirty_state(self.root, self.spec)
+        self.assertEqual((state["blocking"], sorted(state["ignored"])), ([], ["notes/todo.md", "stray.txt"]))
+        self.repo.write("src/new.txt", "x\n")                            # untracked but editable: would be absorbed into the first keep
+        self.repo.write("bench/new.py", "x\n")                           # untracked and frozen
+        self.repo.write("README.md", "edited\n")                         # tracked modification
+        self.assertEqual(sorted(gitops.dirty_state(self.root, self.spec)["blocking"]), ["README.md", "bench/new.py", "src/new.txt"])
+
+    def test_git_runs_without_a_terminal_editor_or_stdin_but_hooks_still_run(self):
+        out = self.tmp / "hook.out"
+        hook = self.root / ".git" / "hooks" / "pre-commit"
+        hook.write_text('#!/bin/sh\n{ echo "$GIT_TERMINAL_PROMPT"; echo "$GIT_EDITOR"; readlink /proc/self/fd/0; } > "$HOOKOUT"\n')
+        hook.chmod(0o755)
+        with repokit.env(HOOKOUT=str(out)):
+            gitops.commit(self.root, "hook probe", allow_empty=True)
+        prompt, editor, stdin = out.read_text().split()
+        self.assertEqual((prompt, stdin), ("0", "/dev/null"))
+        self.assertIn(editor, ("true", ":"))                              # git itself sets : for hooks of a commit with -m
+
+    def test_a_failing_hook_surfaces_git_message(self):
+        hook = self.root / ".git" / "hooks" / "pre-commit"
+        hook.write_text('#!/bin/sh\necho "lint says no" >&2\nexit 1\n')
+        hook.chmod(0o755)
+        with self.assertRaises(HcaError) as caught:
+            gitops.commit(self.root, "will fail", allow_empty=True)
+        self.assertIn("lint says no", str(caught.exception))
 
     def test_ignored_files_are_not_scope_violations(self):
         # an untracked file that the user's own .gitignore covers never shows up in `ls-files --others --exclude-standard`
@@ -118,14 +148,14 @@ class GitopsTests(repokit.RepoTestCase):
         self.assertFalse((self.root / "src" / "new.txt").exists())
 
     def test_frozen_hash_catches_a_committed_edit_and_head_moves(self):
-        self.repo.write("bench/run.py", "# tampered and committed\n")
+        self.repo.write("bench/run.sh", "# tampered and committed\n")
         self.repo.commit_all("sneaky")                                  # HEAD is no longer last_keep
         reasons = self.reasons(self.scope())
         self.assertIn("(HEAD)", reasons)
-        self.assertIn("frozen file changed", reasons["bench/run.py"])   # still differs from last_keep, so reported as a change
+        self.assertIn("frozen file changed", reasons["bench/run.sh"])   # still differs from last_keep, so reported as a change
         # even if the agent re-bases the notion of last_keep onto the sneaky commit, the recorded hash still fails
         self.state["last_keep"] = self.repo.head()
-        self.assertEqual(self.reasons(self.scope())["bench/run.py"], "frozen file differs from the sha256 recorded at init")
+        self.assertEqual(self.reasons(self.scope())["bench/run.sh"], "frozen file differs from the sha256 recorded at init")
         self.repo.git("rm", "-q", "bench/items.py")
         self.repo.commit_all("delete a frozen file")
         self.state["last_keep"] = self.repo.head()

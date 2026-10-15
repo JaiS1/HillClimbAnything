@@ -24,10 +24,20 @@ HCA_DIR = ".hca"
 
 # --- running git -----------------------------------------------------------------------------------
 
+def _run(argv, cwd, input=None, env=None):
+    """subprocess.run for git that can never wait for a human: no terminal prompt, no editor, stdin closed.
+
+    Hooks and commit signing are deliberately left enabled (they are the user's own settings); if one of
+    them fails, the commit fails with git's message and the caller reverts with that message as the reason.
+    """
+    full_env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_EDITOR="true", **(env or {}))
+    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=full_env,
+                          **({"input": input} if input is not None else {"stdin": subprocess.DEVNULL}))
+
+
 def git(root, *args, check=True, input=None, env=None) -> str:
     """Run `git <args>` in `root`; return stdout. A failure raises HcaError with git's own message."""
-    full_env = dict(os.environ, **(env or {}))
-    done = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, input=input, env=full_env)
+    done = _run(["git", *args], root, input=input, env=env)
     if check and done.returncode != 0:
         raise HcaError(f"git {' '.join(args[:3])} failed (exit {done.returncode}): {(done.stderr or done.stdout).strip()}")
     return done.stdout
@@ -50,7 +60,7 @@ def _chunks(paths):
 def repo_root(cwd=None) -> Path:
     cwd = Path(cwd or Path.cwd())
     try:
-        done = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True, text=True)
+        done = _run(["git", "rev-parse", "--show-toplevel"], cwd)
     except FileNotFoundError:
         raise HcaError("git was not found on PATH. Fix: install git.") from None
     if done.returncode != 0:
@@ -67,8 +77,7 @@ def current_branch(root) -> str:
 
 
 def branch_exists(root, name) -> bool:
-    return subprocess.run(["git", "rev-parse", "--verify", "-q", f"refs/heads/{name}"], cwd=root,
-                          capture_output=True).returncode == 0
+    return _run(["git", "rev-parse", "--verify", "-q", f"refs/heads/{name}"], root).returncode == 0
 
 
 # --- glob matching ---------------------------------------------------------------------------------
@@ -161,6 +170,28 @@ def dirty_paths(root, ignore=()) -> list:
     return paths
 
 
+def dirty_state(root, spec) -> dict:
+    """{blocking, ignored}: what makes the tree unclean for `init`, and what is only worth a warning.
+
+    Blocking: any tracked modification, and any untracked file that is editable, frozen or hca.toml (the
+    baseline must be exactly a commit). Ignored with a warning: other untracked files (links and `.hca/`
+    are not even listed).
+    """
+    blocking, ignored = [], []
+    untracked_now = _untracked_set(root)
+    for path in dirty_paths(root, spec.task.link):
+        untracked = path in untracked_now
+        if untracked and not is_frozen(path, spec) and not matches_any(path, spec.task.editable):
+            ignored.append(path)
+        else:
+            blocking.append(path)
+    return {"blocking": blocking, "ignored": ignored}
+
+
+def _untracked_set(root) -> set:
+    return set(_lines(git(root, "ls-files", "--others", "--exclude-standard", "-z")))
+
+
 def ensure_exclude(root) -> None:
     """Add `.hca/` to .git/info/exclude (not to the user's .gitignore)."""
     target = Path(root) / git(root, "rev-parse", "--git-path", "info/exclude").strip()
@@ -207,7 +238,7 @@ def frozen_hashes(root, spec) -> dict:
 
 
 def scope_check(root, spec, state) -> dict:
-    """Is every change inside the editable scope? Returns {ok, base, changed, untracked, violations}.
+    """Is every change inside the editable scope? Returns {ok, base, changed, untracked, untracked_outside_editable, violations}.
 
     Violations name the path and the reason. The check covers: HEAD still being the last keep (the
     agent must not commit), every changed or new path being editable and not frozen, and every frozen
@@ -224,6 +255,11 @@ def scope_check(root, spec, state) -> dict:
     # every arm, not agent edits, so they are exempt; otherwise a dependency directory that is not gitignored
     # would invalidate every try.
     untracked = [p for p in untracked if not matches_any(p, spec.task.link)]
+    # CONTRACT NOTE: an untracked file outside the editable paths (a stray log, a scratch file) is recorded and
+    # warned about, not a violation: it cannot be committed or measured as part of the change. Frozen paths and
+    # hca.toml stay strict, and so do tracked edits outside editable.
+    outside = [p for p in untracked if not is_frozen(p, spec) and not matches_any(p, spec.task.editable)]
+    untracked = [p for p in untracked if p not in outside]
     for path in tracked + untracked:
         if is_frozen(path, spec):
             violations.append({"path": path, "reason": "frozen file changed" if path in tracked else "new file in a frozen path"})
@@ -240,7 +276,8 @@ def scope_check(root, spec, state) -> dict:
             violations.append({"path": path, "reason": "frozen file added since init"})
         elif now[path] != recorded[path]:
             violations.append({"path": path, "reason": "frozen file differs from the sha256 recorded at init"})
-    return {"ok": not violations, "base": base, "changed": tracked, "untracked": untracked, "violations": violations}
+    return {"ok": not violations, "base": base, "changed": tracked, "untracked": untracked,
+            "untracked_outside_editable": outside, "violations": violations}
 
 
 def editable_changes(scope) -> list:
@@ -270,8 +307,8 @@ def raw_patch(root, base) -> str:
 
 def _identity_args(root) -> list:
     """Fallback committer identity, only if the user has none configured (commit would otherwise fail)."""
-    have = subprocess.run(["git", "config", "user.name"], cwd=root, capture_output=True, text=True).stdout.strip() and \
-        subprocess.run(["git", "config", "user.email"], cwd=root, capture_output=True, text=True).stdout.strip()
+    have = _run(["git", "config", "user.name"], root).stdout.strip() and \
+        _run(["git", "config", "user.email"], root).stdout.strip()
     return [] if have else ["-c", "user.name=hca", "-c", "user.email=hca@localhost"]
 
 

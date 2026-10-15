@@ -1,6 +1,8 @@
 import json
 import os
+import subprocess
 import sys
+import time
 import unittest
 
 import repokit
@@ -20,17 +22,30 @@ def guard_toml(name, command=None, metric=None, regression="2%", extra=""):
 
 class InitTests(repokit.RepoTestCase):
     def test_init_refuses_a_dirty_tree_and_changes_nothing(self):
-        self.repo.write("junk.txt", "untracked\n")
+        self.repo.write("README.md", "modified\n")                       # a tracked modification
         with self.assertRaises(HcaError) as caught:
             self.init()
         self.assertIn("not clean", str(caught.exception))
-        self.assertIn("junk.txt", str(caught.exception))
+        self.assertIn("README.md", str(caught.exception))
         self.assertEqual(self.repo.git("branch", "--show-current"), "main")
         self.assertFalse((self.root / ".hca" / "state.json").exists())
-        (self.root / "junk.txt").unlink()
-        self.repo.write("README.md", "modified\n")
+        self.repo.git("checkout", "--", "README.md")
+        self.repo.write("src/new.txt", "x\n")                            # untracked inside editable: would be absorbed into a keep
+        with self.assertRaises(HcaError) as caught:
+            self.init()
+        self.assertIn("src/new.txt", str(caught.exception))
+        (self.root / "src" / "new.txt").unlink()
+        (self.root / "hca.toml").rename(self.tmp / "hca.toml.bak")        # an uncommitted spec is not a baseline either
+        self.repo.git("rm", "-q", "--cached", "hca.toml")
+        (self.tmp / "hca.toml.bak").rename(self.root / "hca.toml")
         with self.assertRaises(HcaError):
             self.init()
+
+    def test_init_warns_about_untracked_files_outside_editable_but_continues(self):
+        self.repo.write("scratch.log", "x\n")
+        code, text = self.init()
+        self.assertEqual(code, 0, text)
+        self.assertIn("warning: 1 untracked file(s) outside editable were ignored: scratch.log; gitignore them to silence this.", text)
 
     def test_init_creates_the_branch_exclude_state_and_frozen_hashes(self):
         code, text = self.init()
@@ -42,12 +57,12 @@ class InitTests(repokit.RepoTestCase):
         state = self.state()
         self.assertEqual((state["init_sha"], state["last_keep"]), (self.repo.head(), self.repo.head()))
         self.assertIsNone(state["last_confirmed"])
-        self.assertEqual(set(state["frozen"]), {"hca.toml", "bench/run.py", "bench/items.py"})
+        self.assertEqual(set(state["frozen"]), {"hca.toml", "bench/run.sh", "bench/items.py"})
         self.assertEqual(state["spec_hash"], state["frozen"]["hca.toml"])
         self.assertTrue((self.root / ".hca" / "noise.json").is_file())
         self.assertTrue((self.root / ".hca" / "VERDICTS.md").is_file())
         self.assertTrue((self.root / ".hca" / "arms" / state["init_sha"][:12]).is_dir())
-        self.assertIn("Baseline A/A (6 blocks", text)
+        self.assertIn("Baseline A/A (5 blocks", text)
         self.assertIn("Useful effect 5%: OK", text)
         with self.assertRaises(HcaError) as caught:
             self.init()
@@ -66,7 +81,7 @@ class InitTests(repokit.RepoTestCase):
             self.assertTrue((self.root / ".hca" / "state.json").exists())
 
     def test_a_broken_objective_is_reported_not_initialised(self):
-        os.remove(self.root / "bench" / "run.py")
+        os.remove(self.root / "bench" / "run.sh")
         self.repo.commit_all("remove the bench")
         code, text = self.init()
         self.assertEqual(code, 2)
@@ -118,7 +133,7 @@ class TryTests(repokit.RepoTestCase):
         self.set_speed(21)                                              # a 30% speedup
         code, text = self.try_("cache the loop bound")
         self.assertEqual(code, 0, text)
-        self.assertRegex(text, r"attempt 0001  KEEP  \+\d+\.\d% \(lower bound \+\d+\.\d%, p = 0\.\d+, 10 blocks, \d+\.\d s\)")
+        self.assertRegex(text, r"attempt 0001  KEEP  t_ms -\d+\.\d% \(better; cut of at least \d+\.\d%, p = 0\.\d+, 10 blocks, \d+\.\d s\)")
         after = self.repo.head()
         self.assertNotEqual(before, after)
         self.assertEqual(self.repo.git("log", "-1", "--format=%s"), "hca keep 0001: cache the loop bound")
@@ -127,8 +142,8 @@ class TryTests(repokit.RepoTestCase):
         self.assertEqual(self.status_lines(), [])
         a = self.attempt(1)
         self.assertEqual((a["verdict"], a["valid"], a["confirm"], a["commit"], a["blocks"]), ("keep", True, "pending", after, 10))
-        self.assertGreater(a["estimate"], 25)
-        self.assertGreater(a["lower"], 20)
+        self.assertAlmostEqual(a["estimate"], -30, delta=3)          # 30 -> 21 is a 30% cut: the metric's own change
+        self.assertLess(a["lower"], -25)                                # the least-improvement end of the interval
         for name in ("message.txt", "patch.diff", "scope.json", "guards.json", "runs.jsonl", "verdict.json"):
             self.assertTrue((self.adir() / name).is_file(), name)
         self.assertIn("+21", (self.adir() / "patch.diff").read_text())
@@ -173,12 +188,12 @@ class TryTests(repokit.RepoTestCase):
 
     def test_editing_a_frozen_file_or_the_spec_is_invalid(self):
         before_count = self.bench_count()
-        self.repo.write("bench/run.py", "print('METRIC t_ms=1')\n")
+        self.repo.write("bench/run.sh", "print('METRIC t_ms=1')\n")
         code, text = self.try_("cheat")
         self.assertEqual(code, 2)
-        self.assertIn("bench/run.py: frozen file changed", text)
-        self.assertEqual(self.repo.read("bench/run.py"), "print('METRIC t_ms=1')\n")
-        self.repo.git("checkout", "--", "bench/run.py")
+        self.assertIn("bench/run.sh: frozen file changed", text)
+        self.assertEqual(self.repo.read("bench/run.sh"), "print('METRIC t_ms=1')\n")
+        self.repo.git("checkout", "--", "bench/run.sh")
         self.repo.write("hca.toml", self.repo.read("hca.toml") + "# loosened\n")
         code, text = self.try_("cheat again")
         self.assertEqual(code, 2)
@@ -227,6 +242,63 @@ class TryTests(repokit.RepoTestCase):
         records = [json.loads(line) for line in (self.adir() / "runs.jsonl").read_text().splitlines()]
         self.assertTrue(any(r.get("kind") == "run" and r.get("ok") is False and "crashed on purpose" in r.get("error_tail", "") for r in records))
 
+    def arm_dirs(self):
+        return {p.name for p in (self.root / ".hca" / "arms").iterdir() if p.is_dir()}
+
+    def test_untracked_files_outside_editable_warn_but_do_not_invalidate_and_are_never_committed(self):
+        self.repo.write("scratch.log", "agent scratch\n")
+        self.repo.write("notes/a.txt", "x\n")
+        self.set_speed(21)
+        code, text = self.try_("faster")
+        self.assertEqual(code, 0, text)
+        self.assertIn("warning: 2 untracked file(s) outside editable were ignored: notes/a.txt, scratch.log; gitignore them", text)
+        scope = json.loads((self.adir() / "scope.json").read_text())
+        self.assertEqual(scope["untracked_outside_editable"], ["notes/a.txt", "scratch.log"])
+        self.assertEqual(self.repo.git("show", "--name-only", "--format=", "HEAD"), "src/speed.txt")
+        self.assertEqual(self.repo.read("scratch.log"), "agent scratch\n")
+        self.set_speed("21.0000001")
+        self.assertEqual(self.try_("noop")[0], 1)                       # a revert leaves them alone too
+        self.assertEqual(self.repo.read("scratch.log"), "agent scratch\n")
+        self.assertTrue((self.root / "notes" / "a.txt").exists())
+
+    def test_baseline_worktrees_that_are_no_longer_needed_are_pruned(self):
+        init12 = self.state()["init_sha"][:12]
+        self.set_speed(21)
+        self.assertEqual(self.try_("one")[0], 0)
+        one12 = self.repo.head()[:12]
+        self.assertEqual(self.arm_dirs(), {init12})                      # init is always kept; keep one's own arm is built lazily
+        self.set_speed(14)
+        self.assertEqual(self.try_("two")[0], 0)
+        self.assertEqual(self.arm_dirs(), {init12})                      # keep one was the baseline for this try, now pruned
+        two12 = self.repo.head()[:12]
+        self.assertEqual(self.confirm()[0], 0)
+        self.assertEqual(self.arm_dirs(), {init12, two12})               # confirm builds the last keep's arm; it is also last_confirmed
+        self.set_speed(10)
+        self.assertEqual(self.try_("three")[0], 0)
+        three12 = self.repo.head()[:12]
+        self.assertEqual(self.arm_dirs(), {init12, two12})
+        self.set_speed("10.0000001")
+        self.assertEqual(self.try_("noop")[0], 1)
+        self.assertEqual(self.arm_dirs(), {init12, two12, three12})      # reverts do not prune: the baseline is still the last keep
+        listed = self.repo.git("worktree", "list")
+        self.assertNotIn(one12, listed)
+        self.assertEqual(len(listed.splitlines()), 4)                    # the checkout plus three arms
+
+    def test_a_failing_commit_hook_turns_a_keep_into_a_revert_with_gits_message(self):
+        hook = self.root / ".git" / "hooks" / "pre-commit"
+        hook.write_text("#!/bin/sh\necho 'no commits today' >&2\nexit 1\n")
+        hook.chmod(0o755)
+        before = self.repo.head()
+        self.set_speed(21)
+        code, text = self.try_("faster")
+        self.assertEqual(code, 1, text)
+        self.assertIn("commit failed", text)
+        self.assertIn("no commits today", text)
+        self.assertEqual(self.repo.head(), before)
+        self.assertEqual(self.repo.read("src/speed.txt"), "30\n")
+        self.assertEqual(self.state()["last_keep"], before)
+        self.assertEqual(self.attempt(1)["verdict"], "revert")
+
     def test_a_second_keep_is_measured_against_the_first(self):
         self.set_speed(21)
         self.assertEqual(self.try_("first")[0], 0)
@@ -236,9 +308,69 @@ class TryTests(repokit.RepoTestCase):
         self.assertEqual(code, 0, text)
         self.assertEqual(self.attempt(2)["base"], first)
         self.assertEqual(self.repo.git("log", "-1", "--format=%P"), first)
-        self.assertEqual(sorted(p.name for p in (self.root / ".hca" / "arms").iterdir() if p.is_dir()),
-                         sorted([self.state()["init_sha"][:12], first[:12]]))
-        self.assertAlmostEqual(self.attempt(2)["estimate"], 50, delta=5)    # 21 -> 14 is +50%; measured against the first keep, not the original (+114%)
+        self.assertEqual(self.arm_dirs(), {self.state()["init_sha"][:12]})   # the first keep's baseline was pruned after the second keep
+        self.assertAlmostEqual(self.attempt(2)["estimate"], -33.3, delta=4)  # 21 -> 14 is a 33% cut, measured against the first keep (not -53% from the original)
+
+
+class LockTests(repokit.RepoTestCase):
+    def lock_path(self):
+        return self.root / ".hca" / "lock"
+
+    def test_the_lock_records_pid_start_and_command_and_is_released(self):
+        self.init()
+        self.assertFalse(self.lock_path().exists())                      # released after init
+        with ledger.lock(self.root, "try"):
+            held = json.loads(self.lock_path().read_text())
+            self.assertEqual((held["pid"], held["command"]), (os.getpid(), "try"))
+            self.assertIn("started", held)
+            with self.assertRaises(HcaError) as caught:
+                with ledger.lock(self.root, "confirm"):
+                    pass
+            self.assertIn("another `hca try` is running", str(caught.exception))
+            self.assertIn(str(os.getpid()), str(caught.exception))
+        self.assertFalse(self.lock_path().exists())
+
+    def test_a_live_lock_refuses_init_try_and_confirm_and_is_left_alone(self):
+        self.init()
+        self.set_speed(21)
+        self.lock_path().write_text(json.dumps({"pid": os.getpid(), "started": "now", "command": "try"}))
+        for call in (lambda: self.try_("faster"), self.confirm, lambda: self.init(reset=True)):
+            with self.assertRaises(HcaError) as caught:
+                call()
+            self.assertIn("is running in this repo", str(caught.exception))
+        self.assertTrue(self.lock_path().exists())
+        self.assertEqual(ledger.read_attempts(self.root), [])             # nothing ran
+        self.assertEqual(self.repo.read("src/speed.txt"), "21\n")
+
+    def test_a_stale_lock_is_taken_over_with_a_warning(self):
+        self.init()
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        self.lock_path().write_text(json.dumps({"pid": dead.pid, "started": "long ago", "command": "try"}))
+        self.set_speed(21)
+        code, text = self.try_("faster")
+        self.assertEqual(code, 0, text)
+        self.assertIn("warning: removing a stale lock left by `hca try`", text)
+        self.assertFalse(self.lock_path().exists())
+
+    def test_the_lock_is_released_when_the_command_fails(self):
+        self.init()
+        with self.assertRaises(HcaError):
+            self.try_(message=" ")
+        self.assertFalse(self.lock_path().exists())
+
+    def test_a_just_created_unreadable_lock_is_not_stolen_but_an_old_one_is(self):
+        self.init()
+        self.lock_path().write_text("")
+        with self.assertRaises(HcaError) as caught:
+            with ledger.lock(self.root, "try"):
+                pass
+        self.assertIn("cannot be read", str(caught.exception))
+        old = time.time() - 3600
+        os.utime(self.lock_path(), (old, old))
+        with ledger.lock(self.root, "try", out=self.out):
+            pass
+        self.assertFalse(self.lock_path().exists())
 
 
 class BuildTests(repokit.RepoTestCase):
@@ -270,6 +402,9 @@ class BuildTests(repokit.RepoTestCase):
         self.set_speed(14)
         self.assertEqual(self.try_("two")[0], 0)                        # a new last_keep sha: one more baseline build
         self.assertEqual(arm_builds(), ["baseline", "baseline", "candidate", "candidate", "candidate"])
+        markers = sorted(p.name for p in (self.root / ".hca" / "arms").glob("*.built"))
+        self.assertEqual(markers, [self.state()["init_sha"][:12] + ".built"])   # the markers and logs of pruned arms went with them
+        self.assertEqual(sorted(p.name for p in (self.root / ".hca" / "arms").glob("*.build")), [self.state()["init_sha"][:12] + ".build"])
 
 
 class GuardTests(repokit.RepoTestCase):
@@ -348,7 +483,7 @@ class ExtensionAndDeadlineTests(repokit.RepoTestCase):
         with env(BENCH_JITTER="0.10"):
             self.assertEqual(self.init(force=True)[0], 0)
             self.set_speed(28.5)
-            code, text = self.try_("small win", seed=3)
+            code, text = self.try_("small win", seed=4)
         a = self.attempt(1)
         self.assertTrue(a["extended"], a)
         self.assertEqual((a["blocks"], a["look"], a["looks"]), (20, 2, 2))

@@ -10,6 +10,7 @@ A reader of the repo's own files can edit them, so the confirm cap trusts the st
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -55,6 +56,73 @@ def save_state(root, state) -> None:
     state["updated"] = now()
     hca_dir(root).mkdir(parents=True, exist_ok=True)
     write_json(state_path(root), state)
+
+
+STALE_UNREADABLE_SECONDS = 10      # a lock file that cannot be parsed is only taken over once it is this old
+
+
+def _pid_alive(pid) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+@contextlib.contextmanager
+def lock(root, command, out=print):
+    """`.hca/lock`, created with O_EXCL and holding pid, start time and command, for init, try and confirm.
+
+    Two of those running at once in one repo would race on the git index and the ledger. A lock whose pid
+    is alive refuses (HcaError, exit 3); one whose pid is dead is stale: warn, take it over. Always released.
+    """
+    directory = hca_dir(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "lock"
+    info = {"pid": os.getpid(), "started": now(), "command": command}
+    for attempt in (1, 2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            break
+        except FileExistsError:
+            held = None
+            try:
+                held = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+            if held is None:
+                try:
+                    old_enough = time.time() - path.stat().st_mtime > STALE_UNREADABLE_SECONDS
+                except OSError:
+                    old_enough = True               # it vanished: try again
+                if not old_enough:
+                    raise HcaError(f"{path} exists and cannot be read (another hca may be starting). Fix: wait a few seconds, "
+                                   "then delete it if no hca command is running.") from None
+            elif _pid_alive(held.get("pid")):
+                raise HcaError(f"another `hca {held.get('command')}` is running in this repo (pid {held.get('pid')}, started "
+                               f"{held.get('started')}). Fix: wait for it to finish; if it is hung, stop that process.") from None
+            if attempt == 2:
+                raise HcaError(f"could not take {path}: another hca command won the race. Fix: run again.") from None
+            out(f"warning: removing a stale lock left by `hca {held.get('command') if held else '?'}` "
+                f"(pid {held.get('pid') if held else '?'} is not running).")
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(info))
+    try:
+        yield
+    finally:
+        try:
+            if json.loads(path.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                path.unlink()
+        except (OSError, ValueError):
+            pass
 
 
 def attempts_dir(root) -> Path:
@@ -182,10 +250,35 @@ def fmt_effect(value, mode) -> str:
     return f"{value:+.1f}%" if mode == "blocks" else f"{value:+.4g}"
 
 
-def cumulative(mode, logs) -> float:
+def improves(value, mode, direction) -> bool:
+    """Is a displayed effect an improvement? Blocks mode shows the metric's own change, so for `min` better is negative."""
+    return value < 0 if (mode == "blocks" and direction == "min") else value > 0
+
+
+def fmt_change(value, mode, direction, metric=None) -> str:
+    """'t_ms -30.0% (better)' in blocks mode (the metric's own % change); the bare score difference in items mode."""
+    text = fmt_effect(value, mode)
+    if mode != "blocks" or value is None:
+        return text
+    word = "unchanged" if value == 0 else "better" if improves(value, mode, direction) else "worse"
+    return f"{metric + ' ' if metric else ''}{text} ({word})"
+
+
+def fmt_bound(value, mode, direction) -> str:
+    """The one-sided bound: 'cut of at least 27.1%' (min) / 'gain of at least 1.9%' (max); otherwise says no improvement is shown."""
+    if value is None:
+        return "n/a"
+    if not improves(value, mode, direction):
+        return f"{fmt_effect(value, mode)}, no improvement shown"
+    if mode != "blocks":
+        return f"at least {fmt_effect(value, mode)}"
+    return f"{'cut' if direction == 'min' else 'gain'} of at least {abs(value):.1f}%"
+
+
+def cumulative(mode, logs, direction="max") -> float:
     """Sum of per-try estimates as a display value (log ratios compound; item differences add)."""
     total = sum(logs)
-    return stats.to_percent(total) if mode == "blocks" else total
+    return stats.metric_change_pct(total, direction) if mode == "blocks" else total
 
 
 def headline(state, attempts) -> dict:
@@ -195,17 +288,17 @@ def headline(state, attempts) -> dict:
     "unconfirmed" and reported separately; with no confirm at all there is only the unconfirmed
     cumulative (a sum of per-try estimates, which selection inflates).
     """
-    mode = state.get("mode", "blocks")
+    mode, direction, metric = state.get("mode", "blocks"), state.get("direction", "max"), state.get("metric")
     confirmed = state.get("last_confirmed_result")
     pending = [a for a in attempts if a.get("verdict") == "keep" and a.get("confirm") == "pending"]
     base = confirmed["estimate_log"] if confirmed else 0.0
-    cum = cumulative(mode, [base] + [a.get("estimate_log", 0.0) for a in pending])
+    cum = cumulative(mode, [base] + [a.get("estimate_log", 0.0) for a in pending], direction)
     if confirmed and not pending:
-        text = (f"Confirmed: {fmt_effect(confirmed['estimate'], mode)} vs the original "
-                f"(lower bound {fmt_effect(confirmed['lower'], mode)}; confirm {confirmed['n']}, {confirmed['blocks']} "
+        text = (f"Confirmed: {fmt_change(confirmed['estimate'], mode, direction, metric)} vs the original "
+                f"({fmt_bound(confirmed['lower'], mode, direction)}; confirm {confirmed['n']}, {confirmed['blocks']} "
                 f"{'blocks' if mode == 'blocks' else 'measurement'}).")
     elif confirmed:
-        text = (f"Confirmed: {fmt_effect(confirmed['estimate'], mode)} vs the original (confirm {confirmed['n']}). "
+        text = (f"Confirmed: {fmt_change(confirmed['estimate'], mode, direction, metric)} vs the original (confirm {confirmed['n']}). "
                 f"Since then {len(pending)} unconfirmed keep(s); cumulative {fmt_effect(cum, mode)}, not yet confirmed.")
     elif pending:
         text = (f"No confirmed result yet. Unconfirmed cumulative {fmt_effect(cum, mode)} over {len(pending)} keep(s): "

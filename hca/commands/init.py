@@ -26,6 +26,12 @@ def add_arguments(parser) -> None:
 
 
 def run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
+    root = gitops.repo_root(cwd)
+    with ledger.lock(root, "init", out):
+        return _run(args, out, cwd, aa_blocks, seed)
+
+
+def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     """`aa_blocks` overrides the A/A length (tests); normally it is `extend_to`, or `blocks` without extension."""
     root = gitops.repo_root(cwd)
     spec = load_spec(root / "hca.toml")
@@ -35,11 +41,13 @@ def run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     if has_state and not args.reset:
         raise HcaError(f"this repo is already initialised for {ledger.read_json(ledger.state_path(root)).get('task')!r}. "
                        "Fix: use `hca status`, or `hca init --reset` to start over.")
-    dirty = gitops.dirty_paths(root, spec.task.link)
-    if dirty:
-        shown = ", ".join(dirty[:8]) + (f" and {len(dirty) - 8} more" if len(dirty) > 8 else "")
+    dirty = gitops.dirty_state(root, spec)
+    if dirty["blocking"]:
+        shown = ", ".join(dirty["blocking"][:8]) + (f" and {len(dirty['blocking']) - 8} more" if len(dirty["blocking"]) > 8 else "")
         raise HcaError(f"the working tree is not clean ({shown}). Fix: commit or stash first (hca.toml must be committed too); "
                        "init needs a clean tree so the baseline is exactly a commit.")
+    if dirty["ignored"]:
+        out(common.untracked_warning(dirty["ignored"]))
     base_branch = gitops.current_branch(root)
     exists = gitops.branch_exists(root, branch)
     if exists and not args.reset:
@@ -153,7 +161,7 @@ def _archive_ledger(root, out) -> None:
 
 def _blocks_lines(report, result, spec) -> list:
     n10, n20 = stats.MIN_BLOCKS, stats.EXTENDED_BLOCKS
-    d = report["detectable_pct"]
+    d = {k: abs(stats.metric_change_pct(v, spec.objective.direction)) for k, v in report["detectable"].items()}   # the metric's own %
     useful = spec.objective.useful_effect
     lines = [f"Baseline A/A ({result.blocks_run} blocks, {result.wall_seconds:.0f} s): noise ±{report['noise_sd_pct']:.1f}%; "
              f"detectable at 80% power {d[n10]:.1f}% at {n10} blocks, {d[n20]:.1f}% at {n20}."]

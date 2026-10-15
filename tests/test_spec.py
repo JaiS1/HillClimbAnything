@@ -85,7 +85,7 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(s.limits, spec.Limits(300, 1800, 10, 20, 5))
         self.assertEqual(s.env.deny, ("MPLBACKEND", "UV_*", "PYTHONSTARTUP"))
         self.assertEqual((s.guards, s.mechanism), ((), spec.Mechanism((), ())))
-        self.assertAlmostEqual(s.objective.useful, math.log(1.05))
+        self.assertAlmostEqual(s.objective.useful, -math.log(0.95))      # "5%" for a metric to minimise: 0.95x the baseline
 
     def test_full_spec_round_trips_from_toml(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -155,6 +155,14 @@ class SpecTests(unittest.TestCase):
         for bad in ("5%", 0, -1, True, "0.02"):
             self.assertRejects(items(bad), "objective.useful_effect", "bare number")
         self.assertRejects(modified(objective={"useful_effect": 0.05}), "objective.useful_effect", '"5%"')   # blocks mode still wants a percent
+
+    def test_blocks_useful_effect_is_a_percent_better_in_the_metrics_own_terms(self):
+        up = spec.parse_spec(modified(objective={"direction": "max", "useful_effect": "5%"}))
+        self.assertAlmostEqual(up.objective.useful, math.log(1.05))                       # candidate = 1.05 x baseline
+        down = spec.parse_spec(modified(objective={"direction": "min", "useful_effect": "5%"}))
+        self.assertAlmostEqual(down.objective.useful, -math.log(0.95))                    # candidate = 0.95 x baseline
+        self.assertRejects(modified(objective={"direction": "min", "useful_effect": "100%"}), "objective.useful_effect", "below 100%")
+        self.assertEqual(spec.parse_spec(modified(objective={"direction": "max", "useful_effect": "100%"})).objective.useful_effect, "100%")
 
     def test_metric_guard_direction_defaults_to_lower_is_better(self):
         guard = lambda **extra: modified(guards=[{"name": "g", "metric": "m", "max_regression": "2%", **extra}])

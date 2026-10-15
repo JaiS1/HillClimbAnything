@@ -140,6 +140,39 @@ class NoiseAndUnitsTests(unittest.TestCase):
         with self.assertRaises(HcaError):
             stats.item_block_score(base, {"a": 1.0}, "min")
 
+    def test_metric_change_pct_is_the_metrics_own_change(self):
+        cut = stats.log_ratio(100, 70, "min")                   # a 30% time cut
+        self.assertAlmostEqual(stats.metric_change_pct(cut, "min"), -30.0)
+        gain = stats.log_ratio(0.800, 0.8256, "max")            # accuracy 0.800 -> 0.8256
+        self.assertAlmostEqual(stats.metric_change_pct(gain, "max"), 3.2, places=6)
+        self.assertAlmostEqual(stats.metric_change_pct(0.0, "min"), 0.0)
+        # monotone: a lower bound on the log ratio maps to the least-improvement end, whichever the direction
+        self.assertGreater(stats.metric_change_pct(0.02, "min"), stats.metric_change_pct(0.08, "min"))
+        self.assertLess(stats.metric_change_pct(0.02, "max"), stats.metric_change_pct(0.08, "max"))
+        with self.assertRaises(HcaError):
+            stats.metric_change_pct(0.1, "up")
+
+    def test_parse_effect_percent_means_that_much_better_in_the_metrics_own_terms(self):
+        self.assertAlmostEqual(stats.parse_effect("5%"), math.log(1.05))                  # default direction is max
+        self.assertAlmostEqual(stats.parse_effect("5%", "max"), math.log(1.05))
+        self.assertAlmostEqual(stats.parse_effect("5%", "min"), -math.log(0.95))          # candidate = 0.95 x baseline
+        self.assertAlmostEqual(stats.metric_change_pct(stats.parse_effect("5%", "min"), "min"), -5.0)
+        self.assertAlmostEqual(stats.metric_change_pct(stats.parse_effect("5%", "max"), "max"), 5.0)
+        self.assertAlmostEqual(stats.parse_effect(0.1, "min"), 0.1)                       # a bare number is a log ratio either way
+        with self.assertRaises(HcaError):
+            stats.parse_effect("100%", "min")                                              # a 100% cut would be zero
+        self.assertAlmostEqual(stats.parse_effect("100%", "max"), math.log(2))
+
+    def test_keep_decision_reasons_speak_in_improvement_terms_for_either_direction(self):
+        scores = [0.003, -0.002, 0.004, 0.001, 0.002, -0.001, 0.003, 0.002, 0.001, 0.002]   # tiny, consistent
+        useful = stats.parse_effect("5%", "min")
+        for direction, sign in (("min", -1), ("max", 1)):
+            decision = stats.keep_decision(scores, useful, direction=direction)
+            self.assertEqual(decision["verdict"], "revert")
+            self.assertTrue(any("better, below the keep floor of +" in r for r in decision["reasons"]), decision["reasons"])
+            self.assertEqual(math.copysign(1, decision["estimate_change_pct"]), sign)
+            self.assertEqual(math.copysign(1, decision["keep_floor_change_pct"]), sign)
+
 
 if __name__ == "__main__":
     unittest.main()

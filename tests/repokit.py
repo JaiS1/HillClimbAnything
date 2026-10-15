@@ -1,11 +1,10 @@
 """Fixture git repos for the part-B tests: a tiny objective whose speed is a number in an editable file.
 
-`bench/run.py` (frozen) prints `METRIC t_ms=<speed * (1 +- jitter)>`. The jitter is seeded by a run counter
-kept OUTSIDE the repo (`BENCH_STATE`), so a scenario is exactly reproducible and nothing dirties the
-tree, and the printed value is computed rather than timed, so the verdicts do not depend on how busy the
-machine is. Each run still sleeps in proportion to the value so wall times look real. A "dev hack"
-file makes the metric look faster only when `HCA_ITEMS=dev`, which is how a change can win on dev items
-and fail on held-out ones. `bench/items.py` is the items-mode objective: deterministic per-item scores.
+`bench/run.sh` (frozen; a shell script, so a run costs a few ms) prints `METRIC t_ms=<speed * (1 +- jitter)>`.
+The jitter is a deterministic hash of a run counter kept OUTSIDE the repo (`BENCH_STATE`), so a scenario is exactly
+reproducible and nothing dirties the tree; the printed value is computed, not timed, so verdicts do not depend on how
+busy the machine is. A "dev hack" file makes the metric look faster only when `HCA_ITEMS=dev`, which is how a change
+can win on dev items and fail on held-out ones. `bench/items.py` is the items-mode objective: deterministic per-item scores.
 """
 
 from __future__ import annotations
@@ -21,26 +20,31 @@ from pathlib import Path
 from unittest import mock
 
 BLOCKS_BENCH = '''
-import os, random, sys, time
-speed = float(open("src/speed.txt").read())
-state = os.environ["BENCH_STATE"]
-os.makedirs(state, exist_ok=True)
-counter = os.path.join(state, "count")
-n = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
-open(counter, "w").write(str(n))
-if os.path.exists("src/crash.txt"):
-    sys.stderr.write("candidate crashed on purpose\\n")
-    sys.exit(3)
-value = speed * (1 + float(os.environ.get("BENCH_JITTER", "0.02")) * random.Random(n).uniform(-1, 1))
-mode = os.environ.get("HCA_ITEMS", "dev")
-if mode == "dev" and os.path.exists("src/dev_hack.txt"):
-    value *= float(open("src/dev_hack.txt").read())
-if mode == "heldout":
-    value *= float(open(os.path.join(os.environ["HCA_HELDOUT_DIR"], "scale.txt")).read())
-time.sleep(value / 4000 + float(os.environ.get("BENCH_SLEEP_MS", "0")) / 1000)
-print("METRIC t_ms=%.4f" % value)
-if os.path.exists("src/size.txt"):
-    print("METRIC size_kb=%s" % open("src/size.txt").read().strip())
+speed=$(cat src/speed.txt)
+mkdir -p "$BENCH_STATE"
+n=0
+[ -f "$BENCH_STATE/count" ] && n=$(cat "$BENCH_STATE/count")
+n=$((n + 1))
+echo "$n" > "$BENCH_STATE/count"
+if [ -f src/crash.txt ]; then
+  echo "candidate crashed on purpose" >&2
+  exit 3
+fi
+mode="${HCA_ITEMS:-dev}"
+hack=1
+if [ "$mode" = dev ] && [ -f src/dev_hack.txt ]; then hack=$(cat src/dev_hack.txt); fi
+scale=1
+if [ "$mode" = heldout ]; then scale=$(cat "$HCA_HELDOUT_DIR/scale.txt") || exit 4; fi
+if [ -n "$BENCH_SLEEP_MS" ]; then sleep "$(awk -v ms="$BENCH_SLEEP_MS" 'BEGIN { print ms / 1000 }')"; fi
+awk -v speed="$speed" -v n="$n" -v jit="${BENCH_JITTER:-0.02}" -v hack="$hack" -v scale="$scale" 'BEGIN {
+  m = 67108859                      # prime below 2^26, so x * x stays exact in a double (identical in every awk)
+  x = n + 12345
+  for (i = 0; i < 4; i++) x = (x * x + 7) % m
+  r = 2 * x / m - 1                 # uniform in (-1, 1), deterministic per run number
+  printf "METRIC t_ms=%.4f\\n", speed * (1 + jit * r) * hack * scale
+}'
+if [ -f src/size.txt ]; then echo "METRIC size_kb=$(cat src/size.txt)"; fi
+exit 0
 '''
 
 ITEMS_BENCH = '''
@@ -64,8 +68,8 @@ def toml(name="speedy", mode="blocks", useful=None, limits=None, guards="", buil
         objective = ('command = ["%s", "-S", "bench/items.py"]\nmetric = "acc"\ndirection = "max"\nmode = "items"\nuseful_effect = %s\n'
                      % (sys.executable, useful or "0.04"))
     else:
-        objective = ('command = ["%s", "-S", "bench/run.py"]\nmetric = "t_ms"\ndirection = "min"\nuseful_effect = "%s"\n'
-                     % (sys.executable, useful or "5%"))
+        objective = ('command = ["sh", "bench/run.sh"]\nmetric = "t_ms"\ndirection = "min"\nuseful_effect = "%s"\n'
+                     % (useful or "5%"))
     lim = dict({"blocks": 10, "extend_to": 0}, **(limits or {}))
     limits_text = "".join(f"{k} = {v}\n" for k, v in lim.items())
     return (f'[task]\nname = "{name}"\neditable = ["src/**"]\nfrozen = {frozen}\n{extra_task}\n{build}\n[objective]\n{objective}\n'
@@ -109,7 +113,7 @@ def make_repo(path: Path, mode="blocks", **toml_args) -> Repo:
     repo.git("config", "user.name", "Test")
     repo.write("src/speed.txt", "30\n")
     repo.write("src/boost.txt", "0\n")
-    repo.write("bench/run.py", BLOCKS_BENCH)
+    repo.write("bench/run.sh", BLOCKS_BENCH)
     repo.write("bench/items.py", ITEMS_BENCH)
     repo.write("README.md", "fixture\n")
     repo.write("hca.toml", toml(mode=mode, **toml_args))
@@ -147,7 +151,7 @@ class RepoTestCase(unittest.TestCase):
         code = module.run(Namespace(**kwargs.pop("args", {})), out=self.out, cwd=cwd or self.root, **kwargs)
         return code, "\n".join(self.lines[start:])
 
-    def init(self, aa_blocks=6, seed=1, heldout=None, force=False, reset=False):
+    def init(self, aa_blocks=5, seed=1, heldout=None, force=False, reset=False):
         from hca.commands import init
         return self.hca(init, args={"heldout": heldout, "force": force, "reset": reset}, aa_blocks=aa_blocks, seed=seed)
 

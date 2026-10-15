@@ -45,12 +45,32 @@ def to_percent(log_value: float) -> float:
     return 100.0 * math.expm1(log_value)
 
 
-def parse_effect(text) -> float:
-    """'5%' -> log(1.05); a bare number is taken as a log ratio already."""
+def metric_change_pct(log_value: float, direction: str) -> float:
+    """A direction-adjusted log ratio as the metric's own % change: exp(-L) - 1 for min, exp(L) - 1 for max.
+
+    A 30% time cut (min) has L = log(1/0.7) and reads as -30.0%; a rise from 0.80 to 0.826 in an
+    accuracy (max) reads as +3.2%. Monotone in L, so a lower bound on L maps to the "least improvement" end.
+    """
+    if direction not in ("min", "max"):
+        raise HcaError("direction must be min or max")
+    return 100.0 * math.expm1(-log_value if direction == "min" else log_value)
+
+
+def parse_effect(text, direction: str = "max") -> float:
+    """'5%' -> the log ratio of a 5% improvement of the metric itself; a bare number is a log ratio already.
+
+    For direction "max" the candidate is 1.05x the baseline (L = log 1.05); for "min" it is 0.95x
+    (L = -log 0.95), so a 5% useful effect means the same thing in the metric's own terms either way.
+    """
     if isinstance(text, (int, float)) and not isinstance(text, bool):
         value = float(text)
     elif isinstance(text, str) and text.strip().endswith("%"):
-        value = math.log1p(float(text.strip()[:-1]) / 100.0)
+        if direction not in ("min", "max"):
+            raise HcaError("direction must be min or max")
+        pct = float(text.strip()[:-1])
+        if direction == "min" and pct >= 100:
+            raise HcaError("a useful effect for a metric to minimise must be below 100% (a 100% cut would be zero)")
+        value = math.log1p(pct / 100.0) if direction == "max" else -math.log1p(-pct / 100.0)
     else:
         raise HcaError(f"useful_effect must look like '5%' or a number, got {text!r}")
     if not math.isfinite(value) or value <= 0:
@@ -113,18 +133,23 @@ def block_test(scores, alpha: float = DEFAULT_ALPHA) -> dict:
             "can_reject": smallest_p(len(scores)) <= alpha}
 
 
-def keep_decision(scores, useful: float, alpha: float = DEFAULT_ALPHA, look: int = 1, looks: int = 1) -> dict:
+def keep_decision(scores, useful: float, alpha: float = DEFAULT_ALPHA, look: int = 1, looks: int = 1, direction: str = "max") -> dict:
     """Keep a candidate only if the test rejects AND the estimate is at least half the useful effect.
 
     With an optional extension (looks=2) each look is tested at alpha/2, so the per-try false-keep
     rate stays at or below alpha. Verdicts: keep | revert | extend | insufficient.
+    `direction` only changes how the reasons are worded and adds estimate_change_pct / keep_floor_change_pct
+    (the metric's own % change); the test itself works on the direction-adjusted scores.
     """
     if looks not in (1, 2) or look not in range(1, looks + 1):
         raise HcaError("look must be 1..looks and looks must be 1 or 2")
     level = alpha / looks
     result = block_test(scores, level)
     floor = 0.5 * useful
-    result.update({"useful": useful, "keep_floor": floor, "look": look, "looks": looks, "reasons": []})
+    sign = -1.0 if direction == "min" else 1.0
+    result.update({"useful": useful, "keep_floor": floor, "look": look, "looks": looks, "reasons": [],
+                   "estimate_change_pct": metric_change_pct(result["estimate"], direction),
+                   "keep_floor_change_pct": metric_change_pct(floor, direction)})
     if not result["can_reject"]:
         result["verdict"] = "insufficient"
         result["reasons"].append(f"{len(scores)} blocks cannot reach p <= {level:g} (need >= {math.ceil(math.log2(1 / level))})")
@@ -132,8 +157,8 @@ def keep_decision(scores, useful: float, alpha: float = DEFAULT_ALPHA, look: int
     if not result["reject"]:
         result["reasons"].append(f"p = {result['p_value']:.3g} > {level:g}")
     if result["estimate"] < floor:
-        result["reasons"].append(f"estimate {result['estimate_pct']:+.2f}% is below the keep floor "
-                                 f"{to_percent(floor):+.2f}% (half the useful effect)")
+        result["reasons"].append(f"estimate is {sign * result['estimate_change_pct']:+.2f}% better, below the keep floor of "
+                                 f"{sign * result['keep_floor_change_pct']:+.2f}% better (half the useful effect)")
     if not result["reasons"]:
         result["verdict"] = "keep"
     elif look < looks and result["estimate"] > 0:

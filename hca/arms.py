@@ -121,3 +121,34 @@ def prune_arms(root) -> list:
         removed.append(entry.name)
     gitops.git(root, "worktree", "prune", check=False)
     return removed
+
+
+def prune_unused(root, keep_shas) -> list:
+    """Remove baseline worktrees (and their build markers and logs) whose sha is not in .
+
+    Every keep makes a new baseline for the next try, so without this the arms pile up one per keep.
+    Only entries named like an arm (<sha12>, <sha12>.built, <sha12>.build) inside .hca/arms are touched.
+    """
+    root = Path(root)
+    base = arms_root(root)
+    if not base.exists():
+        return []
+    wanted = {sha12(s) for s in keep_shas if s}
+    removed = []
+    for entry in sorted(base.iterdir()):
+        stem, _, suffix = entry.name.partition(".")
+        if not (len(stem) == 12 and all(c in "0123456789abcdef" for c in stem)) or suffix not in ("", "built", "build"):
+            continue
+        if stem in wanted:
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            if (entry / ".git").exists():
+                gitops.git(root, "worktree", "remove", "--force", str(entry), check=False)
+            if entry.exists():
+                _remove_inside_hca(root, entry)
+        elif entry.exists() or os.path.islink(entry):
+            entry.unlink()
+        removed.append(entry.name)
+    if removed:
+        gitops.git(root, "worktree", "prune", check=False)
+    return removed

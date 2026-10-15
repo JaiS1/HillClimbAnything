@@ -45,12 +45,16 @@ def block_interval(scores, level) -> tuple:
     return stats.walsh_lower_bound(scores, level), -stats.walsh_lower_bound([-s for s in scores], level)
 
 
-def blocks_fields(decision, scores, useful, level) -> dict:
-    """Display fields of a stats.keep_decision, in %, plus whether the interval still allows a useful effect."""
+def blocks_fields(decision, scores, useful, level, direction) -> dict:
+    """Display fields of a stats.keep_decision as the metric's own % change, plus whether the interval still allows a useful effect.
+
+    `lower` is the change at the lower bound of the direction-adjusted log ratio (the "least improvement"
+    end: for a metric to minimise it is the larger, less negative, change); `upper` is the other end.
+    """
     lower, upper = block_interval(scores, level)
-    return {"estimate_log": decision["estimate"], "estimate": decision["estimate_pct"],
-            "lower": stats.to_percent(lower) if math.isfinite(lower) else None,
-            "upper": stats.to_percent(upper) if math.isfinite(upper) else None,
+    return {"estimate_log": decision["estimate"], "estimate": stats.metric_change_pct(decision["estimate"], direction),
+            "lower": stats.metric_change_pct(lower, direction) if math.isfinite(lower) else None,
+            "upper": stats.metric_change_pct(upper, direction) if math.isfinite(upper) else None,
             "p": decision["p_value"], "level": level,
             "includes_useful": bool(lower < useful <= upper)}
 
@@ -74,7 +78,7 @@ def items_decision(spec, pair, alpha=ITEMS_ALPHA) -> dict:
 
 
 def slices(item_rows, tag_keys, direction) -> dict:
-    """Per-tag-value median item log ratio (in %). `item_rows`: {id: (baseline, candidate, tags)}.
+    """Per-tag-value median item change (the metric's own %). `item_rows`: {id: (baseline, candidate, tags)}.
 
     Items with a non-positive value in either arm have no log ratio and are skipped (counted).
     """
@@ -89,7 +93,7 @@ def slices(item_rows, tag_keys, direction) -> dict:
             else:
                 slot["skipped"] += 1
     return {name: {"items": len(g["scores"]), "skipped": g["skipped"],
-                   "median_pct": stats.to_percent(statistics.median(g["scores"])) if g["scores"] else None}
+                   "median_pct": stats.metric_change_pct(statistics.median(g["scores"]), direction) if g["scores"] else None}
             for name, g in groups.items()}
 
 
@@ -99,6 +103,12 @@ def block_slices(result, tag_keys, direction) -> dict:
 
 def pair_slices(pair, tag_keys, direction) -> dict:
     return slices({i: (pair.baseline[i], pair.candidate[i], pair.tags.get(i, {})) for i in pair.baseline}, tag_keys, direction)
+
+
+def untracked_warning(paths) -> str:
+    """One line about untracked files outside the editable paths that were ignored."""
+    shown = ", ".join(paths[:3]) + (f" and {len(paths) - 3} more" if len(paths) > 3 else "")
+    return f"warning: {len(paths)} untracked file(s) outside editable were ignored: {shown}; gitignore them to silence this."
 
 
 def tail_text(text, limit=600) -> str:

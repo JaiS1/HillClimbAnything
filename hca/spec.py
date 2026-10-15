@@ -49,8 +49,9 @@ class Objective:
 
     @property
     def useful(self) -> float:
-        """The useful effect: a log ratio in blocks mode (what stats.keep_decision wants), absolute score units in items mode."""
-        return stats.parse_effect(self.useful_effect)
+        """The useful effect: a log ratio in blocks mode (what stats.keep_decision wants; "5%" means a 5% better metric,
+        i.e. 0.95x for min and 1.05x for max), absolute score units in items mode."""
+        return stats.parse_effect(self.useful_effect, self.direction)
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,7 @@ def _objective(p, t) -> Objective:
            required=("command", "metric", "direction", "useful_effect"))
     mode = p.choice(t, "objective.mode", ("blocks", "items"), default="blocks",
                     hint={"seeds": "seeds mode is planned for a later version; use mode = \"blocks\" or \"items\""})
+    direction = p.choice(t, "objective.direction", ("min", "max"))
     useful = t["useful_effect"]
     if mode == "items":
         # Deterministic per-item scores are compared by their mean difference, so the useful effect is
@@ -165,12 +167,12 @@ def _objective(p, t) -> Objective:
             p.fail("objective.useful_effect", f"{useful!r} is not a percentage string",
                    'write it as a quoted percent such as "5%" (a bare number would mean a log ratio)')
         try:
-            stats.parse_effect(useful)
+            stats.parse_effect(useful, direction)
         except ValueError as exc:
             p.fail("objective.useful_effect", str(exc), 'use a positive percentage such as "5%"')
         useful = useful.strip()
     return Objective(p.argv(t, "objective.command"), p.string(t, "objective.metric"),
-                     p.choice(t, "objective.direction", ("min", "max")), mode, useful,
+                     direction, mode, useful,
                      p.integer(t, "objective.max_tries", default=50, minimum=1))
 
 
