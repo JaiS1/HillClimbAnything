@@ -8,7 +8,7 @@ import statistics
 from pathlib import Path
 
 from .. import gitops, ledger, paired, stats
-from ..core import HcaError, read_json, write_json
+from ..core import HcaError, Refusal, read_json, write_json
 from ..spec import load_spec
 
 ITEMS_ALPHA = 0.02          # two-sided, so the one-sided lower bound sits at 1%: the same per-try level as blocks mode
@@ -23,13 +23,20 @@ def pending_path(root) -> Path:
     return ledger.hca_dir(root) / PENDING_KEEP
 
 
-def write_pending(root, data) -> None:
+def write_pending(root, task, entry) -> None:
+    """Record that the branch is about to move: in the referee store first, then as a marker file in `.hca/`.
+
+    The store entry is the one reconciliation trusts (the repo-side marker is agent-writable); `entry` carries the kind
+    (`keep` or `restore`), the snapshot sha, the last keep before the move and, for a keep, the verdict record and its digest.
+    """
+    ledger.set_pending(task, entry)
     ledger.hca_dir(root).mkdir(parents=True, exist_ok=True)
-    write_json(pending_path(root), data)
+    write_json(pending_path(root), entry)
 
 
-def clear_pending(root) -> None:
+def clear_pending(root, task) -> None:
     pending_path(root).unlink(missing_ok=True)
+    ledger.set_pending(task, None)
 
 
 def open_session(cwd=None, on_branch=True, out=print) -> tuple:
@@ -54,53 +61,80 @@ def open_session(cwd=None, on_branch=True, out=print) -> tuple:
 
 
 def reconcile_pending(root, spec, state, out=print) -> None:
-    """Finish or discard a keep (or a confirm restore) whose process died after writing `.hca/pending-keep.json`.
+    """Finish or discard a keep (or a confirm restore) whose process died after the branch was about to move.
 
-    CONTRACT NOTE: A2.5 describes the marker for `try`; confirm's reset-to-confirmed commit uses the same marker
-    (`kind: restore`) because it has the same window between moving the branch and saving the state.
+    The referee store holds the pending entry (written before `update-ref`); `.hca/pending-keep.json` is a mirror.
+    - Branch tip is the snapshot: the move happened. Adopt it (index reset, working tree for a restore, state, attempt
+      record taken from the store entry; an existing attempt record must have the entry's verdict digest).
+    - Branch tip is still the old last keep: it never happened. Drop the entry.
+    - Anything else, a marker the store knows nothing about, or a record that does not match: REFUSE (exit 2) with a
+      message. Nothing is adopted or dropped silently, because a forged marker would otherwise inject an unmeasured commit.
 
-    The marker is written before the branch moves. If the branch tip is now the snapshot, the move happened: adopt it
-    (index reset, state, attempt record). If the tip is still the old keep, it never happened: drop the marker. Anything
-    else is left alone for a human, and the HEAD-mismatch message points back here.
+    CONTRACT NOTE: A2.5 describes the marker for `try`; confirm's reset-to-confirmed commit uses the same mechanism
+    (`kind: restore`) because it has the same window between moving the branch and syncing the working tree.
     """
+    task = state["task"]
     path = pending_path(root)
-    if not path.exists():
-        return
-    try:
-        pending = read_json(path)
-        sha, old, kind = pending["snapshot_sha"], pending["last_keep"], pending.get("kind", "keep")
-    except (ValueError, KeyError, TypeError):
-        path.unlink(missing_ok=True)
-        out("warning: removed an unreadable .hca/pending-keep.json.")
-        return
+    marker = None
+    if path.exists():
+        try:
+            marker = read_json(path)
+            marker["snapshot_sha"], marker["last_keep"]
+        except (ValueError, KeyError, TypeError):
+            marker = {}
+    entry = ledger.get_pending(task)
     tip = gitops.branch_tip(root, state["branch"])
-    adir = ledger.attempt_path(root, pending["n"]) if kind == "keep" and "n" in pending else None
-    if tip == sha and state["last_keep"] == old:
+    if entry is None:
+        if marker is None:
+            return
+        if marker.get("last_keep") == tip or not marker:
+            path.unlink(missing_ok=True)
+            out("warning: discarded .hca/pending-keep.json: the referee store has no matching record and the branch never moved.")
+            return
+        raise Refusal(f"found .hca/pending-keep.json for {str(marker.get('snapshot_sha'))[:12]}, but the referee store has no pending keep, "
+                      f"so it was not written by a running hca (the branch tip is {tip[:12]}). Not adopting it. Fix: ask the human; if the "
+                      "marker is stale, delete it and check the branch history with `git log`.")
+    sha, old, kind = entry["snapshot_sha"], entry["last_keep"], entry.get("kind", "keep")
+    if marker and (marker.get("snapshot_sha"), marker.get("last_keep")) != (sha, old):
+        raise Refusal("the pending-keep marker in .hca/ and the referee store disagree about the snapshot; not adopting either. Fix: ask the human.")
+    adir = ledger.attempt_path(root, entry["n"]) if kind == "keep" else None
+    if tip == sha and state["last_keep"] in (old, sha):
+        existing = None
+        if adir is not None and (adir / "verdict.json").exists():
+            existing = read_json(adir / "verdict.json")
+            if ledger.verdict_digest(existing) != entry.get("digest"):
+                raise Refusal(f"attempt {entry['n']:04d}'s record does not match the verdict the referee store has for it; not adopting the keep. "
+                              "Fix: ask the human.")
         gitops.finish_advance(root, sha)
         state["last_keep"] = sha
         if kind == "keep":
-            record = dict(pending.get("record") or {})
-            record.update(n=pending["n"], verdict="keep", valid=True, commit=sha, confirm="pending")
-            record["reasons"] = list(record.get("reasons", [])) + ["recovered: hca was stopped after moving the branch and before writing this record"]
-            adir.mkdir(parents=True, exist_ok=True)
-            write_json(adir / "verdict.json", record)
+            if existing is None:
+                record = dict(entry.get("record") or {})
+                record.update(n=entry["n"], verdict="keep", valid=True, commit=sha, confirm="pending")
+                record["reasons"] = list(record.get("reasons", [])) + ["recovered: hca was stopped after moving the branch and before writing this record"]
+                adir.mkdir(parents=True, exist_ok=True)
+                write_json(adir / "verdict.json", record)
         else:
+            gitops.revert(root, spec, sha)                 # the working tree's editable paths may still hold the undone content
             for a in ledger.read_attempts(root):
                 if a.get("confirm") == "pending":
                     ledger.update_attempt(root, a["n"], confirm="unconfirmed")
         ledger.refresh_verdicts(root, state, spec)
-        path.unlink(missing_ok=True)
+        clear_pending(root, task)
         out(f"warning: finished an interrupted {'keep' if kind == 'keep' else 'confirm reset'}: the branch is at {sha[:12]}.")
     elif tip == old:
         if adir is not None and not (adir / "verdict.json").exists():
             adir.mkdir(parents=True, exist_ok=True)
-            record = dict(pending.get("record") or {"n": pending["n"]})
+            record = dict(entry.get("record") or {"n": entry["n"]})
             record.update(verdict="void", valid=False, reasons=["hca was stopped before the keep was applied; nothing was committed"])
             record.pop("commit", None)
             write_json(adir / "verdict.json", record)
             ledger.refresh_verdicts(root, state, spec)
-        path.unlink(missing_ok=True)
+        clear_pending(root, task)
         out("warning: discarded a pending keep that was never applied.")
+    else:
+        raise Refusal(f"the referee store records a pending {kind} (snapshot {sha[:12]}), but the branch tip is {tip[:12]}, which is neither "
+                      f"that snapshot nor the last keep {old[:12]}. Not adopting or dropping anything. Fix: ask the human.")
 
 
 def make_rng(seed=None) -> tuple:

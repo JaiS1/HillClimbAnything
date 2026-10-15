@@ -16,14 +16,15 @@ import contextlib
 import json
 import math
 import os
+import secrets
 import shutil
 import time
 from pathlib import Path
 
 from . import gitops, stats
-from .core import HcaError, read_json, write_json
+from .core import HcaError, Refusal, object_hash, read_json, write_json
 
-STATE_VERSION = 1
+STATE_VERSION = 2          # 2: state.json carries the referee store's store_id
 
 
 def now() -> str:
@@ -293,9 +294,10 @@ def init_store(task, init_sha, spec_hash, frozen, blobs) -> dict:
     """Write the referee record at init. A second init of the same task is logged as a reset; confirms_used is never reset."""
     store = load_store(task)
     if store is None:
-        store = {"version": STORE_VERSION, "task": task, "confirms_used": len(read_confirms(task)), "resets": [],
-                 "attempts": [], "created": now()}
+        store = {"version": STORE_VERSION, "task": task, "store_id": secrets.token_hex(16), "confirms_used": len(read_confirms(task)),
+                 "resets": [], "attempts": [], "created": now()}
     else:
+        store.setdefault("store_id", secrets.token_hex(16))
         store.setdefault("resets", []).append({"at": now(), "previous_init_sha": store.get("init_sha"), "new_init_sha": init_sha,
                                                "confirms_used": max(int(store.get("confirms_used", 0)), len(read_confirms(task))),
                                                "allowed_by_env": os.environ.get("HCA_ALLOW_RESET") == "1"})
@@ -343,13 +345,49 @@ def forget_attempt(task, n) -> None:
         save_store(task, store)
 
 
-def seen_tree(task, tree):
-    """The first earlier attempt (any session) whose snapshot tree equals `tree`, as a store entry, or None."""
+def seen_tree(task, tree, root=None):
+    """The first earlier attempt (any session) whose snapshot tree equals `tree`, as an {n, ...} entry, or None.
+
+    The store is the main memory; with `root` the attempt records under `.hca/` (and archived sessions) are searched too,
+    so replay memory does not depend on the store alone.
+    """
     store = load_store(task)
     for entry in (store or {}).get("attempts", []):
         if tree and entry.get("tree") == tree:
             return entry
+    if root is not None and tree:
+        for path in sorted(hca_dir(root).glob("attempts/*/verdict.json")) + sorted(hca_dir(root).glob("archive-*/attempts/*/verdict.json")):
+            try:
+                record = read_json(path)
+            except (OSError, ValueError):
+                continue
+            if record.get("tree") == tree:
+                return {"n": record.get("n"), "tree": tree, "source": str(path)}
     return None
+
+
+# --- pending operations (a keep or a restore that moved the branch) -------------------------------------
+
+def verdict_digest(record) -> str:
+    """A sha256 over the fields of an attempt record that make it a verdict (so a hand-written record cannot pass for a measured one)."""
+    keys = ("n", "verdict", "valid", "estimate", "lower", "p", "blocks", "tree", "snapshot", "commit")
+    return object_hash({k: record.get(k) for k in keys})
+
+
+def set_pending(task, entry) -> None:
+    """Mirror the pending-keep marker in the referee store (before the branch moves); `None` clears it."""
+    store = load_store(task)
+    if store is None:
+        return
+    if entry is None:
+        store.pop("pending", None)
+    else:
+        store["pending"] = entry
+    save_store(task, store)
+
+
+def get_pending(task):
+    return (load_store(task) or {}).get("pending")
 
 
 def tries_used(root, task) -> int:
@@ -373,12 +411,26 @@ def charge_confirm(task, used) -> None:
 
 
 def reconcile_state(state, task, out=print) -> None:
-    """Make `state` agree with the referee store, warning about every disagreement (the store wins). Creates the record if missing."""
+    """Make `state` agree with the referee store, warning about every disagreement (the store wins).
+
+    A session started by this version carries a `store_id` in both places. If state.json has one and the store is
+    missing or has another, the replay memory, confirm history, reset log and held-out set are not the ones this
+    session started with (a different HCA_HOME, a deleted store): refuse, never rebuild silently. Only a state.json
+    from before store ids (no `store_id`) gets the old behaviour: adopt the store's id, or record a fresh store.
+    """
     store = load_store(task)
+    wanted = state.get("store_id")
+    if wanted and (store is None or store.get("store_id") != wanted):
+        what = "has no record for this task" if store is None else "holds a different record for this task"
+        raise Refusal(f"the referee store {what} (HCA_HOME is {home()}; this session was started with store id {wanted[:8]}). "
+                      "Replay memory, the confirm count and the held-out set live there. Fix: run hca with the same HCA_HOME as at init "
+                      "(same user, same shell); if the store is really lost, a human can start over with `HCA_ALLOW_RESET=1 hca init --reset`.")
     if store is None:
         out("warning: no referee record for this task in the store; recording it from .hca/state.json (is HCA_HOME the same as at init?).")
-        init_store(task, state["init_sha"], state.get("spec_hash"), state["frozen"], state.get("frozen_blobs", {}))
+        store = init_store(task, state["init_sha"], state.get("spec_hash"), state["frozen"], state.get("frozen_blobs", {}))
+        state["store_id"] = store["store_id"]
         return
+    state.setdefault("store_id", store.get("store_id"))
     for key in ("init_sha", "spec_hash", "frozen", "frozen_blobs"):
         if key in store and state.get(key) != store[key]:
             out(f"warning: .hca/state.json disagrees with the referee store about {key!r}; using the store's value.")

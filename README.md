@@ -118,6 +118,19 @@ model fine-tuning campaign and the mistakes it paid for.
   tries still add up (`hca report` prints the false keeps that chance alone allows so far). Reward hacking is
   reduced, not eliminated: read the patches. Held-out data lives outside the repo, but its path is given to the
   benchmark during `confirm`, so it is not hidden from code you run.
+- **It does not close every channel.** Known residuals, with what to do about each:
+  - *An evaluator that runs the code under test in its own process* can be fooled by that code: it can rewrite
+    `HCA_RESULT_FILE` or print a number before it exits. Have the frozen evaluator run the code under test in a
+    **child process**, time it from the parent, and remove `HCA_RESULT_FILE` from the child's environment.
+  - *Arms are not blind.* A benchmark can tell which arm it is in from the git state around it (`HEAD`, the worktree
+    path). Nothing stops code that goes looking. Read the patches.
+  - *`link` is shared.* A linked path is one symlink target visible to both arms, and both can write to it. If it holds
+    data that must not change, list it under `frozen` too (it is then hashed on every try).
+  - *Files outside the arms.* Untracked files in an arm are removed before every run, so a cache written next to the code
+    does not survive. Writes to `/tmp`, `$HOME`, linked directories or the network are not seen.
+  - *Editable installs.* If your project is `pip install -e`'d into the Python that runs the benchmark, `import pkg` can
+    resolve to the live checkout in both arms, and every try then measures the same code twice. `hca doctor` warns about
+    this. Have the benchmark put its own checkout first on `sys.path` and assert where the package was imported from.
 - **It is not built for concurrent use.** Do not edit, commit or switch branches in the checkout while a
   loop is running, and do not run two `hca` commands at once (a lock refuses the second). v1 refuses repos
   with submodules or a half-finished merge or rebase.

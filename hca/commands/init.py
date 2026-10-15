@@ -96,10 +96,12 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
         raise HcaError(f"the build fails on the original code (exit {exc.result.returncode}). Last stderr:\n{exc.result.error_tail}\n"
                        f"Fix: make `[build] command` pass at {init_sha[:12]} before starting.") from None
 
+    prepare = {"baseline": lambda: arms.prepare_run(root, spec, init_sha, "baseline", warn=out),
+               "candidate": lambda: arms.prepare_run(root, spec, aa_sha, "candidate", logs=noise_dir, warn=out)}
     noise, lines = None, []
     if mode == "blocks":
         n = aa_blocks or (spec.limits.extend_to if spec.limits.extend_to > 0 else spec.limits.blocks)
-        result = measure.run_blocks(spec, baseline, candidate, n, rng, env, noise_dir, warmup=True)
+        result = measure.run_blocks(spec, baseline, candidate, n, rng, env, noise_dir, warmup=True, prepare=prepare)
         for line in result.warnings:
             out(f"warning: {line}")
         if result.void or len(result.scores) < stats.NOISE_MIN_BLOCKS:
@@ -117,7 +119,7 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
                 + ". Or rerun with --force to accept inconclusive tries.")
             return common.EXIT_INVALID
     else:
-        pair = measure.run_item_pair(spec, baseline, candidate, rng, env, noise_dir, warmup=True)
+        pair = measure.run_item_pair(spec, baseline, candidate, rng, env, noise_dir, warmup=True, prepare=prepare)
         if pair.void or pair.candidate_failed:
             out("The baseline could not be measured: " + "; ".join(pair.reasons) + ". Fix the objective command so it runs cleanly on the original code.")
             return common.EXIT_INVALID
@@ -148,9 +150,9 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     entries = gitops.tree_entries(root, init_sha)
     blobs = {p: entries[p][1] for p in frozen if p in entries}
     spec_hash = digest(root / "hca.toml")
-    ledger.init_store(task, init_sha, spec_hash, frozen, blobs)         # the referee store is the source of truth; state.json is a cache
+    store = ledger.init_store(task, init_sha, spec_hash, frozen, blobs)  # the referee store is the source of truth; state.json is a cache
     state = {"version": ledger.STATE_VERSION, "task": task, "branch": branch, "init_sha": init_sha, "last_keep": init_sha,
-             "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen, "frozen_blobs": blobs,
+             "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen, "frozen_blobs": blobs, "store_id": store["store_id"],
              "spec_hash": spec_hash, "base_branch": None if base_branch in (branch, "HEAD") else base_branch, "mode": mode, "metric": spec.objective.metric,
              "direction": spec.objective.direction, "useful_effect": spec.objective.useful_effect,
              "heldout": heldout_path is not None, "noise": noise, "created": ledger.now(), "verdict_history": []}

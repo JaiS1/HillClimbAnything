@@ -12,6 +12,10 @@ class HcaError(ValueError):
     """A user-facing harness error: the message says what to fix."""
 
 
+class Refusal(HcaError):
+    """The referee refuses to continue because its own records disagree (exit 2, like a refused confirm), not because of a usage error."""
+
+
 HarnessError = HcaError  # name used by code ported from Dream Loop
 
 

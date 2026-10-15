@@ -81,6 +81,24 @@ candidate at a snapshot commit (the last keep plus your editable files). Neither
 - each try starts with one discarded warm-up run per arm, so a cold cache is not measured;
 - `__pycache__/`, `*.pyc` and `.DS_Store` are never treated as edits.
 
+## Known residuals (what the referee cannot see)
+
+- **The code under test and the evaluator share a process.** Then the code can rewrite the result file or print a number
+  before it exits, and HCA cannot tell. Have the frozen evaluator run the code under test in a **child process**, time it
+  from the parent, write the result itself, and **remove `HCA_RESULT_FILE` from the child's environment**.
+- **An arm can tell which arm it is** from the git state around it (`HEAD`, the worktree path). `HCA_ARM` is gone, but the
+  information is not. Do not write benchmarks or candidate code that goes looking, and read the patches.
+- **`link` paths are shared and writable by both arms.** Anything you link can be changed by either side. List a linked path
+  that must stay fixed under `frozen` as well, so it is hashed before every try.
+- **Editable installs.** If the project is installed with `pip install -e` into the Python that runs the benchmark, `import
+  pkg` may load the live checkout in both arms (the script directory, not the cwd, is on `sys.path`), so every try is an A/A
+  against the same code. The benchmark should insert its own checkout at `sys.path[0]` and assert where the package was
+  imported from. `hca doctor` warns when the objective's interpreter has an editable install (`direct_url.json` with
+  `"editable": true`) that points at the repo.
+- **Untracked files** in an arm are deleted before every objective run (the warm-up too), except the build's own outputs,
+  which are recorded after the build. If a run changes or deletes a build output, the arm is rebuilt with a warning. Writes
+  outside the arm (`/tmp`, `$HOME`, linked directories, the network) are not seen.
+
 ## Making a metric climbable
 
 - **Measure inside one process** where possible, and **warm up** before timing.

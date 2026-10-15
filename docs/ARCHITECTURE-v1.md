@@ -381,3 +381,25 @@ Where this amendment and the sections above disagree, this one wins.
   work in the same checkout while the loop runs.
 - **Held-out data** is outside the repo but its path (`HCA_HELDOUT_DIR`) reaches the benchmark during confirm,
   so candidate code could read it. This is not a security boundary.
+
+### A2 follow-ups from the re-review (NEW-1 to NEW-6)
+
+- **Clean arms (NEW-3).** After an arm's build, `.hca/arms/<sha12>.files` records the arm's untracked files, ignored ones
+  included (path, size, mtime_ns; `.git` and `link` paths excluded). Before every objective run, warm-up included,
+  untracked files not in the manifest are deleted (symlinks are removed as links, never followed), and a manifest file that
+  changed or vanished makes hca recreate and rebuild the arm with a warning. A candidate's disk cache cannot span runs.
+- **Store identity (NEW-1).** `init` writes a random `store_id` into the referee store and into `.hca/state.json`. If
+  state.json has one and the store is missing or has another, every command that opens the session refuses (exit 2),
+  naming `HCA_HOME`, and never rebuilds the store. A state.json from before store ids is adopted as before. Replay memory
+  also reads the attempt records under `.hca/` (archived sessions included), and `confirm` refuses if the session had a
+  held-out set and the store no longer does.
+- **Pending operations (NEW-2, NEW-4).** Before `update-ref`, the store gets a `pending` entry (kind `keep` or `restore`,
+  snapshot sha, previous last keep and, for a keep, the full verdict record with its digest). `.hca/pending-keep.json` is only
+  a mirror. Reconciliation adopts a move only when the store's entry matches the branch tip, takes the attempt record from
+  the store, and refuses (exit 2) if an existing attempt record has a different digest or if a marker has no store entry
+  and the branch tip is not the old keep. For `restore` it also finishes the working-tree sync, so a kill between the branch
+  move and the sync no longer leaves the undone content on disk. The `refs/hca/attempts/NNNN` ref is created when the attempt
+  is recorded, after the measurement, so no arm sees it while it runs.
+- **Residuals.** Documented in the README and `skills/hca/references/spec.md`: an evaluator that shares a process with the
+  code under test (S8), arms that can read the git state (S19), shared `link` symlinks (NEW-5), editable installs (NEW-6,
+  with a `hca doctor` warning). `state.last_keep` is still agent-writable; `verify_history` bounds what it can point at.

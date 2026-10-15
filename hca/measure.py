@@ -175,11 +175,15 @@ class _Run:
 
 
 def run_blocks(spec, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir, first_block=0, deadline=None,
-               warmup=False) -> BlockResult:
-    """Measure `spec.objective` in `n_blocks` randomised blocks of baseline vs candidate."""
+               warmup=False, prepare=None) -> BlockResult:
+    """Measure `spec.objective` in `n_blocks` randomised blocks of baseline vs candidate.
+
+    `prepare` is {"baseline": fn, "candidate": fn}: called right before every objective run of that arm (the warm-up
+    too), so the arm can be cleaned of files an earlier run left behind (arms.prepare_run).
+    """
     return measure_blocks(spec.objective.command, spec.objective.metric, spec.objective.direction, baseline_dir,
                           candidate_dir, n_blocks, rng, env_extra, out_dir, spec.limits.command_seconds,
-                          spec.env.deny, first_block=first_block, deadline=deadline, warmup=warmup)
+                          spec.env.deny, first_block=first_block, deadline=deadline, warmup=warmup, prepare=prepare)
 
 
 # CONTRACT NOTE: A2.3 says try_seconds covers builds, guards and blocks; every command run (including each objective run)
@@ -189,7 +193,7 @@ def _capped(timeout, deadline):
     return timeout if deadline is None else max(1.0, min(timeout, deadline - time.monotonic()))
 
 
-def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None) -> None:
+def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None, prepare=None) -> None:
     """One discarded objective run per arm, before block 0: cold caches and fresh worktrees must not land in a measured block.
 
     Both arms get exactly one, in a fixed order; the results are logged as `warmup` and never scored.
@@ -200,6 +204,8 @@ def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None) -> 
         result_file = out_dir / "runs" / f"warmup-{arm}.result"
         result_file.parent.mkdir(parents=True, exist_ok=True)
         result_file.unlink(missing_ok=True)
+        if prepare and prepare.get(arm):
+            prepare[arm]()
         env = dict(env_extra or {}, HCA_RESULT_FILE=str(result_file))
         result = runner.run(command, dirs[arm], out_dir / "runs", f"warmup-{arm}", _capped(timeout, deadline), env_extra=env, deny=deny)
         _append(out_dir / "runs.jsonl", {"kind": "warmup", "arm": arm, "wall_seconds": round(result.seconds, 6),
@@ -209,7 +215,7 @@ def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None) -> 
 
 
 def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir,
-                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False, warmup=False) -> BlockResult:
+                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False, warmup=False, prepare=None) -> BlockResult:
     """The engine under run_blocks, usable without a spec (quick). `wall_fallback` scores the command's
     own wall time when it prints neither item JSON nor a METRIC line (the zero-config case). `warmup` runs
     one discarded objective run per arm first. `HCA_ARM` is deliberately not exported: the benchmark must not
@@ -221,7 +227,7 @@ def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_bl
     log = out_dir / "runs.jsonl"
     dirs = {"baseline": Path(baseline_dir), "candidate": Path(candidate_dir)}
     if warmup:
-        warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline)
+        warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline, prepare)
     start = time.monotonic()
     blocks = []                     # each: {"baseline": _Run, "candidate": _Run}
     dropped = set()
@@ -232,6 +238,8 @@ def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_bl
         rng.shuffle(order)
         pair = {}
         for position, arm in enumerate(order):
+            if prepare and prepare.get(arm):
+                prepare[arm]()
             run = _execute(command, metric, dirs[arm], out_dir, index, arm, position, dict(env_extra or {}),
                            _capped(timeout, deadline), deny, wall_fallback)
             dropped.update(run.result.dropped_env)
@@ -453,7 +461,8 @@ class ItemPair:
     wall_seconds: float
 
 
-def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, block=0, deadline=None, warmup=False) -> ItemPair:
+def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, block=0, deadline=None, warmup=False,
+                  prepare=None) -> ItemPair:
     """Items mode: run each arm once in random order and return the per-item values.
 
     This does not go through block scoring on purpose: deterministic scores such as accuracy can be
@@ -470,12 +479,14 @@ def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, bl
     log = out_dir / "runs.jsonl"
     dirs = {"baseline": Path(baseline_dir), "candidate": Path(candidate_dir)}
     if warmup:
-        warm_up(obj.command, dirs, out_dir, spec.limits.command_seconds, spec.env.deny, env_extra, deadline)
+        warm_up(obj.command, dirs, out_dir, spec.limits.command_seconds, spec.env.deny, env_extra, deadline, prepare)
     start = time.monotonic()
     order = ["baseline", "candidate"]
     rng.shuffle(order)
     runs = {}
     for position, arm in enumerate(order):
+        if prepare and prepare.get(arm):
+            prepare[arm]()
         runs[arm] = _execute(obj.command, obj.metric, dirs[arm], out_dir, block, arm, position, dict(env_extra or {}),
                              _capped(spec.limits.command_seconds, deadline), spec.env.deny, False)
         _append(log, _run_record(runs[arm]))

@@ -45,6 +45,11 @@ class _Try:
         self.started, self.deadline = started, deadline
         self.snap = None
         self.cand_dir = None
+        # Before every objective run an arm is cleaned of untracked files its build did not make (NEW-3: a disk cache
+        # written by the candidate must not survive from one run to the next, the warm-up included).
+        self.prepare = {
+            "baseline": lambda: arms.prepare_run(root, spec, state["last_keep"], "baseline", warn=out),
+            "candidate": lambda: arms.prepare_run(root, spec, self.snap["sha"], "candidate", logs=adir, warn=out)}
 
     def remaining(self) -> float:
         return self.deadline - time.monotonic()
@@ -109,14 +114,13 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
         raise
     first_line = message.splitlines()[0]
     t.snap = gitops.snapshot(root, spec, state["last_keep"], f"hca keep {n:04d}: {first_line}", changes)
-    gitops.set_ref(root, gitops.attempt_ref(n), t.snap["sha"])           # keeps the snapshot reachable (and the patch reproducible)
     rec.update(tree=t.snap["tree"], snapshot=t.snap["sha"])
     (adir / "patch.diff").write_text(gitops.patch_between(root, state["last_keep"], t.snap["sha"]), encoding="utf-8")
     if t.snap["tree"] == gitops.tree_of(root, state["last_keep"]):
         return _finish(t, "invalid", ["no changes: the editable files equal the last keep once build and cache files are ignored"], note="empty")
     # CONTRACT NOTE: a refused replay is recorded as an `invalid` attempt (it counts toward tries and max_tries), so
     # hammering `hca try` on the same edit shows up in the validity rate instead of vanishing.
-    prior = ledger.seen_tree(task, t.snap["tree"])
+    prior = ledger.seen_tree(task, t.snap["tree"], root)
     ledger.note_attempt(task, n, tree=t.snap["tree"], again=again, refused=bool(prior) and not again)
     if prior:
         rec["replay_of"] = prior.get("n")
@@ -126,6 +130,9 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     try:
         return _measure_and_decide(t)
     except BaseException as exc:                        # leave the edits alone, but never leave an attempt without a verdict
+        pending = ledger.get_pending(task)
+        if pending and pending.get("n") == n:           # the branch may have moved: reconciliation owns this record, not us
+            raise
         if not (adir / "verdict.json").exists():
             if isinstance(exc, KeyboardInterrupt):
                 _record(t, "interrupted", ["interrupted (Ctrl-C or a termination signal) while the try was running; your edits are untouched"])
@@ -215,7 +222,7 @@ def _decide_blocks(spec, t: _Try, env) -> dict:
         return void(list(result.warnings) + [f"only {len(result.scores)} usable blocks, too few to decide {level_note}; edits kept, not a valid try"])
 
     base_dir, cand_dir = t.refresh()
-    result = measure.run_blocks(spec, base_dir, cand_dir, limits.blocks, t.rng, env, t.adir, deadline=t.deadline, warmup=True)
+    result = measure.run_blocks(spec, base_dir, cand_dir, limits.blocks, t.rng, env, t.adir, deadline=t.deadline, warmup=True, prepare=t.prepare)
     fields.update(blocks_run=result.blocks_run)
     if result.blocks_run < limits.blocks:             # the deadline stopped the blocks: say so, whatever else is also true
         return void([timeout])
@@ -232,7 +239,7 @@ def _decide_blocks(spec, t: _Try, env) -> dict:
             return void([timeout + " before the extension"])
         base_dir, cand_dir = t.refresh()
         more = measure.run_blocks(spec, base_dir, cand_dir, limits.extend_to - limits.blocks, t.rng, env, t.adir,
-                                  first_block=limits.blocks, deadline=t.deadline)
+                                  first_block=limits.blocks, deadline=t.deadline, prepare=t.prepare)
         result = measure.combine(result, more)
         fields.update(extended=True, blocks_run=result.blocks_run)
         if result.blocks_run < limits.extend_to:
@@ -257,7 +264,7 @@ def _decide_blocks(spec, t: _Try, env) -> dict:
 
 def _decide_items(spec, t: _Try, env) -> dict:
     base_dir, cand_dir = t.refresh()
-    pair = measure.run_item_pair(spec, base_dir, cand_dir, t.rng, env, t.adir, deadline=t.deadline, warmup=True)
+    pair = measure.run_item_pair(spec, base_dir, cand_dir, t.rng, env, t.adir, deadline=t.deadline, warmup=True, prepare=t.prepare)
     fields = {"extended": False, "blocks": 1, "blocks_run": 1}
     if pair.void:
         return {"verdict": "void", "valid": False, "reasons": pair.reasons, "fields": fields, "arm_medians": None}
@@ -316,6 +323,11 @@ def _metric_guard(g, medians) -> dict:
 # --- recording and output --------------------------------------------------------------------------
 
 def _record(t: _Try, verdict, reasons, valid=False) -> None:
+    if t.snap is not None:                              # the snapshot ref appears only now, after the measurement (S19: an arm must not see it)
+        try:
+            gitops.set_ref(t.root, gitops.attempt_ref(t.rec["n"]), t.snap["sha"])
+        except HcaError:
+            pass
     t.rec.update(verdict=verdict, valid=valid, reasons=reasons, wall_seconds=round(time.monotonic() - t.started, 3))
     ledger.write_record(t.adir, "verdict.json", t.rec)
     ledger.refresh_verdicts(t.root, t.state, t.spec)
@@ -334,12 +346,15 @@ def _apply_keep(t: _Try, reasons):
     sha, old = t.snap["sha"], state["last_keep"]
     final = dict(rec, verdict="keep", valid=True, reasons=list(reasons), commit=sha, confirm="pending",
                  wall_seconds=round(time.monotonic() - t.started, 3))
-    common.write_pending(root, {"kind": "keep", "n": rec["n"], "snapshot_sha": sha, "last_keep": old, "record": final})
+    common.write_pending(root, state["task"], {"kind": "keep", "n": rec["n"], "snapshot_sha": sha, "last_keep": old, "record": final,
+                                               "digest": ledger.verdict_digest(final)})
     try:
         gitops.advance_branch(root, state["branch"], sha, old)
     except HcaError as exc:
         if gitops.branch_tip(root, state["branch"]) == old:
-            common.clear_pending(root)
+            common.clear_pending(root, state["task"])
+        else:
+            raise                                       # the branch moved but the index reset failed: reconciliation finishes it
         reasons.append(f"the branch could not be moved to the measured snapshot: {exc}; nothing was kept and your edits are untouched")
         return "void"
     state["last_keep"] = sha
@@ -372,7 +387,7 @@ def _finish(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> i
     elif verdict in ("void", "interrupted"):
         action.append("your edits are untouched")
     _record(t, verdict, reasons, valid=valid)
-    common.clear_pending(root)
+    common.clear_pending(root, state["task"])
     arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])     # after the records, best effort
     wall = rec["wall_seconds"]
     useful_text = spec.objective.useful_effect

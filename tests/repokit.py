@@ -30,6 +30,8 @@ echo "$n" > "$BENCH_STATE/count"
 [ -n "$BENCH_TAMPER" ] && echo 99 > "$BENCH_TAMPER"
 warm=1
 [ -f cache/warm ] && warm=0.5
+[ -f .memo ] && warm=0.5
+[ -f src/memo_writer.txt ] && : > .memo
 if [ -f src/crash.txt ]; then
   echo "candidate crashed on purpose" >&2
   exit 3

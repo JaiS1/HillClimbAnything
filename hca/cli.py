@@ -9,9 +9,10 @@ import time
 import traceback
 
 from . import __version__
-from .core import HcaError
+from .core import HcaError, Refusal
 
 EXIT_USAGE = 3
+EXIT_REFUSED = 2
 EXIT_INTERNAL = 4         # an unexpected exception: outside the 0 keep/pass, 1 revert/fail, 2 invalid/void, 3 usage contract
 
 
@@ -48,6 +49,9 @@ def main(argv=None) -> int:
     previous = _install_signal_handlers()
     try:
         return _dispatch(args, parser)
+    except Refusal as exc:
+        print(f"hca: refused: {exc}", file=sys.stderr)
+        return EXIT_REFUSED
     except HcaError as exc:
         print(f"hca: {exc}", file=sys.stderr)
         return EXIT_USAGE

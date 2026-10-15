@@ -24,7 +24,7 @@ import shutil
 import time
 
 from .. import arms, gitops, ledger, measure, stats
-from ..core import HcaError
+from ..core import HcaError, Refusal
 from . import common
 
 ALPHA = 0.01
@@ -70,6 +70,11 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
     if used >= spec.limits.confirms:
         raise HcaError(f"the confirm cap is reached ({used} of {spec.limits.confirms} used). Fix: raise [limits] confirms in hca.toml "
                        "and re-init, or stop here: more confirms would turn the held-out set into a dev set.")
+    held = ledger.heldout_dir(task)
+    if state.get("heldout") and held is None:
+        raise Refusal("this session was started with a held-out set but the referee store no longer has it, so a confirm would quietly "
+                      f"measure dev items instead. Fix: use the HCA_HOME the session started with ({ledger.home()}); if the data is lost, "
+                      "a human re-inits with `--heldout`.")
     problems = _history_problems(root, spec, state, ledger.load_store(task) or {})
     if problems:
         out("CONFIRM refused: the committed history does not pass the referee's check, so nothing was measured and no confirm was used.")
@@ -80,18 +85,19 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
     started = time.monotonic()
     baseline = arms.ensure_arm(root, spec, state["init_sha"], "baseline", warn=out)
     candidate = arms.ensure_arm(root, spec, state["last_keep"], "candidate", warn=out)
-    held = ledger.heldout_dir(task)
     env = {"HCA_ITEMS": "heldout", "HCA_HELDOUT_DIR": str(held)} if held else {"HCA_ITEMS": "dev"}
     store = ledger.store_dir(task) / "confirms" / f"{number:02d}"
     if store.exists():
         shutil.rmtree(store)                           # inside the referee store; a stale directory from a crashed confirm
     rng, used_seed = common.make_rng(seed)
     useful = spec.objective.useful
+    prepare = {"baseline": lambda: arms.prepare_run(root, spec, state["init_sha"], "baseline", warn=out),
+               "candidate": lambda: arms.prepare_run(root, spec, state["last_keep"], "candidate", warn=out)}
 
     record = {"n": number, "at": ledger.now(), "init_sha": state["init_sha"], "last_keep": state["last_keep"], "heldout": bool(held),
               "mode": mode, "alpha": ALPHA, "seed": used_seed}
     if mode == "items":
-        pair = measure.run_item_pair(spec, baseline, candidate, rng, env, store, warmup=True)
+        pair = measure.run_item_pair(spec, baseline, candidate, rng, env, store, warmup=True, prepare=prepare)
         if pair.void or pair.candidate_failed:
             outcome, detail = "void", {"reasons": pair.reasons}
         else:
@@ -105,7 +111,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
             record["blocks"] = 1
     else:
         n = spec.limits.extend_to if spec.limits.extend_to > 0 else spec.limits.blocks
-        result = measure.run_blocks(spec, baseline, candidate, n, rng, env, store, warmup=True)
+        result = measure.run_blocks(spec, baseline, candidate, n, rng, env, store, warmup=True, prepare=prepare)
         if result.void or len(result.scores) < 2:
             outcome, detail = "void", {"reasons": result.warnings}
         else:
@@ -159,7 +165,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
         saved = ledger.hca_dir(root) / f"discarded-by-confirm-{number:02d}.diff"
         saved.write_text(dirty_patch, encoding="utf-8")
     made = gitops.restore_commit(root, spec, target, gitops.RESTORE_SUBJECT)
-    common.write_pending(root, {"kind": "restore", "snapshot_sha": made["sha"], "last_keep": made["here"]})
+    common.write_pending(root, task, {"kind": "restore", "snapshot_sha": made["sha"], "last_keep": made["here"]})
     gitops.advance_branch(root, state["branch"], made["sha"], made["here"])
     gitops.revert(root, spec, made["sha"])             # sync the working tree's editable paths (this also drops uncommitted edits)
     sha = made["sha"]
@@ -168,7 +174,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
         if a.get("confirm") == "pending":
             ledger.update_attempt(root, a["n"], confirm="unconfirmed")
     ledger.refresh_verdicts(root, state, spec)
-    common.clear_pending(root)
+    common.clear_pending(root, task)
     arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])
     out(f"CONFIRM {number}: FAIL. The editable paths were reset to "
         f"{'the last confirmed commit' if state.get('last_confirmed') else 'the original'} ({target[:12]}) as commit {sha[:12]}; "

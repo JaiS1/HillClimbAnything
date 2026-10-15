@@ -22,7 +22,7 @@ from unittest import mock
 import repokit
 from hca import arms, cli, gitops, ledger, measure
 from hca.commands import common, report, try_
-from hca.core import HcaError
+from hca.core import HcaError, Refusal
 from hca.spec import load_spec
 from repokit import env
 
@@ -128,16 +128,23 @@ class IndexAndStateTests(Started):
         code, text = self.report()
         self.assertIn("re-initialised 1 time(s)", text)
 
-    def test_a_tampered_confirm_counter_and_missing_store_record_are_handled(self):
+    def test_a_tampered_confirm_counter_loses_to_the_store_and_a_legacy_state_without_a_store_id_is_adopted(self):
         state = self.state()
         state["confirms_used"] = 0
         ledger.save_state(self.root, state)
-        (ledger.store_path("speedy")).unlink()
         self.set_speed(21)
-        code, text = self.try_("win")
+        self.assertEqual(self.try_("win")[0], 0)
+        self.assertEqual(ledger.confirms_used(self.state(), "speedy"), 0)
+        # a state.json from before store ids (no store_id) gets the old behaviour: record a fresh store, with a warning
+        state = self.state()
+        state.pop("store_id")
+        ledger.save_state(self.root, state)
+        ledger.store_path("speedy").unlink()
+        self.set_speed(20)
+        code, text = self.try_("another win")
         self.assertEqual(code, 0, text)
         self.assertIn("no referee record for this task in the store", text)
-        self.assertEqual(ledger.load_store("speedy")["init_sha"], self.state()["init_sha"])
+        self.assertEqual(ledger.load_store("speedy")["store_id"], self.state()["store_id"])
 
 
 class ArmTests(Started):
@@ -418,7 +425,9 @@ class PendingKeepTests(Started):
         self.set_speed(21)
         snap = gitops.snapshot(self.root, load_spec(self.root / "hca.toml"), before, "hca keep 0001: x", ["src/speed.txt"])
         n, adir = ledger.new_attempt(self.root)
-        common.write_pending(self.root, {"kind": "keep", "n": n, "snapshot_sha": snap["sha"], "last_keep": before, "record": {"n": n}})
+        record = {"n": n, "verdict": "keep", "valid": True, "commit": snap["sha"]}
+        common.write_pending(self.root, "speedy", {"kind": "keep", "n": n, "snapshot_sha": snap["sha"], "last_keep": before,
+                                                   "record": record, "digest": ledger.verdict_digest(record)})
         code, text = self.try_("a fresh try after the crash")
         self.assertIn("discarded a pending keep that was never applied", text)
         self.assertEqual(json.loads((adir / "verdict.json").read_text())["verdict"], "void")
@@ -556,6 +565,267 @@ class LockTests(repokit.RepoTestCase):
             pass
         self.assertIn("removing a stale lock", self.text)
         self.assertFalse(path.exists())
+
+
+class UntrackedStateTests(Started):
+    def test_a_disk_cache_the_candidate_writes_does_not_survive_between_runs(self):
+        # NEW-3 (re-review repro): the candidate writes `.memo` on its first call and every later call is fast. The arm
+        # used to keep the file, so the warm-up primed it and the try KEPT at about -50% (and confirm passed).
+        self.repo.write("src/memo_writer.txt", "1\n")
+        code, text = self.try_("cache across runs")
+        self.assertEqual(code, 1, text)
+        a = self.attempt(1)
+        self.assertEqual((a["verdict"], a["valid"]), ("revert", True))
+        self.assertLess(abs(a["estimate"]), 6, a["estimate"])
+        for arm in (self.root / ".hca" / "arms").iterdir():
+            self.assertFalse((arm / ".memo").exists(), arm)
+
+    def test_a_cache_is_just_as_dead_when_the_candidate_really_is_faster(self):
+        self.repo.write("src/memo_writer.txt", "1\n")
+        self.set_speed(21)
+        code, text = self.try_("a real win plus a cache")
+        self.assertEqual(code, 0, text)
+        self.assertAlmostEqual(self.attempt(1)["estimate"], -30, delta=4)                  # -30%, not -65%
+
+
+class ArmCleaningTests(repokit.RepoTestCase):
+    toml_args = {"extra_task": 'link = ["deps"]',
+                 "build": '[build]\ncommand = ' + json.dumps([PY, "-c", "open('out.bin', 'w').write('built')"]) + "\n"}
+
+    def setUp(self):
+        super().setUp()
+        self.repo.write(".gitignore", "deps/\n*.cache\n")
+        self.repo.commit_all("ignore")
+        self.repo.write("deps/lib.txt", "dependency\n")
+        self.assertEqual(self.init()[0], 0)
+        self.sha = self.state()["init_sha"]
+        self.arm = arms.arm_dir(self.root, self.sha)
+        self.spec = load_spec(self.root / "hca.toml")
+
+    def test_untracked_files_are_deleted_links_and_build_outputs_are_not(self):
+        manifest = json.loads((arms.arms_root(self.root) / f"{self.sha[:12]}.files").read_text())["files"]
+        self.assertEqual(set(manifest), {"out.bin"})                                       # the build output only; the link symlink is not listed
+        (self.arm / "junk.txt").write_text("x")
+        (self.arm / "nested" / "deeper").mkdir(parents=True)
+        (self.arm / "nested" / "deeper" / "x.cache").write_text("ignored by git, still gone")
+        os.symlink(self.arm / "junk.txt", self.arm / "stray-link")
+        arms.prepare_run(self.root, self.spec, self.sha, warn=self.out)
+        self.assertEqual(sorted(p.name for p in self.arm.iterdir() if p.name != ".git"),
+                         sorted(["README.md", "bench", "deps", "hca.toml", "out.bin", "src", ".gitignore"]))
+        self.assertTrue((self.arm / "deps").is_symlink())                                  # never deleted ...
+        self.assertEqual((self.root / "deps" / "lib.txt").read_text(), "dependency\n")     # ... nor was its target
+        self.assertNotIn("warning", self.text)
+
+    def test_a_changed_or_missing_build_output_recreates_and_rebuilds_the_arm(self):
+        (self.arm / "out.bin").write_text("the benchmark rewrote its own build output")
+        arms.prepare_run(self.root, self.spec, self.sha, warn=self.out)
+        self.assertIn("build outputs were changed or removed by a run (out.bin); recreating and rebuilding", self.text)
+        self.assertEqual((self.arm / "out.bin").read_text(), "built")
+        self.assertTrue((self.arm / "deps").is_symlink())
+        (self.arm / "out.bin").unlink()
+        arms.prepare_run(self.root, self.spec, self.sha, warn=self.out)
+        self.assertEqual((self.arm / "out.bin").read_text(), "built")
+        self.assertIsNone(arms.verify_arm(self.arm, self.sha))
+
+    def test_every_objective_run_including_the_warm_up_is_preceded_by_a_clean(self):
+        calls = []
+        import random
+        base, cand = self.tmp / "b", self.tmp / "c"
+        base.mkdir()
+        cand.mkdir()
+        command = [PY, "-c", "print('METRIC lat=10')"]
+        prepare = {"baseline": lambda: calls.append("b"), "candidate": lambda: calls.append("c")}
+        measure.measure_blocks(command, "lat", "min", base, cand, 3, random.Random(1), {}, self.tmp / "out", 20, warmup=True, prepare=prepare)
+        self.assertEqual(len(calls), 2 + 6)
+        self.assertEqual(sorted(calls[:2]), ["b", "c"])
+
+
+class StoreIdentityTests(Started):
+    def test_a_different_hca_home_is_refused_not_silently_rebuilt(self):
+        # NEW-1 (re-review repro): the same edit twice, the second under another HCA_HOME, used to be measured with no
+        # replay memory, no confirm history and no held-out set.
+        self.set_speed("30.0000001")
+        self.assertEqual(self.try_("first")[0], 1)
+        other = self.tmp / "other-home"
+        with env(HCA_HOME=str(other)):
+            with self.assertRaises(Refusal) as caught:
+                self.try_("same edit, other store")
+            self.assertIn("HCA_HOME", str(caught.exception))
+            self.assertIn(str(other), str(caught.exception))
+            self.assertFalse(other.exists())                                               # nothing was created there
+            err = io.StringIO()
+            with contextlib.chdir(self.root), contextlib.redirect_stderr(err):
+                self.assertEqual(cli.main(["try", "-m", "x"]), 2)                           # refused, not a usage error
+            self.assertIn("HCA_HOME", err.getvalue())
+            with self.assertRaises(Refusal):
+                self.confirm()
+        self.assertEqual(len(ledger.read_attempts(self.root)), 1)
+
+    def test_a_deleted_store_or_one_with_another_id_is_refused(self):
+        ledger.store_path("speedy").unlink()
+        with self.assertRaises(Refusal) as caught:
+            self.try_("x")
+        self.assertIn("has no record for this task", str(caught.exception))
+        store = ledger.init_store("speedy", self.state()["init_sha"], "h", {}, {})             # a store that was started separately
+        self.assertNotEqual(store["store_id"], self.state()["store_id"])
+        with self.assertRaises(Refusal) as caught:
+            self.try_("x")
+        self.assertIn("holds a different record", str(caught.exception))
+        self.assertTrue(self.state()["store_id"])
+
+    def test_a_deleted_store_with_allow_reset_can_start_over(self):
+        ledger.store_path("speedy").unlink()
+        with env(HCA_ALLOW_RESET="1"):
+            code, text = self.init(reset=True)
+        self.assertEqual(code, 0, text)
+        self.assertEqual(ledger.load_store("speedy")["store_id"], self.state()["store_id"])
+
+    def test_replay_memory_also_reads_the_attempt_records(self):
+        self.set_speed("30.0000001")
+        self.assertEqual(self.try_("first")[0], 1)
+        store = ledger.load_store("speedy")
+        store["attempts"] = []
+        ledger.save_store("speedy", store)
+        self.set_speed("30.0000001")                                                       # the revert undid it; make the same edit again
+        code, text = self.try_("same edit")
+        self.assertEqual(code, 2, text)
+        self.assertIn("already tried as attempt 0001", text)
+
+    def test_confirm_refuses_when_the_heldout_set_is_gone(self):
+        held = self.tmp / "held"
+        held.mkdir()
+        (held / "scale.txt").write_text("1.0\n")
+        with env(HCA_ALLOW_RESET="1"):
+            self.assertEqual(self.init(heldout=str(held), reset=True)[0], 0)
+        self.set_speed(21)
+        self.assertEqual(self.try_("win")[0], 0)
+        import shutil
+        shutil.rmtree(ledger.store_dir("speedy") / "heldout")
+        with self.assertRaises(Refusal) as caught:
+            self.confirm()
+        self.assertIn("held-out", str(caught.exception))
+        self.assertEqual(self.records_count(), 0)
+
+    def records_count(self):
+        return len(ledger.read_confirms("speedy"))
+
+
+class ForgedMarkerTests(Started):
+    def test_a_forged_pending_keep_marker_is_refused_not_adopted(self):
+        # NEW-2 (re-review repro): a hand-made commit with an hca-looking subject plus a marker with made-up numbers
+        # used to become a valid keep with estimate -40% and p=1e-6 in the attempts table.
+        before = self.repo.head()
+        self.set_speed(21)
+        forged = self.repo.commit_all("hca keep 0001: forged")
+        marker = {"kind": "keep", "n": 1, "snapshot_sha": forged, "last_keep": before,
+                  "record": {"n": 1, "verdict": "keep", "valid": True, "estimate": -40.0, "p": 1e-06, "commit": forged}}
+        (self.root / ".hca").mkdir(exist_ok=True)
+        (self.root / ".hca" / "pending-keep.json").write_text(json.dumps(marker))
+        with self.assertRaises(Refusal) as caught:
+            self.try_("next")
+        self.assertIn("no pending keep", str(caught.exception))
+        self.assertEqual(self.state()["last_keep"], before)
+        self.assertEqual(ledger.read_attempts(self.root), [])
+        code, text = self.report()
+        self.assertNotIn("-40.0%", text)
+        self.assertTrue((self.root / ".hca" / "pending-keep.json").exists())                # left for the human, not dropped
+
+    def test_a_stale_marker_for_a_branch_that_never_moved_is_discarded_with_a_warning(self):
+        before = self.repo.head()
+        marker = {"kind": "keep", "n": 1, "snapshot_sha": "0" * 40, "last_keep": before}
+        (self.root / ".hca" / "pending-keep.json").write_text(json.dumps(marker))
+        self.set_speed(21)
+        code, text = self.try_("fine")
+        self.assertIn("discarded .hca/pending-keep.json", text)
+        self.assertEqual(code, 0, text)
+
+    def test_a_real_crash_whose_attempt_record_was_rewritten_is_refused(self):
+        before = self.repo.head()
+        self.set_speed(21)
+        with mock.patch.object(try_, "_record", side_effect=SystemExit(9)):
+            with self.assertRaises(SystemExit):
+                self.try_("win")
+        self.assertIsNotNone(ledger.get_pending("speedy"))                                  # the store knew before the branch moved
+        adir = ledger.attempt_path(self.root, 1)
+        adir.mkdir(exist_ok=True)
+        (adir / "verdict.json").write_text(json.dumps({"n": 1, "verdict": "keep", "valid": True, "estimate": -99.0, "commit": self.repo.head()}))
+        with self.assertRaises(Refusal) as caught:
+            self.confirm()
+        self.assertIn("does not match the verdict the referee store has", str(caught.exception))
+        self.assertEqual(self.state()["last_keep"], before)
+
+
+class RestoreCrashTests(repokit.RepoTestCase):
+    toml_args = {"limits": {"extend_to": 20, "confirms": 3}}
+
+    def test_a_kill_between_the_branch_move_and_the_work_tree_sync_is_finished(self):
+        # NEW-4: a failed confirm moves the branch, then syncs the editable files; a kill in between left them undone.
+        held = self.tmp / "held"
+        held.mkdir()
+        (held / "scale.txt").write_text("1.0\n")
+        self.assertEqual(self.init(heldout=str(held))[0], 0)
+        self.repo.write("src/dev_hack.txt", "0.7\n")                                       # wins on dev items only
+        self.assertEqual(self.try_("game the dev items")[0], 0)
+        with mock.patch.object(gitops, "revert", side_effect=SystemExit(9)):
+            with self.assertRaises(SystemExit):
+                self.confirm()
+        self.assertTrue((self.root / "src" / "dev_hack.txt").exists())                      # the undone content is still on disk
+        self.assertNotEqual(self.state()["last_keep"], self.repo.head())
+        code, text = self.try_("a fresh look")
+        self.assertIn("finished an interrupted confirm reset", text)
+        self.assertFalse((self.root / "src" / "dev_hack.txt").exists())
+        self.assertEqual(self.state()["last_keep"], self.repo.head())
+        self.assertEqual(self.attempt(1)["confirm"], "unconfirmed")
+        self.assertIsNone(ledger.get_pending("speedy"))
+
+
+class SnapshotRefTests(Started):
+    def test_the_attempt_ref_does_not_exist_while_the_benchmark_runs(self):
+        # S19 (partly): an arm could tell it is the candidate from the highest refs/hca/attempts/N. The ref is created at record time.
+        count = self.tmp / "state" / "count"
+        seen = []
+        real = gitops.set_ref
+
+        def spy(root, ref, sha):
+            seen.append((ref, int(count.read_text())))
+            return real(root, ref, sha)
+
+        start = int(count.read_text())
+        self.set_speed(21)
+        with mock.patch.object(gitops, "set_ref", spy):
+            self.assertEqual(self.try_("win")[0], 0)
+        (ref, at_count), = seen
+        self.assertEqual(ref, "refs/hca/attempts/0001")
+        self.assertEqual(at_count - start, 2 + 2 * 10)                                      # both warm-ups and all 20 block runs came first
+        self.assertEqual(self.repo.git("rev-parse", ref), self.repo.head())
+
+
+class DoctorEditableTests(unittest.TestCase):
+    def test_an_editable_install_pointing_at_the_repo_is_warned_about(self):
+        import tempfile
+        from hca.commands import doctor
+        with tempfile.TemporaryDirectory(prefix="hca-doctor-edit-") as tmp:
+            tmp = Path(tmp).resolve()
+            repo = tmp / "repo"
+            repo.mkdir()
+            site = tmp / "site"
+            info = site / "fakepkg-1.0.dist-info"
+            info.mkdir(parents=True)
+            (info / "METADATA").write_text("Metadata-Version: 2.1\nName: fakepkg\nVersion: 1.0\n")
+            (info / "direct_url.json").write_text(json.dumps({"url": f"file://{repo}", "dir_info": {"editable": True}}))
+            (repo / "hca.toml").write_text('[task]\nname = "x"\neditable = ["src/**"]\n[objective]\ncommand = ["%s", "bench.py"]\n'
+                                           'metric = "m"\ndirection = "min"\nuseful_effect = "5%%"\n' % PY)
+            env_ = dict(os.environ, PYTHONPATH=str(site))
+            results = doctor.checks(repo, env_, loadavg=(0.1, 0.1, 0.1))
+            hits = [m for lvl, n, m in results if n == "editable-install"]
+            self.assertEqual(len(hits), 1, results)
+            self.assertIn("fakepkg", hits[0])
+            self.assertIn("sys.path", hits[0])
+            other = tmp / "elsewhere"
+            other.mkdir()
+            (info / "direct_url.json").write_text(json.dumps({"url": f"file://{other}", "dir_info": {"editable": True}}))
+            results = doctor.checks(repo, env_, loadavg=(0.1, 0.1, 0.1))
+            self.assertEqual([m for lvl, n, m in results if n == "editable-install"], [])
 
 
 class OutputTests(unittest.TestCase):

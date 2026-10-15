@@ -8,6 +8,12 @@ checkout (an ignored cache, a stray log) cannot advantage the candidate (S4). Un
 both. A build runs once per sha; a marker file records its exit status so a broken build is not mistaken
 for a built one.
 
+Untracked files are the other way an arm can carry state from one run to the next (a disk cache the candidate
+writes on its first call would make every later run, and the warm-up, look faster). So after each arm's build a
+manifest of its untracked files, ignored ones included, is recorded (path, size, mtime); before every objective
+run (the warm-up too) anything untracked that is not in the manifest is deleted, and if a manifest file changed or
+vanished the arm is recreated and rebuilt, with a warning. `link` symlinks are never followed or deleted.
+
 An arm is trusted only after it is verified: HEAD must be the sha and no tracked file may be modified
 (untracked build outputs are fine). A tampered arm is removed and recreated with a warning (S2). Nothing
 outside `.hca/` is ever deleted here.
@@ -41,6 +47,127 @@ def arm_dir(root, sha) -> Path:
 
 def _marker(root, sha) -> Path:
     return arms_root(root) / f"{sha12(sha)}.built"
+
+
+def _manifest_path(root, sha) -> Path:
+    return arms_root(root) / f"{sha12(sha)}.files"
+
+
+_tracked_cache = {}
+
+
+def _tracked(arm, sha) -> set:
+    """The paths tracked in the arm's commit (cached: an arm's commit never changes)."""
+    key = (str(arm), sha)
+    if key not in _tracked_cache:
+        _tracked_cache[key] = set(p for p in gitops.git(arm, "ls-files", "-z").split("\0") if p)
+    return _tracked_cache[key]
+
+
+def scan_untracked(arm, sha, link) -> dict:
+    """{relative path: (size, mtime_ns)} of every file or symlink in the arm that is not tracked, ignored files included.
+
+    `.git`, `link` paths and anything below a symlinked directory are skipped (symlinks are never followed). A symlink
+    that is not a link path is reported as the symlink itself.
+    """
+    arm = Path(arm)
+    tracked = _tracked(arm, sha)
+    found = {}
+    for current, dirs, files in os.walk(arm, followlinks=False):
+        rel_dir = os.path.relpath(current, arm).replace(os.sep, "/")
+        rel_dir = "" if rel_dir == "." else rel_dir
+        kept = []
+        for d in dirs:
+            rel = f"{rel_dir}/{d}" if rel_dir else d
+            if rel == ".git":
+                continue
+            if os.path.islink(os.path.join(current, d)):
+                files.append(d)                          # a symlink to a directory: an entry, never descended into
+            else:
+                kept.append(d)
+        dirs[:] = kept
+        for name in files:
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+            if rel == ".git" or rel in tracked or gitops.matches_any(rel, link):
+                continue                                 # `.git` (the worktree pointer file) is never ours to list or delete
+            try:
+                info = os.lstat(os.path.join(current, name))
+            except OSError:
+                continue
+            found[rel] = (info.st_size, info.st_mtime_ns)
+    return found
+
+
+def write_manifest(root, spec, sha) -> dict:
+    arm = arm_dir(root, sha)
+    files = scan_untracked(arm, sha, spec.task.link)
+    write_json(_manifest_path(root, sha), {"sha": sha, "files": {p: list(v) for p, v in sorted(files.items())}})
+    return files
+
+
+_manifest_cache = {}
+
+
+def _load_manifest(root, sha):
+    path = _manifest_path(root, sha)
+    try:
+        stamp = path.stat().st_mtime_ns
+        cached = _manifest_cache.get(str(path))
+        if cached and cached[0] == stamp:
+            return cached[1]
+        data = json.loads(path.read_text(encoding="utf-8"))
+        files = {p: tuple(v) for p, v in data["files"].items()}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    _manifest_cache[str(path)] = (stamp, files)
+    return files
+
+
+def prepare_run(root, spec, sha, role="baseline", logs=None, warn=None) -> Path:
+    """Call before every objective run: delete untracked files the build did not make, recreate the arm if a built file changed.
+
+    Returns the arm directory (the same path even after a recreation).
+    """
+    root = Path(root)
+    arm = arm_dir(root, sha)
+    manifest = _load_manifest(root, sha)
+    if manifest is None:
+        write_manifest(root, spec, sha)
+        return arm
+    current = scan_untracked(arm, sha, spec.task.link)
+    changed = sorted(p for p, meta in manifest.items() if current.get(p) != meta)
+    if changed:
+        if warn:
+            warn(f"warning: arm {sha12(sha)}: build outputs were changed or removed by a run ({', '.join(changed[:3])}"
+                 f"{' ...' if len(changed) > 3 else ''}); recreating and rebuilding the arm.")
+        _tracked_cache.pop((str(arm), sha), None)
+        _remove_arm(root, arm)
+        _marker(root, sha).unlink(missing_ok=True)
+        _manifest_path(root, sha).unlink(missing_ok=True)
+        return ensure_arm(root, spec, sha, role, logs=logs, warn=warn)
+    for rel in sorted(p for p in current if p not in manifest):
+        full = arm / rel
+        try:
+            if full.is_symlink() or full.is_file():
+                full.unlink()
+            elif full.is_dir():
+                shutil.rmtree(full)
+        except OSError:
+            continue
+        _prune_empty(arm, full.parent)
+    return arm
+
+
+def _prune_empty(arm: Path, directory: Path) -> None:
+    """rmdir upward while empty and below the arm root (a tracked directory is never empty, so it is never removed)."""
+    arm = arm.resolve()
+    directory = directory.resolve()
+    while directory != arm and arm in directory.parents:
+        try:
+            directory.rmdir()
+        except OSError:
+            return
+        directory = directory.parent
 
 
 class ArmBuildError(HcaError):
@@ -90,16 +217,25 @@ def ensure_worktree(root, spec, sha, warn=None) -> Path:
                 warn(f"warning: arm {sha12(sha)} was modified or damaged ({problem}); recreating it from the commit.")
             _remove_arm(root, target)
             _marker(root, sha).unlink(missing_ok=True)
+            _manifest_path(root, sha).unlink(missing_ok=True)
     if not target.exists():
         gitops.git(root, "worktree", "prune")
         gitops.git(root, "worktree", "add", "-q", "--detach", str(target), sha)
         _marker(root, sha).unlink(missing_ok=True)
+        _manifest_path(root, sha).unlink(missing_ok=True)
+        _tracked_cache.pop((str(target), sha), None)
     for link in spec.task.link:
         source, dest = root / link, target / link
         if source.exists() and not os.path.lexists(dest):
             dest.parent.mkdir(parents=True, exist_ok=True)
             os.symlink(source.resolve(), dest)
     return target
+
+
+def _finish_arm(root, spec, sha, fresh) -> None:
+    """Record the manifest once an arm is built (or if an existing arm has none)."""
+    if fresh or not _manifest_path(root, sha).exists():
+        write_manifest(root, spec, sha)
 
 
 def ensure_arm(root, spec, sha, role="baseline", logs=None, timeout=None, warn=None) -> Path:
@@ -110,11 +246,13 @@ def ensure_arm(root, spec, sha, role="baseline", logs=None, timeout=None, warn=N
     root = Path(root)
     target = ensure_worktree(root, spec, sha, warn)
     if spec.build is None:
+        _finish_arm(root, spec, sha, False)
         return target
     marker = _marker(root, sha)
     if marker.exists():
         try:
             if json.loads(marker.read_text(encoding="utf-8")).get("status") == 0:
+                _finish_arm(root, spec, sha, False)
                 return target
         except ValueError:
             pass                                       # an unreadable marker is no marker: rebuild
@@ -133,6 +271,7 @@ def ensure_arm(root, spec, sha, role="baseline", logs=None, timeout=None, warn=N
         marker.unlink(missing_ok=True)
         raise HcaError(f"the build changed tracked files in the {role} arm {sha12(sha)} ({problem}). "
                        "Fix: make the build write only untracked outputs; arms must stay exactly the commit.")
+    _finish_arm(root, spec, sha, True)
     return target
 
 
@@ -187,7 +326,7 @@ def prune_unused(root, keep_shas) -> list:
         wanted = {sha12(s) for s in keep_shas if s}
         for entry in sorted(base.iterdir()):
             stem, _, suffix = entry.name.partition(".")
-            if not (len(stem) == 12 and all(c in "0123456789abcdef" for c in stem)) or suffix not in ("", "built", "build"):
+            if not (len(stem) == 12 and all(c in "0123456789abcdef" for c in stem)) or suffix not in ("", "built", "build", "files"):
                 continue
             if stem in wanted:
                 continue

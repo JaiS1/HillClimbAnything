@@ -65,6 +65,7 @@ Rules:
   idea after one weak test.
 - **Never look at held-out data** or `~/.hca/`, never run `hca report --referee` (it is for the human),
   and never ask for per-item confirm detail. The held-out set must stay held out.
+- **Keep one shell and one `HCA_HOME`.** A different `HCA_HOME` is refused (the replay memory and held-out set live there).
 - **Never run `hca init --reset`, edit `.hca/`, or touch the arm directories under `.hca/arms/`.** The
   referee keeps its own record, so they only get you refused. Do not commit on the `hca/` branch.
 - **Report honestly.** Quote confirmed deltas with their intervals and the number of tries. Never

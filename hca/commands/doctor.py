@@ -1,5 +1,8 @@
 """`hca doctor`: find what would quietly corrupt a measurement before you spend tries on it.
 
+An editable install of the project (pip install -e) in the objective's interpreter is the other classic: `import pkg`
+then resolves to the live checkout in both arms, and every try measures the same code twice.
+
 Leaked environment (PYTHONPATH pointing at the candidate, a different virtualenv, LD_PRELOAD) and a
 busy machine are the usual reasons a benchmark disagrees with itself; Windows-native has no process
 groups, so timeouts could not be enforced. Errors make the exit status 1; warnings do not.
@@ -10,8 +13,10 @@ from __future__ import annotations
 import fnmatch
 import os
 import shutil
+import json
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 from ..core import HcaError
@@ -32,6 +37,33 @@ def run(args=None, out=print, cwd=None, env=None) -> int:
     errors = sum(level == "error" for level, _, _ in results)
     out(f"{errors} error(s), {sum(level == 'warn' for level, _, _ in results)} warning(s).")
     return 1 if errors else 0
+
+
+EDITABLE_PROBE = (
+    "import importlib.metadata as m, json\n"
+    "out = []\n"
+    "for d in m.distributions():\n"
+    "    t = d.read_text('direct_url.json')\n"
+    "    if not t:\n"
+    "        continue\n"
+    "    j = json.loads(t)\n"
+    "    if (j.get('dir_info') or {}).get('editable'):\n"
+    "        out.append([d.metadata['Name'], j.get('url')])\n"
+    "print(json.dumps(out))\n")
+
+
+def editable_installs(interpreter, env) -> list:
+    """[(name, directory)] of the editable installs (direct_url.json with "editable": true) the interpreter can see."""
+    try:
+        done = subprocess.run([interpreter, "-c", EDITABLE_PROBE], capture_output=True, text=True, timeout=30, env=dict(env), stdin=subprocess.DEVNULL)
+        rows = json.loads(done.stdout.strip().splitlines()[-1]) if done.returncode == 0 and done.stdout.strip() else []
+    except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
+        return []
+    out = []
+    for name, url in rows:
+        if isinstance(url, str) and url.startswith("file://"):
+            out.append((name, Path(urllib.parse.unquote(url[len("file://"):]))))
+    return out
 
 
 def checks(cwd: Path, env, platform=None, loadavg=None, python=None) -> list:
@@ -67,8 +99,10 @@ def checks(cwd: Path, env, platform=None, loadavg=None, python=None) -> list:
     deny, spec_note = DEFAULT_DENY, "default deny list"
     if (cwd / "hca.toml").exists():
         try:
-            deny, spec_note = load_spec(cwd / "hca.toml").env.deny, "deny list from hca.toml"
+            spec = load_spec(cwd / "hca.toml")
+            deny, spec_note = spec.env.deny, "deny list from hca.toml"
             add("ok", "hca.toml", "valid")
+            _check_editable(add, spec, cwd, env)
         except HcaError as exc:
             add("error", "hca.toml", str(exc))
     leaked = sorted(n for n in env if any(fnmatch.fnmatchcase(n, pat) for pat in deny))
@@ -94,6 +128,27 @@ def checks(cwd: Path, env, platform=None, loadavg=None, python=None) -> list:
     else:
         add("ok", "load", f"1-minute load {load[0]:.2f} on {cpus} CPUs")
     return results
+
+
+def _check_editable(add, spec, cwd, env) -> None:
+    """Warn if the objective's Python has an editable install pointing at this repo: both arms would import the live checkout."""
+    interpreter = spec.objective.command[0]
+    if not Path(interpreter).name.startswith("python"):
+        return
+    found = shutil.which(interpreter, path=env.get("PATH")) or interpreter
+    root = Path(cwd).resolve()
+    hits = []
+    for name, directory in editable_installs(found, env):
+        try:
+            here = directory.resolve()
+        except OSError:
+            continue
+        if here == root or root in here.parents or here in root.parents:
+            hits.append(f"{name} ({here})")
+    if hits:
+        add("warn", "editable-install", f"{', '.join(hits)} is installed in editable mode in the objective's Python ({found}). "
+            "`import` may then resolve to the live checkout in both arms, so every try would measure the same code twice. Fix: uninstall it "
+            "from that environment, or have the benchmark put its own checkout first on sys.path and assert where the package was imported from.")
 
 
 def _git(git, cwd, *argv):
