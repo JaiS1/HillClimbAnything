@@ -1,0 +1,11 @@
+{
+  "name": "hca",
+  "displayName": "HillClimbAnything",
+  "description": "Hill-climb any measurable technical target (latency, render or build time, frame time, cost, eval accuracy) with a noise-aware referee: keep only the wins that beat the noise, confirm them on held-out data. Needs the hca CLI: uv tool install hillclimbanything.",
+  "version": "0.2.0",
+  "author": { "name": "Jai Singh" },
+  "homepage": "https://github.com/JaiS1/HillClimbAnything",
+  "repository": "https://github.com/JaiS1/HillClimbAnything",
+  "license": "MIT",
+  "keywords": ["benchmarking", "performance", "statistics", "autoresearch", "hill-climbing"]
+}

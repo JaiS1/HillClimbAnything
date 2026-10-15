@@ -1,0 +1,12 @@
+{
+  "name": "hillclimbanything",
+  "description": "HillClimbAnything: a noise-aware referee for agent-driven optimisation.",
+  "owner": { "name": "Jai Singh" },
+  "plugins": [
+    {
+      "name": "hca",
+      "source": "./",
+      "description": "The hca skill: premise checks, the climb loop with hca try / hca confirm, and honest reporting."
+    }
+  ]
+}
