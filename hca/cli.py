@@ -8,7 +8,6 @@ import sys
 from . import __version__
 from .core import HcaError
 
-NOT_YET = "not implemented yet (part B)"
 EXIT_USAGE = 3
 
 
@@ -20,16 +19,12 @@ def build_parser() -> argparse.ArgumentParser:
     quick.add_arguments(sub.add_parser("quick", help="measure how noisy a command is (A/A), no spec needed",
                                        description="Usage: hca quick [options] -- <cmd...>"))
     doctor.add_arguments(sub.add_parser("doctor", help="check the environment for things that corrupt measurements"))
-    init = sub.add_parser("init", help="validate hca.toml, create the branch, run the baseline A/A (part B)")
-    init.add_argument("--heldout", help="directory of held-out data, copied to the referee store")
-    init.add_argument("--force", action="store_true", help="finish even if the baseline is too noisy")
-    init.add_argument("--reset", action="store_true", help="drop arm worktrees and start over")
-    try_ = sub.add_parser("try", help="measure the current edits against the last keep (part B)")
-    try_.add_argument("-m", "--message", help="what changed and why")
-    sub.add_parser("confirm", help="re-measure the cumulative change on held-out data (part B)")
-    report = sub.add_parser("report", help="print the execution report (part B)")
-    report.add_argument("--md", help="also write the report to this markdown path")
-    sub.add_parser("status", help="print the short state (part B)")
+    from .commands import confirm, init, report, try_
+    init.add_arguments(sub.add_parser("init", help="validate hca.toml, create the branch, run the baseline A/A"))
+    try_.add_arguments(sub.add_parser("try", help="measure the current edits against the last keep; keep or revert"))
+    confirm.add_arguments(sub.add_parser("confirm", help="re-measure the cumulative change against the original (held-out if any)"))
+    report.add_report_arguments(sub.add_parser("report", help="print the execution report"))
+    report.add_status_arguments(sub.add_parser("status", help="print the short state"))
     return parser
 
 
@@ -53,7 +48,22 @@ def main(argv=None) -> int:
         if args.cmd == "doctor":
             from .commands import doctor
             return doctor.run(args)
-        print(f"hca {args.cmd}: {NOT_YET}", file=sys.stderr)
+        if args.cmd == "init":
+            from .commands import init
+            return init.run(args)
+        if args.cmd == "try":
+            from .commands import try_
+            return try_.run(args)
+        if args.cmd == "confirm":
+            from .commands import confirm
+            return confirm.run(args)
+        if args.cmd == "report":
+            from .commands import report
+            return report.run(args)
+        if args.cmd == "status":
+            from .commands import report
+            return report.run_status(args)
+        parser.print_help()
         return EXIT_USAGE
     except HcaError as exc:
         print(f"hca: {exc}", file=sys.stderr)

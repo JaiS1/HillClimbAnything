@@ -105,14 +105,14 @@ class QuickTests(unittest.TestCase):
         self.assertIn("METRIC x", buffer.getvalue())
         self.assertIn("Your useful effect 10%", buffer.getvalue())
 
-    def test_cli_errors_and_stubs_exit_3(self):
+    def test_cli_errors_exit_3(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(cli.main(["quick", "--"]), 3)
             self.assertEqual(cli.main(["quick", "--blocks", "2", "--", "true"]), 3)
             for name in ("init", "try", "confirm", "report", "status"):
                 self.assertEqual(cli.main([name]), 3)
-        self.assertIn("not implemented yet (part B)", err.getvalue())
+        self.assertIn("not inside a git repository", err.getvalue())    # the part-B commands need a repo and a spec
 
     def test_python_dash_m_hca_help_works(self):
         root = Path(__file__).resolve().parent.parent

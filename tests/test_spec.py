@@ -147,6 +147,22 @@ class SpecTests(unittest.TestCase):
         self.assertRejects(modified(guards=[{"name": "g", "command": ["x"]}, {"name": "g", "command": ["y"]}]), "unique")
         self.assertRejects(modified(guards=[{"name": "g", "comand": ["x"]}]), "guards[0].comand", "command")
 
+    def test_items_mode_takes_a_bare_absolute_useful_effect(self):
+        items = lambda useful: modified(objective={"mode": "items", "useful_effect": useful})
+        s = spec.parse_spec(items(0.02))
+        self.assertEqual((s.objective.useful_effect, s.objective.useful), (0.02, 0.02))     # score units, not a log ratio of a %
+        self.assertEqual(spec.parse_spec(items(1)).objective.useful, 1.0)
+        for bad in ("5%", 0, -1, True, "0.02"):
+            self.assertRejects(items(bad), "objective.useful_effect", "bare number")
+        self.assertRejects(modified(objective={"useful_effect": 0.05}), "objective.useful_effect", '"5%"')   # blocks mode still wants a percent
+
+    def test_metric_guard_direction_defaults_to_lower_is_better(self):
+        guard = lambda **extra: modified(guards=[{"name": "g", "metric": "m", "max_regression": "2%", **extra}])
+        self.assertEqual(spec.parse_spec(guard()).guards[0].direction, "min")
+        self.assertEqual(spec.parse_spec(guard(direction="max")).guards[0].direction, "max")
+        self.assertRejects(guard(direction="up"), "guards[0].direction", "min, max")
+        self.assertRejects(modified(guards=[{"name": "g", "command": ["x"], "direction": "max"}]), "guards[0].direction", "metric guard")
+
     def test_toml_and_missing_file_errors_are_friendly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "hca.toml"

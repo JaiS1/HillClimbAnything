@@ -136,6 +136,8 @@ class BlockResult:
     wall_seconds: float
     warnings: list = field(default_factory=list)
     dropped_env: tuple = ()
+    arm_values: dict = field(default_factory=dict)      # arm -> metric name -> per-block values (what the medians summarise)
+    item_values: dict = field(default_factory=dict)     # item id -> {"baseline": [...], "candidate": [...], "tags": {...}}
 
 
 @dataclass
@@ -271,11 +273,12 @@ def _score(blocks, direction, metric, log, start, dropped_env) -> BlockResult:
         warnings.append(f"try void: {len(voided)} of {len(blocks)} blocks voided (more than {TRY_VOID_FRACTION:.0%})")
     for line in warnings:
         _append(log, {"kind": "warning", "message": line})
-    arm_medians, item_medians = _medians(blocks, set(voided), infra_by_block, metric)
+    arm_values, item_values = _collect(blocks, set(voided), infra_by_block, metric)
+    arm_medians, item_medians = _summarise(arm_values, item_values)
     seconds = [run.result.seconds for _, pair in blocks for run in pair.values()]
     return BlockResult(scores, scored, voided, void, len(blocks), arm_medians, item_medians, cand_failures,
                        cand_bad_blocks, statistics.median(seconds) if seconds else 0.0,
-                       time.monotonic() - start, warnings, dropped_env)
+                       time.monotonic() - start, warnings, dropped_env, arm_values, item_values)
 
 
 def _item_score(base, cand, direction, worst_items):
@@ -301,7 +304,8 @@ def _item_score(base, cand, direction, worst_items):
     return stats.item_block_score(base_values, cand_values, direction), None, infra, cand_bad
 
 
-def _medians(blocks, voided, infra_by_block, metric):
+def _collect(blocks, voided, infra_by_block, metric):
+    """Per-block values by arm and metric, and per-item values (non-void blocks only)."""
     values = {arm: {} for arm in ARMS}
     per_item = {}
     for index, pair in blocks:
@@ -326,11 +330,132 @@ def _medians(blocks, voided, infra_by_block, metric):
                 if _positive(item.value):
                     slot[arm].append(item.value)
                 slot["tags"] = slot["tags"] or dict(item.tags)
+    return values, per_item
+
+
+def _summarise(values, per_item):
     arm_medians = {arm: {name: statistics.median(v) for name, v in sorted(by_name.items())} for arm, by_name in values.items()}
     item_medians = {ident: {"baseline": statistics.median(s["baseline"]) if s["baseline"] else None,
                             "candidate": statistics.median(s["candidate"]) if s["candidate"] else None,
                             "tags": s["tags"]} for ident, s in sorted(per_item.items())}
     return arm_medians, item_medians
+
+
+def combine(first: BlockResult, second: BlockResult) -> BlockResult:
+    """One BlockResult for a try that ran `first` and then an extension `second` (block numbers continue).
+
+    The medians are recomputed from the pooled per-block values, because the median of two medians is
+    not the median of all the blocks. The void rule is re-applied to the pooled blocks.
+    """
+    values = {arm: {name: list(v) for name, v in first.arm_values.get(arm, {}).items()} for arm in ARMS}
+    for arm in ARMS:
+        for name, v in second.arm_values.get(arm, {}).items():
+            values[arm].setdefault(name, []).extend(v)
+    per_item = {i: {"baseline": list(s["baseline"]), "candidate": list(s["candidate"]), "tags": dict(s["tags"])}
+                for i, s in first.item_values.items()}
+    for ident, s in second.item_values.items():
+        slot = per_item.setdefault(ident, {"baseline": [], "candidate": [], "tags": {}})
+        slot["baseline"].extend(s["baseline"])
+        slot["candidate"].extend(s["candidate"])
+        slot["tags"] = slot["tags"] or dict(s["tags"])
+    arm_medians, item_medians = _summarise(values, per_item)
+    blocks_run = first.blocks_run + second.blocks_run
+    voided = first.voided_blocks + second.voided_blocks
+    void = first.void or second.void or not blocks_run or len(voided) / blocks_run > TRY_VOID_FRACTION
+    runs = first.blocks_run * first.median_run_seconds + second.blocks_run * second.median_run_seconds
+    return BlockResult(first.scores + second.scores, first.scored_blocks + second.scored_blocks, voided, void, blocks_run,
+                       arm_medians, item_medians, first.candidate_failures + second.candidate_failures,
+                       first.candidate_invalid_blocks + second.candidate_invalid_blocks,
+                       runs / blocks_run if blocks_run else 0.0, first.wall_seconds + second.wall_seconds,
+                       first.warnings + second.warnings, tuple(sorted(set(first.dropped_env) | set(second.dropped_env))),
+                       values, per_item)
+
+
+@dataclass
+class ItemPair:
+    """One deterministic measurement of both arms in `items` mode (see run_item_pair)."""
+    baseline: dict                  # item id -> value, for the items kept in the comparison
+    candidate: dict                 # item id -> value; candidate-invalid items carry the run's worst value
+    tags: dict                      # item id -> tags
+    infra: list                     # ids dropped from both arms
+    candidate_bad: list             # ids the candidate got wrong (scored as the run's worst)
+    candidate_failed: bool          # the candidate run itself failed (crash, timeout, unusable output)
+    void: bool
+    reasons: list                   # why it is void / failed
+    arm_medians: dict               # arm -> metric name -> median over the kept items (objective + mechanism)
+    wall_seconds: float
+
+
+def run_item_pair(spec, baseline_dir, candidate_dir, rng, env_extra, out_dir, block=0) -> ItemPair:
+    """Items mode: run each arm once in random order and return the per-item values.
+
+    This does not go through block scoring on purpose: deterministic scores such as accuracy can be
+    zero or negative, and block scoring takes log ratios, which would drop those items as invalid.
+    The preregistered invalid rules still apply. A candidate that fails outright is flagged for the
+    caller to revert. A candidate-invalid item scores as the worst value in the run (with a single
+    measurement per item, the item's own "worst observed" would just be the baseline, which would
+    score breaking an item as a tie). Infra-invalid items are dropped from both arms; more than 10%
+    of them voids the measurement.
+    """
+    obj = spec.objective
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    log = out_dir / "runs.jsonl"
+    dirs = {"baseline": Path(baseline_dir), "candidate": Path(candidate_dir)}
+    start = time.monotonic()
+    order = ["baseline", "candidate"]
+    rng.shuffle(order)
+    runs = {}
+    for position, arm in enumerate(order):
+        env = dict(env_extra or {}, HCA_ARM=arm)
+        runs[arm] = _execute(obj.command, obj.metric, dirs[arm], out_dir, block, arm, position, env,
+                             spec.limits.command_seconds, spec.env.deny, False)
+        _append(log, _run_record(runs[arm]))
+    base, cand = runs["baseline"], runs["candidate"]
+
+    def result(**kw):
+        defaults = dict(baseline={}, candidate={}, tags={}, infra=[], candidate_bad=[], candidate_failed=False, void=False,
+                        reasons=[], arm_medians={"baseline": {}, "candidate": {}}, wall_seconds=time.monotonic() - start)
+        defaults.update(kw)
+        pair = ItemPair(**defaults)
+        _append(log, {"kind": "block", "block": block, "void": pair.void, "reason": "; ".join(pair.reasons) or None,
+                      "score": None, "candidate_scored_worst": bool(pair.candidate_bad or pair.candidate_failed),
+                      "infra_items": sorted(pair.infra)})
+        return pair
+
+    if not base.ok:
+        return result(void=True, reasons=[f"baseline run failed ({base.problem}); the baseline should not fail"])
+    if base.kind != "items":
+        return result(void=True, reasons=["items mode needs the objective to print item JSON, but the baseline printed METRIC lines"])
+    if not cand.ok or cand.kind != "items":
+        why = cand.problem or "output kind differs from the baseline's"
+        return result(candidate_failed=True, reasons=[f"candidate run failed ({why})"])
+    valid = [i.value for run in (base, cand) for i in run.items.values() if i.status == "valid" and _finite(i.value)]
+    worst = (max if obj.direction == "min" else min)(valid) if valid else None
+    ids = sorted(set(base.items) | set(cand.items))
+    infra, bad, base_values, cand_values, tags = [], [], {}, {}, {}
+    for ident in ids:
+        b, c = base.items.get(ident), cand.items.get(ident)
+        if b is None or b.status != "valid" or not _finite(b.value) or (c is not None and c.status == "infra_invalid"):
+            infra.append(ident)
+            continue
+        base_values[ident], tags[ident] = b.value, dict(b.tags)
+        if c is None or c.status != "valid" or not _finite(c.value):
+            cand_values[ident] = worst
+            bad.append(ident)
+        else:
+            cand_values[ident] = c.value
+    if len(infra) / len(ids) > INFRA_VOID_FRACTION or not base_values:
+        return result(infra=infra, void=True,
+                      reasons=[f"{len(infra)} of {len(ids)} items infra-invalid (more than {INFRA_VOID_FRACTION:.0%}) or none usable"])
+    medians = {"baseline": {}, "candidate": {}}
+    for arm, run in (("baseline", base), ("candidate", cand)):
+        kept = [i for i in run.items.values() if i.id in base_values and i.status == "valid" and _finite(i.value)]
+        if kept:
+            medians[arm][obj.metric] = statistics.median(i.value for i in kept)
+        for name in sorted({k for i in kept for k in i.mechanism}):
+            medians[arm][name] = statistics.median(i.mechanism[name] for i in kept if name in i.mechanism)
+    return result(baseline=base_values, candidate=cand_values, tags=tags, infra=infra, candidate_bad=bad, arm_medians=medians)
 
 
 def _run_record(run: _Run) -> dict:
@@ -376,6 +501,10 @@ def _loadavg():
         return tuple(float(x) for x in Path("/proc/loadavg").read_text().split()[:3])
     except (OSError, ValueError):
         return None
+
+
+def _finite(value) -> bool:
+    return _number(value) and math.isfinite(value)
 
 
 def _number(value) -> bool:

@@ -8,6 +8,7 @@ and says how to fix it. Defaults match docs/ARCHITECTURE-v1.md. Standard library
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import tomllib
 from dataclasses import dataclass
@@ -43,12 +44,12 @@ class Objective:
     metric: str
     direction: str
     mode: str
-    useful_effect: str
+    useful_effect: str | float          # "5%" in blocks mode; a bare number in score units in items mode
     max_tries: int
 
     @property
     def useful(self) -> float:
-        """The useful effect as a log ratio (what stats.keep_decision wants)."""
+        """The useful effect: a log ratio in blocks mode (what stats.keep_decision wants), absolute score units in items mode."""
         return stats.parse_effect(self.useful_effect)
 
 
@@ -60,6 +61,7 @@ class Guard:
     metric: str | None
     max_regression: float | None        # fraction, e.g. 0.02 for "2%"
     max_regression_text: str | None
+    direction: str = "min"              # CONTRACT NOTE: lower is better unless the guard says `direction = "max"`
 
 
 @dataclass(frozen=True)
@@ -151,15 +153,24 @@ def _objective(p, t) -> Objective:
     mode = p.choice(t, "objective.mode", ("blocks", "items"), default="blocks",
                     hint={"seeds": "seeds mode is planned for a later version; use mode = \"blocks\" or \"items\""})
     useful = t["useful_effect"]
-    if not (isinstance(useful, str) and _PERCENT.match(useful)):
-        p.fail("objective.useful_effect", f"{useful!r} is not a percentage string",
-               'write it as a quoted percent such as "5%" (a bare number would mean a log ratio)')
-    try:
-        stats.parse_effect(useful)
-    except ValueError as exc:
-        p.fail("objective.useful_effect", str(exc), 'use a positive percentage such as "5%"')
+    if mode == "items":
+        # Deterministic per-item scores are compared by their mean difference, so the useful effect is
+        # an absolute amount of score, not a ratio. A percentage would silently read as a tiny number.
+        if isinstance(useful, bool) or not isinstance(useful, (int, float)) or not math.isfinite(useful) or useful <= 0:
+            p.fail("objective.useful_effect", f"{useful!r} is not a positive number",
+                   "in items mode write a bare number in score units, e.g. useful_effect = 0.02 (a percentage is for blocks mode)")
+        useful = float(useful)
+    else:
+        if not (isinstance(useful, str) and _PERCENT.match(useful)):
+            p.fail("objective.useful_effect", f"{useful!r} is not a percentage string",
+                   'write it as a quoted percent such as "5%" (a bare number would mean a log ratio)')
+        try:
+            stats.parse_effect(useful)
+        except ValueError as exc:
+            p.fail("objective.useful_effect", str(exc), 'use a positive percentage such as "5%"')
+        useful = useful.strip()
     return Objective(p.argv(t, "objective.command"), p.string(t, "objective.metric"),
-                     p.choice(t, "objective.direction", ("min", "max")), mode, useful.strip(),
+                     p.choice(t, "objective.direction", ("min", "max")), mode, useful,
                      p.integer(t, "objective.max_tries", default=50, minimum=1))
 
 
@@ -169,7 +180,7 @@ def _guards(p, raw) -> tuple:
     guards, seen = [], set()
     for i, g in enumerate(raw):
         where = f"guards[{i}]"
-        p.keys(g, where, allowed=("name", "command", "metric", "max_regression"), required=("name",))
+        p.keys(g, where, allowed=("name", "command", "metric", "max_regression", "direction"), required=("name",))
         name = p.string(g, f"{where}.name")
         if not _GUARD_NAME.match(name) or name in seen:
             p.fail(f"{where}.name", f"{name!r} is not a unique simple name", "use lowercase letters, digits, - or _, once each")
@@ -178,8 +189,9 @@ def _guards(p, raw) -> tuple:
             p.fail(where, "needs exactly one of `command` or `metric`",
                    "a command guard passes on exit 0; a metric guard needs metric + max_regression")
         if "command" in g:
-            if "max_regression" in g:
-                p.fail(f"{where}.max_regression", "only applies to a metric guard", "remove it or use `metric` instead of `command`")
+            for key in ("max_regression", "direction"):
+                if key in g:
+                    p.fail(f"{where}.{key}", "only applies to a metric guard", "remove it or use `metric` instead of `command`")
             guards.append(Guard(name, p.argv(g, f"{where}.command"), None, None, None))
             continue
         if "max_regression" not in g:
@@ -188,7 +200,8 @@ def _guards(p, raw) -> tuple:
         match = _PERCENT.match(text) if isinstance(text, str) else None
         if not match:
             p.fail(f"{where}.max_regression", f"{text!r} is not a percentage string", 'write it as a quoted percent such as "2%"')
-        guards.append(Guard(name, None, p.string(g, f"{where}.metric"), float(match.group(1)) / 100.0, text.strip()))
+        guards.append(Guard(name, None, p.string(g, f"{where}.metric"), float(match.group(1)) / 100.0, text.strip(),
+                            p.choice(g, f"{where}.direction", ("min", "max"), default="min")))
     return tuple(guards)
 
 
