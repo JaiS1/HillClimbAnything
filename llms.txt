@@ -1,0 +1,27 @@
+# HillClimbAnything
+
+> A noise-aware referee for agent-driven optimisation. A coding agent proposes changes to a project; the `hca` CLI measures each change against the last kept version in randomised blocks, keeps it only if it beats the measured noise (exact one-sided signed-rank test at 1% per try, plus at least half the declared useful effect), and confirms the cumulative gain against the original on held-out data. Python 3.11+, no dependencies, Linux/WSL/macOS. It never calls an LLM.
+
+Use it when someone wants to make a number better through repeated experiments (latency, render time, build time, frame time, cost, eval accuracy), or asks whether an improvement is real or noise.
+
+Workflow: `hca quick -- <cmd>` (noise and detectable effect, no setup) → write `hca.toml` (editable paths, frozen evaluator, objective command printing `METRIC name=value` or item JSON, direction, useful_effect) → `hca init` → edit only editable paths → `hca try -m "change and mechanism"` (exit 0 keep, 1 revert, 2 invalid/void/refused) → `hca confirm` every few keeps (only confirmed gains count) → `hca report`.
+
+Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; never commit yourself (HCA commits keeps); no caches keyed on benchmark content or special-casing of inputs; report only confirmed results with their bound and the number of tries.
+
+## Docs
+
+- [Agent skill (the method)](skills/hca/SKILL.md): premise checks, the climb loop, rules, reporting
+- [Spec and output contract](skills/hca/references/spec.md): hca.toml, METRIC lines, item JSON, HCA_RESULT_FILE
+- [Limits and known gaps](docs/LIMITS.md)
+- [Architecture contract](docs/ARCHITECTURE-v1.md)
+
+## Evidence
+
+- [Showcase: Python-Markdown render time -53.8% confirmed, output identical](showcases/python-markdown/README.md)
+- [Phase 0 calibration: raw best-score keeps ~50% of no-op changes; HCA's test <= 1%](spikes/phase0/RESULT.md)
+
+## Optional
+
+- [Campaign card for expensive runs](skills/hca/references/campaign-card.md)
+- [Launch checklist](skills/hca/references/launch-checklist.md)
+- [Design document](docs/DESIGN-hca.md)
