@@ -1,0 +1,12 @@
+{
+  "web_scale_b3": 0.9669,
+  "web_scale_b5": 0.9459,
+  "cli_files_A": 141,
+  "cli_T_A_ms": 544.17,
+  "cli_fixed_ms": 50.08,
+  "cli_est_to_real": 1.4578,
+  "cli_removed_b3": 2,
+  "cli_removed_ms_est_b3": 15.98,
+  "cli_removed_b5": 3,
+  "cli_removed_ms_est_b5": 26.04
+}
