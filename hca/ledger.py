@@ -18,6 +18,7 @@ import math
 import os
 import secrets
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -65,7 +66,12 @@ STALE_UNREADABLE_SECONDS = 10      # a lock file that cannot be parsed is only t
 
 
 def proc_start_time(pid):
-    """The process start time in clock ticks since boot (field 22 of /proc/<pid>/stat), or None where /proc is unavailable."""
+    """A number that identifies when `pid` started, or None if it cannot be read.
+
+    Linux: field 22 of /proc/<pid>/stat (clock ticks since boot). macOS and other systems without /proc: the
+    `ps -o lstart=` wall-clock start as epoch seconds. The two scales never mix because a lock is only compared
+    on the machine that wrote it.
+    """
     if os.name == "nt":
         from . import _winproc
         return _winproc.start_time(pid)
@@ -73,6 +79,19 @@ def proc_start_time(pid):
         text = Path(f"/proc/{pid}/stat").read_text()
         return int(text.rsplit(")", 1)[1].split()[19])
     except (OSError, ValueError, IndexError):
+        pass
+    return _ps_start_time(pid)
+
+
+def _ps_start_time(pid):
+    try:
+        done = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))], capture_output=True, text=True, timeout=10,
+                              env=dict(os.environ, LC_ALL="C", LANG="C"))
+        text = " ".join(done.stdout.split())
+        if done.returncode != 0 or not text:
+            return None
+        return int(time.mktime(time.strptime(text, "%a %b %d %H:%M:%S %Y")))
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 

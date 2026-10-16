@@ -20,6 +20,30 @@ from argparse import Namespace
 from pathlib import Path
 from unittest import mock
 
+def alive(pid):
+    """True unless the process is gone or only a zombie awaiting reaping (works with and without /proc)."""
+    if os.name == "nt":
+        from hca import _winproc
+        return _winproc.is_running(pid)
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        return state != "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        if Path("/proc/self/stat").exists():
+            return False
+    except (OSError, IndexError):
+        pass
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    done = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    state = done.stdout.strip()
+    return bool(state) and not state.startswith("Z")
+
+
 BLOCKS_BENCH = '''
 read speed < src/speed.txt
 [ -d "$BENCH_STATE" ] || mkdir -p "$BENCH_STATE"

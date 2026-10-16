@@ -34,15 +34,8 @@ def sha256(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def alive(pid):
-    if os.name == "nt":
-        from hca import _winproc
-        return _winproc.is_running(pid)
-    try:
-        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-    except (FileNotFoundError, ProcessLookupError):
-        return False
-    return state != "Z"
+from repokit import alive  # noqa: E402
+
 
 
 class Started(repokit.RepoTestCase):

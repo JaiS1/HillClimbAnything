@@ -20,16 +20,8 @@ def detached_kwargs():
     return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
 
 
-def alive(pid: int) -> bool:
-    """True unless the process is gone or only a zombie awaiting reaping."""
-    if os.name == "nt":
-        from hca import _winproc
-        return _winproc.is_running(pid)
-    try:
-        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-    except (FileNotFoundError, ProcessLookupError):
-        return False
-    return state != "Z"
+from repokit import alive  # noqa: E402
+
 
 
 class RunnerTests(unittest.TestCase):
