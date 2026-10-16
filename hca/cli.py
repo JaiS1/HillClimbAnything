@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 import time
@@ -36,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    if os.name == "nt":                      # the console codepage (cp1252, cp437) cannot print the report's symbols
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass
     argv = list(sys.argv[1:] if argv is None else argv)
     tail = None
     if "--" in argv:                         # everything after `--` is the command to measure, untouched
@@ -112,7 +119,7 @@ def _install_signal_handlers() -> dict:
         raise _Terminated(signum)
 
     previous = {}
-    for name in ("SIGTERM", "SIGHUP"):
+    for name in ("SIGTERM", "SIGHUP", "SIGBREAK"):        # SIGBREAK: Ctrl-Break / console close on Windows
         sig = getattr(signal, name, None)
         if sig is None:
             continue

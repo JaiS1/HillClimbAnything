@@ -228,7 +228,13 @@ def ensure_worktree(root, spec, sha, warn=None) -> Path:
         source, dest = root / link, target / link
         if source.exists() and not os.path.lexists(dest):
             dest.parent.mkdir(parents=True, exist_ok=True)
-            os.symlink(source.resolve(), dest)
+            try:
+                os.symlink(source.resolve(), dest, target_is_directory=source.is_dir())
+            except OSError as exc:
+                if os.name != "nt":
+                    raise
+                raise HcaError(f"could not link {link!r} into the arm: {exc}. Fix: Windows only lets a normal user create "
+                               "symlinks in Developer Mode (Settings > System > For developers), or run from an elevated shell.") from None
     return target
 
 

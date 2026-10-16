@@ -11,8 +11,20 @@ from hca import runner
 from hca.core import HcaError
 
 
+WINDOWS = os.name == "nt"
+# A command killed by hca: negative signal number on POSIX, the exit code taskkill / TerminateJobObject set on Windows.
+KILLED = 1 if WINDOWS else None
+
+
+def detached_kwargs():
+    return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+
+
 def alive(pid: int) -> bool:
     """True unless the process is gone or only a zombie awaiting reaping."""
+    if os.name == "nt":
+        from hca import _winproc
+        return _winproc.is_running(pid)
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
     except (FileNotFoundError, ProcessLookupError):
@@ -34,7 +46,8 @@ class RunnerTests(unittest.TestCase):
         # 50 ms both used to read as the same ~64 ms. A referee that cannot see a 20 ms gap is blind.
         short = min(self.py("import time; time.sleep(0.03)", name=f"s{i}").seconds for i in range(3))
         long = min(self.py("import time; time.sleep(0.05)", name=f"l{i}").seconds for i in range(3))
-        self.assertAlmostEqual(long - short, 0.02, delta=0.008)
+        # Windows sleeps in 15.6 ms ticks, so the 20 ms gap can read as 31 ms there; the polling bug it guards against was 50 ms.
+        self.assertAlmostEqual(long - short, 0.02, delta=0.016 if WINDOWS else 0.008)
 
     def test_captures_streams_to_files_and_reports_status(self):
         result = self.py("import sys; print('hello'); sys.stderr.write('oops'); sys.exit(3)")
@@ -80,14 +93,17 @@ class RunnerTests(unittest.TestCase):
             "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
             f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
             "time.sleep(60)\n")
-        bystander = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+        bystander = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], **detached_kwargs())
         self.addCleanup(bystander.wait)
         self.addCleanup(bystander.kill)
         started = time.monotonic()
         result = self.py(code, timeout=1.5)
         self.assertTrue(result.timed_out)
         self.assertLess(time.monotonic() - started, 6)
-        self.assertLess(result.returncode, 0)
+        if WINDOWS:
+            self.assertNotEqual(result.returncode, 0)
+        else:
+            self.assertLess(result.returncode, 0)
         grandchild = int(pid_file.read_text())
         deadline = time.monotonic() + 3
         while alive(grandchild) and time.monotonic() < deadline:
@@ -96,12 +112,13 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(bystander.poll(), "a process outside the group was killed")
 
     def test_sigterm_ignoring_command_is_killed_after_the_grace_period(self):
-        code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+        ignored = "SIGBREAK" if WINDOWS else "SIGTERM"      # Windows asks with Ctrl-Break, which Python calls SIGBREAK
+        code = f"import signal, time; signal.signal(signal.{ignored}, signal.SIG_IGN); time.sleep(60)"
         started = time.monotonic()
         result = self.py(code, timeout=1.0)
         elapsed = time.monotonic() - started
         self.assertTrue(result.timed_out)
-        self.assertEqual(result.returncode, -signal.SIGKILL)
+        self.assertEqual(result.returncode, KILLED if WINDOWS else -signal.SIGKILL)
         self.assertGreaterEqual(elapsed, 1.0 + runner.GRACE_SECONDS - 0.2)
         self.assertLess(elapsed, 8)
 

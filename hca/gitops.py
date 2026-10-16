@@ -40,7 +40,7 @@ def _run(argv, cwd, input=None, env=None, timeout=GIT_TIMEOUT):
     """
     full_env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_EDITOR="true", **(env or {}))
     try:
-        return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, env=full_env, timeout=timeout,
+        return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=full_env, timeout=timeout,
                               **({"input": input} if input is not None else {"stdin": subprocess.DEVNULL}))
     except subprocess.TimeoutExpired:
         raise HcaError(f"`{' '.join(argv[:4])}` did not finish within {timeout} s (a hook or credential helper may be "

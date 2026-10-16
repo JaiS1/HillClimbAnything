@@ -1,3 +1,4 @@
+import json
 import sys
 import tomllib
 import unittest
@@ -305,7 +306,7 @@ class GitopsTests(repokit.RepoTestCase):
 
     # --- arms ---------------------------------------------------------------------------------
     def test_baseline_arm_is_a_reused_worktree_with_links_and_one_build(self):
-        build = {"command": f'["{sys.executable}", "-c", "open(\'built.log\', \'a\').write(\'x\')"]'}
+        build = {"command": f'[{json.dumps(sys.executable)}, "-c", "open(\'built.log\', \'a\').write(\'x\')"]'}
         text = repokit.toml(build=f"[build]\ncommand = {build['command']}\n", extra_task='link = ["deps", "missing"]')
         self.repo.write("hca.toml", text)
         self.repo.commit_all("add build")
@@ -332,7 +333,7 @@ class GitopsTests(repokit.RepoTestCase):
         self.assertNotIn(str(arm), self.repo.git("worktree", "list"))
 
     def test_failed_baseline_build_is_recorded_and_retried(self):
-        text = repokit.toml(build=f'[build]\ncommand = ["{sys.executable}", "-c", "import sys; sys.stderr.write(\'no compiler\'); sys.exit(4)"]\n')
+        text = repokit.toml(build=f'[build]\ncommand = [{json.dumps(sys.executable)}, "-c", "import sys; sys.stderr.write(\'no compiler\'); sys.exit(4)"]\n')
         self.repo.write("hca.toml", text)
         self.repo.commit_all("bad build")
         s = specmod.load_spec(self.root / "hca.toml")

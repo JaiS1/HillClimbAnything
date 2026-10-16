@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -32,7 +33,16 @@ def write_json(path, data):
     path = Path(path)
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    for attempt in range(40):
+        try:
+            os.replace(temp, path)
+            return
+        except PermissionError:
+            # Windows refuses to replace a file another process (a virus scanner, an editor, a concurrent `hca status`)
+            # has open for a moment; POSIX never raises here, so this loop is a single call there.
+            if os.name != "nt" or attempt == 39:
+                raise
+            time.sleep(0.05)
 
 
 CHUNK_BYTES = 1024 * 1024

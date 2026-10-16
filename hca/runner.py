@@ -3,7 +3,12 @@
 Why each choice: a shell would let quoting change what is measured; a process group lets a timeout
 kill the command's grandchildren (a leaked `node` would skew every later block); streaming to files
 means a chatty command can neither fill a pipe and stall nor eat memory; and the stderr tail is kept
-at 4 KB in full because the last lines are where the real error is. POSIX only.
+at 4 KB in full because the last lines are where the real error is.
+
+POSIX: its own session and process group, SIGTERM then SIGKILL via killpg. Native Windows (see _winproc.py): a new
+process group, CTRL_BREAK_EVENT then `taskkill /T /F` on the tree. Windows is weaker in two ways: the tree is found by
+walking parent pids, so a grandchild whose parent already died can be missed, and CTRL_BREAK only reaches console
+processes. A returncode is the raw exit code there (never negative).
 """
 
 from __future__ import annotations
@@ -18,6 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .core import HcaError, read_tail
+
+WINDOWS = os.name == "nt"
+if WINDOWS:
+    from . import _winproc
+
+_SIGTERM = signal.SIGTERM
+_SIGKILL = getattr(signal, "SIGKILL", 9)     # absent on Windows; only used as a label there
 
 TAIL_BYTES = 4096
 GRACE_SECONDS = 2.0     # SIGTERM first, SIGKILL after this
@@ -70,11 +82,12 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
     env, dropped = build_env(deny, env_extra, base_env)
     start = time.monotonic()
     timed_out = orphans = False
+    tree = None
     returncode = None
     with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
         try:
             proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-                                    start_new_session=True)
+                                    **_spawn_kwargs())
         except OSError as exc:                  # missing binary, bad cwd, no exec permission: an invalid run, not a crash
             err.write(f"hca: could not start {argv[0]!r} in {str(cwd)!r}: {exc}\n".encode())
             returncode = 127 if isinstance(exc, FileNotFoundError) else 126
@@ -83,13 +96,14 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
             # A blocking wait, with the deadline enforced by a timer thread. Popen.wait(timeout=...)
             # polls with sleeps that grow to 50 ms, which quantised every measured wall time to the
             # poll schedule (a 75 ms command read as 114.7 ms +- 0.2 ms) and hid the real noise.
+            tree = _winproc.Tree(proc.pid) if WINDOWS else None     # Windows: the command's job object
             expired, done = threading.Event(), threading.Event()
             timer = threading.Timer(timeout, expired.set)
             timer.daemon = True
             finished = False
             try:
                 timer.start()
-                watcher = threading.Thread(target=_enforce_deadline, args=(proc.pid, expired, done), daemon=True)
+                watcher = threading.Thread(target=_enforce_deadline, args=(proc.pid, expired, done, tree), daemon=True)
                 watcher.start()
                 returncode = proc.wait()
                 finished = True
@@ -100,32 +114,48 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
                 expired.set()                    # release the watcher if the command finished in time
                 watcher.join()
                 if timed_out:
-                    _terminate_group(proc)       # grandchildren may outlive the leader
+                    _terminate_group(proc, tree)  # grandchildren may outlive the leader
                 else:
-                    orphans = _group_alive(proc.pid) and _kill_group(proc.pid, signal.SIGKILL)
+                    orphans = _group_alive(proc.pid, tree) and _kill_group(proc.pid, _SIGKILL, tree)
             finally:
                 if not finished:                 # Ctrl-C, SIGTERM, any exception: never leave the benchmark running
                     done.set()
                     timer.cancel()
                     expired.set()
-                    _terminate_group(proc)
+                    _terminate_group(proc, tree)
+            if tree is not None:
+                tree.close()
     if proc is None:
         seconds = time.monotonic() - start
     return RunResult(argv, returncode, timed_out, seconds, stdout_path, stderr_path,
                      read_tail(stderr_path, TAIL_BYTES), dropped, bool(orphans))
 
 
-def _enforce_deadline(pgid, expired, done) -> None:
+def _spawn_kwargs() -> dict:
+    if WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _enforce_deadline(pgid, expired, done, tree=None) -> None:
     """On the deadline: SIGTERM the command's group, then SIGKILL it after the grace period."""
     expired.wait()
     if done.is_set():
         return
-    _kill_group(pgid, signal.SIGTERM)
+    _kill_group(pgid, _SIGTERM, tree)
     if not done.wait(GRACE_SECONDS):
-        _kill_group(pgid, signal.SIGKILL)
+        _kill_group(pgid, _SIGKILL, tree)
 
 
-def _kill_group(pgid, sig) -> bool:
+def _kill_group(pgid, sig, tree=None) -> bool:
+    if WINDOWS:
+        if sig == _SIGTERM:                  # the polite stop: Ctrl-Break to the command's group
+            try:
+                os.kill(pgid, signal.CTRL_BREAK_EVENT)
+                return True
+            except OSError:
+                return False
+        return tree.kill()
     try:
         os.killpg(pgid, sig)
         return True
@@ -133,7 +163,9 @@ def _kill_group(pgid, sig) -> bool:
         return False
 
 
-def _group_alive(pgid) -> bool:
+def _group_alive(pgid, tree=None) -> bool:
+    if WINDOWS:
+        return tree.alive()
     try:
         os.killpg(pgid, 0)
         return True
@@ -143,18 +175,18 @@ def _group_alive(pgid) -> bool:
         return True
 
 
-def _terminate_group(proc) -> int | None:
+def _terminate_group(proc, tree=None) -> int | None:
     """SIGTERM the command's own group, wait up to GRACE_SECONDS, then SIGKILL whatever is left."""
-    pgid = proc.pid                      # start_new_session made the command its own group leader
-    _kill_group(pgid, signal.SIGTERM)
+    pgid = proc.pid                      # the command is its own group leader
+    _kill_group(pgid, _SIGTERM, tree)
     deadline = time.monotonic() + GRACE_SECONDS
     while time.monotonic() < deadline:
         proc.poll()                      # reaps the leader so only real members keep the group alive
-        if not _group_alive(pgid):
+        if not _group_alive(pgid, tree):
             break
         time.sleep(0.02)
-    if _group_alive(pgid):
-        _kill_group(pgid, signal.SIGKILL)
+    if _group_alive(pgid, tree):
+        _kill_group(pgid, _SIGKILL, tree)
     try:
         return proc.wait(timeout=10)
     except subprocess.TimeoutExpired:

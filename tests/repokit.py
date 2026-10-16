@@ -10,6 +10,7 @@ can win on dev items and fail on held-out ones. `bench/items.py` is the items-mo
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import subprocess
 import sys
@@ -77,8 +78,8 @@ print(json.dumps({"metric": "acc", "items": items}))
 
 def toml(name="speedy", mode="blocks", useful=None, limits=None, guards="", build="", extra_task="", mechanism="", frozen='["bench/**"]'):
     if mode == "items":
-        objective = ('command = ["%s", "-S", "bench/items.py"]\nmetric = "acc"\ndirection = "max"\nmode = "items"\nuseful_effect = %s\n'
-                     % (sys.executable, useful or "0.04"))
+        objective = ('command = [%s, "-S", "bench/items.py"]\nmetric = "acc"\ndirection = "max"\nmode = "items"\nuseful_effect = %s\n'
+                     % (json.dumps(sys.executable), useful or "0.04"))
     else:
         objective = ('command = ["sh", "bench/run.sh"]\nmetric = "t_ms"\ndirection = "min"\nuseful_effect = "%s"\n'
                      % (useful or "5%"))

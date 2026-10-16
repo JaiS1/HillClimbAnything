@@ -150,7 +150,7 @@ class DoctorTests(unittest.TestCase):
         busy = self.levels({}, loadavg=(40.0, 1, 1))
         self.assertEqual([l for l, n, _ in busy if n == "load"], ["warn"])
         windows = self.levels({}, platform="win32")
-        self.assertEqual([l for l, n, _ in windows if n == "platform"], ["warn"])
+        self.assertEqual([l for l, n, _ in windows if n == "platform"], ["ok"])
         old = self.levels({}, python=(3, 9, 0))
         self.assertEqual([l for l, n, _ in old if n == "python"], ["error"])
 

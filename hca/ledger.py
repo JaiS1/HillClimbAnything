@@ -66,6 +66,9 @@ STALE_UNREADABLE_SECONDS = 10      # a lock file that cannot be parsed is only t
 
 def proc_start_time(pid):
     """The process start time in clock ticks since boot (field 22 of /proc/<pid>/stat), or None where /proc is unavailable."""
+    if os.name == "nt":
+        from . import _winproc
+        return _winproc.start_time(pid)
     try:
         text = Path(f"/proc/{pid}/stat").read_text()
         return int(text.rsplit(")", 1)[1].split()[19])
@@ -77,6 +80,12 @@ def _pid_alive(pid, start=None) -> bool:
     """Is `pid` the same process that took the lock? A recycled pid has a different start time, so it reads as dead."""
     if not isinstance(pid, int) or pid <= 0:
         return False
+    if os.name == "nt":                 # os.kill(pid, 0) would TERMINATE the process on Windows
+        from . import _winproc
+        if not _winproc.is_running(pid):
+            return False
+        current = _winproc.start_time(pid)
+        return start is None or current is None or current == start
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

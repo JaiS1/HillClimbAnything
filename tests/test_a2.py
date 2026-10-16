@@ -35,6 +35,9 @@ def sha256(text):
 
 
 def alive(pid):
+    if os.name == "nt":
+        from hca import _winproc
+        return _winproc.is_running(pid)
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
     except (FileNotFoundError, ProcessLookupError):
@@ -434,6 +437,7 @@ class PendingKeepTests(Started):
         self.assertEqual(code, 0, text)
 
 
+@unittest.skipIf(os.name == "nt", "POSIX signals and process groups: SIGINT/SIGTERM cannot be sent to a child on Windows, and killpg does not exist")
 class SignalTests(Started):
     def run_and_signal(self, sig):
         pidfile = self.tmp / "pids"
@@ -485,21 +489,21 @@ class CrashAndCliTests(Started):
         self.assertIn("RuntimeError: boom", logs[0].read_text())
 
     def test_signal_handlers_are_installed_for_the_run_and_restored(self):
-        before = (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGHUP))
+        names = [n for n in ("SIGTERM", "SIGHUP", "SIGBREAK") if hasattr(signal, n)]      # SIGHUP is POSIX, SIGBREAK Windows
+        before = tuple(signal.getsignal(getattr(signal, n)) for n in names)
         seen = {}
 
         def fake_status(args, out=print, cwd=None):
-            seen["term"] = signal.getsignal(signal.SIGTERM)
-            seen["hup"] = signal.getsignal(signal.SIGHUP)
+            seen.update({n: signal.getsignal(getattr(signal, n)) for n in names})
             return 0
 
         with contextlib.chdir(self.root), mock.patch.object(report, "run_status", fake_status):
             self.assertEqual(cli.main(["status"]), 0)
-        self.assertNotEqual(seen["term"], before[0])
-        self.assertNotEqual(seen["hup"], before[1])
-        self.assertEqual((signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGHUP)), before)
+        for n, old in zip(names, before):
+            self.assertNotEqual(seen[n], old, n)
+        self.assertEqual(tuple(signal.getsignal(getattr(signal, n)) for n in names), before)
         with self.assertRaises(KeyboardInterrupt):
-            seen["term"](signal.SIGTERM, None)
+            seen["SIGTERM"](signal.SIGTERM, None)
 
 
 class ScopeAndNoiseTests(Started):
@@ -813,8 +817,8 @@ class DoctorEditableTests(unittest.TestCase):
             info.mkdir(parents=True)
             (info / "METADATA").write_text("Metadata-Version: 2.1\nName: fakepkg\nVersion: 1.0\n")
             (info / "direct_url.json").write_text(json.dumps({"url": f"file://{repo}", "dir_info": {"editable": True}}))
-            (repo / "hca.toml").write_text('[task]\nname = "x"\neditable = ["src/**"]\n[objective]\ncommand = ["%s", "bench.py"]\n'
-                                           'metric = "m"\ndirection = "min"\nuseful_effect = "5%%"\n' % PY)
+            (repo / "hca.toml").write_text('[task]\nname = "x"\neditable = ["src/**"]\n[objective]\ncommand = [%s, "bench.py"]\n'
+                                           'metric = "m"\ndirection = "min"\nuseful_effect = "5%%"\n' % json.dumps(PY))
             env_ = dict(os.environ, PYTHONPATH=str(site))
             results = doctor.checks(repo, env_, loadavg=(0.1, 0.1, 0.1))
             hits = [m for lvl, n, m in results if n == "editable-install"]

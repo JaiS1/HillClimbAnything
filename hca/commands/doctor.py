@@ -4,8 +4,7 @@ An editable install of the project (pip install -e) in the objective's interpret
 then resolves to the live checkout in both arms, and every try measures the same code twice.
 
 Leaked environment (PYTHONPATH pointing at the candidate, a different virtualenv, LD_PRELOAD) and a
-busy machine are the usual reasons a benchmark disagrees with itself; Windows-native has no process
-groups, so timeouts could not be enforced. A `skill` line per agent folder says whether `hca setup` has installed
+busy machine are the usual reasons a benchmark disagrees with itself. A `skill` line per agent folder says whether `hca setup` has installed
 the agent skill and whether it is current (warnings only). Errors make the exit status 1; warnings do not.
 """
 
@@ -57,7 +56,7 @@ EDITABLE_PROBE = (
 def editable_installs(interpreter, env) -> list:
     """[(name, directory)] of the editable installs (direct_url.json with "editable": true) the interpreter can see."""
     try:
-        done = subprocess.run([interpreter, "-c", EDITABLE_PROBE], capture_output=True, text=True, timeout=30, env=dict(env), stdin=subprocess.DEVNULL)
+        done = subprocess.run([interpreter, "-c", EDITABLE_PROBE], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, env=dict(env), stdin=subprocess.DEVNULL)
         rows = json.loads(done.stdout.strip().splitlines()[-1]) if done.returncode == 0 and done.stdout.strip() else []
     except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
         return []
@@ -82,8 +81,7 @@ def checks(cwd: Path, env, platform=None, loadavg=None, python=None, home=None) 
     else:
         add("ok", "python", f"{python[0]}.{python[1]}")
     if platform.startswith("win"):
-        add("warn", "platform", "native Windows is not supported (no process groups, so timeouts cannot be enforced). "
-            "Fix: run hca inside WSL.")
+        add("ok", "platform", f"{platform} (native Windows: timeouts kill the process tree with taskkill; WSL gives the strictest isolation)")
     else:
         add("ok", "platform", platform)
 
@@ -157,7 +155,7 @@ def _check_editable(add, spec, cwd, env) -> None:
 
 def _git(git, cwd, *argv):
     try:
-        done = subprocess.run([git, *argv], cwd=cwd, capture_output=True, text=True, timeout=15)
+        done = subprocess.run([git, *argv], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return done.stdout.strip() if done.returncode == 0 else None
