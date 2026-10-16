@@ -61,7 +61,13 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     base_branch = gitops.current_branch(root)
     exists = gitops.branch_exists(root, branch)
     if exists and not args.reset:
-        raise HcaError(f"branch {branch} already exists. Fix: `git branch -D {branch}` if it is stale, or `hca init --reset` to adopt it.")
+        # CONTRACT NOTE: a harness committed on hca/<task> before the first init is the normal way to start (both real climbs did it).
+        # Adopting is safe because every guard that protects the baseline has already passed: no state.json, no confirms in the store
+        # (reset_blocked), a clean tree. Any other existing branch stays a refusal: its history may not be what init is about to freeze.
+        if base_branch != branch:
+            raise HcaError(f"branch {branch} already exists but is not checked out. Fix: `git checkout {branch}` to start the climb from it "
+                           f"(hca init adopts its own branch), or `git branch -D {branch}` if it is stale.")
+        out(f"Adopting the existing branch {branch} as it is; the baseline is its tip {gitops.head(root)[:12]}.")
     heldout_src = args.heldout
     if heldout_src:                                      # validate before anything is changed
         src = Path(heldout_src).resolve()

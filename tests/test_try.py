@@ -102,6 +102,53 @@ class InitTests(repokit.RepoTestCase):
         self.assertFalse((self.root / ".hca" / "arms" / old_sha12).exists())
         self.assertEqual(ledger.read_attempts(self.root), [])
 
+    def test_init_adopts_its_own_branch_when_the_harness_was_committed_there(self):
+        self.repo.git("checkout", "-q", "-b", "hca/speedy")
+        self.repo.write("src/boost.txt", "1\n")
+        harness = self.repo.commit_all("harness work on the task branch")
+        code, text = self.init()
+        self.assertEqual(code, 0, text)
+        self.assertEqual(self.repo.git("branch", "--show-current"), "hca/speedy")
+        self.assertEqual(self.repo.head(), harness)                       # nothing was moved or recreated
+        self.assertEqual(self.state()["init_sha"], harness)
+        self.assertEqual(text.count("Adopting the existing branch hca/speedy"), 1)
+        self.assertIn("Initialised task 'speedy' on branch hca/speedy", text)
+        self.assertIsNone(self.state()["base_branch"])
+
+    def test_init_refuses_an_existing_branch_that_is_not_checked_out(self):
+        self.repo.git("branch", "hca/speedy")
+        with self.assertRaises(HcaError) as caught:
+            self.init()
+        message = str(caught.exception)
+        self.assertIn("not checked out", message)
+        self.assertIn("git checkout hca/speedy", message)
+        self.assertIn("git branch -D hca/speedy", message)
+        self.assertFalse((self.root / ".hca" / "state.json").exists())
+        self.assertEqual(self.repo.git("branch", "--show-current"), "main")
+
+    def test_init_on_its_own_branch_still_refuses_when_state_exists_unless_reset(self):
+        self.assertEqual(self.init()[0], 0)
+        self.assertEqual(self.repo.git("branch", "--show-current"), "hca/speedy")
+        with self.assertRaises(HcaError) as caught:
+            self.init()
+        self.assertIn("already initialised", str(caught.exception))
+        code, text = self.init(reset=True)                                # unchanged semantics
+        self.assertEqual(code, 0, text)
+        self.assertNotIn("Adopting", text)
+
+    def test_the_confirm_cap_guard_still_applies_to_an_adoptable_branch(self):
+        self.assertEqual(self.init()[0], 0)
+        self.set_speed(21)
+        self.assertEqual(self.try_("win")[0], 0)
+        self.assertEqual(self.confirm()[0], 0)
+        import shutil
+        shutil.rmtree(self.root / ".hca")                                 # no state, branch checked out: adoptable except for the store
+        with self.assertRaises(HcaError) as caught:
+            self.init()
+        self.assertIn("referee store", str(caught.exception))
+        self.assertEqual(self.lines.count("Adopting"), 0)
+        self.assertFalse((self.root / ".hca" / "state.json").exists())
+
     def test_heldout_must_live_outside_the_repo_and_is_copied_to_the_store(self):
         inside = self.root / "src" / "held"
         inside.mkdir()

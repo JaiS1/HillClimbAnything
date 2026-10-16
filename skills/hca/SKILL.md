@@ -34,7 +34,9 @@ referee or work around it. A win it can't confirm is not a win.
    - the useful effect: the smallest win worth keeping;
    - guards: tests, output equality, anything that must not regress.
 
-   Then run `hca init`.
+   Then run `hca init`. If you already committed the harness (`hca.toml`, the benchmark) on a
+   `hca/<task>` branch, stay on it: init adopts that branch as it is and prints one line saying so.
+   An existing `hca/<task>` branch that is not checked out is refused; check it out, or delete it if stale.
 
 ## 2. The climb (Tier 0: local, cheap, reversible)
 

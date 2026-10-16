@@ -162,6 +162,11 @@ agent's working tree; it is not a security boundary.
 - **`hca init [--heldout PATH]`**
   - Validates the spec, checks for a clean tree, then creates the branch, `.hca/state.json` and the
     frozen hashes.
+  - **Adopts its own branch.** If `hca/<task>` already exists and is the checked-out branch, there is
+    no `.hca/state.json`, and the referee store holds no confirms, init uses the branch as it is (the
+    baseline is its tip) and prints one line saying so. Committing the harness on `hca/<task>` before
+    the first init is the normal start. If the branch exists but is not checked out, init refuses and
+    says to check it out or delete it. State without `--reset` and the confirm-cap guard still refuse.
   - It runs **one A/A on the baseline**: `extend_to` blocks of the init sha against itself. It
     saves a noise report and refuses to finish if the verdict is `too-noisy`, unless `--force`.
 - **`hca try -m "what changed and why"`**
