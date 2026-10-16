@@ -193,6 +193,11 @@ def _capped(timeout, deadline):
     return timeout if deadline is None else max(1.0, min(timeout, deadline - time.monotonic()))
 
 
+def _command_for(command, arm):
+    """`command` is one argv for both arms, or {"baseline": argv, "candidate": argv} when the arms run different commands (compare)."""
+    return command[arm] if isinstance(command, dict) else command
+
+
 def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None, prepare=None) -> None:
     """One discarded objective run per arm, before block 0: cold caches and fresh worktrees must not land in a measured block.
 
@@ -207,7 +212,7 @@ def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None, pre
         if prepare and prepare.get(arm):
             prepare[arm]()
         env = dict(env_extra or {}, HCA_RESULT_FILE=str(result_file))
-        result = runner.run(command, dirs[arm], out_dir / "runs", f"warmup-{arm}", _capped(timeout, deadline), env_extra=env, deny=deny)
+        result = runner.run(_command_for(command, arm), dirs[arm], out_dir / "runs", f"warmup-{arm}", _capped(timeout, deadline), env_extra=env, deny=deny)
         _append(out_dir / "runs.jsonl", {"kind": "warmup", "arm": arm, "wall_seconds": round(result.seconds, 6),
                                          "returncode": result.returncode, "timed_out": result.timed_out})
         for path in (result.stdout_path, result.stderr_path, result_file):
@@ -215,9 +220,12 @@ def warm_up(command, dirs, out_dir, timeout, deny, env_extra, deadline=None, pre
 
 
 def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_blocks, rng, env_extra, out_dir,
-                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False, warmup=False, prepare=None) -> BlockResult:
-    """The engine under run_blocks, usable without a spec (quick). `wall_fallback` scores the command's
-    own wall time when it prints neither item JSON nor a METRIC line (the zero-config case). `warmup` runs
+                   timeout, deny=(), first_block=0, deadline=None, wall_fallback=False, warmup=False, prepare=None,
+                   wall_only=False) -> BlockResult:
+    """The engine under run_blocks, usable without a spec (quick, compare). `wall_fallback` scores the command's
+    own wall time when it prints neither item JSON nor a METRIC line (the zero-config case); `wall_only` always scores
+    it and ignores the output (compare's default metric). `command` may be a {"baseline": argv, "candidate": argv}
+    dict (compare runs a different command in each arm). `warmup` runs
     one discarded objective run per arm first. `HCA_ARM` is deliberately not exported: the benchmark must not
     be able to tell the arms apart (the arm stays in runs.jsonl)."""
     if direction not in ("min", "max") or not metric or n_blocks < 1:
@@ -240,8 +248,8 @@ def measure_blocks(command, metric, direction, baseline_dir, candidate_dir, n_bl
         for position, arm in enumerate(order):
             if prepare and prepare.get(arm):
                 prepare[arm]()
-            run = _execute(command, metric, dirs[arm], out_dir, index, arm, position, dict(env_extra or {}),
-                           _capped(timeout, deadline), deny, wall_fallback)
+            run = _execute(_command_for(command, arm), metric, dirs[arm], out_dir, index, arm, position, dict(env_extra or {}),
+                           _capped(timeout, deadline), deny, wall_fallback, wall_only)
             dropped.update(run.result.dropped_env)
             pair[arm] = run
             _append(log, _run_record(run))
@@ -260,7 +268,7 @@ def read_output(stdout_path, result_file) -> str:
     return _read_stdout(stdout_path)
 
 
-def _execute(command, metric, cwd, out_dir, block, arm, order, env, timeout, deny, wall_fallback) -> _Run:
+def _execute(command, metric, cwd, out_dir, block, arm, order, env, timeout, deny, wall_fallback, wall_only=False) -> _Run:
     stem = f"b{block:04d}-{arm}"
     result_file = out_dir / "runs" / f"{stem}.result"          # fresh per run: removed before the command starts
     result_file.parent.mkdir(parents=True, exist_ok=True)
@@ -272,6 +280,8 @@ def _execute(command, metric, cwd, out_dir, block, arm, order, env, timeout, den
         run.problem = f"timed out after {timeout:g} s"
     elif result.returncode != 0:
         run.problem = f"exit status {result.returncode}"
+    elif wall_only:
+        parsed = Parsed("metrics", result.seconds, {metric: result.seconds}, (), None)
     else:
         parsed = parse_output(read_output(result.stdout_path, result_file), metric)
         if parsed.kind == "none" and wall_fallback:      # even a malformed-looking last line: it is just program output

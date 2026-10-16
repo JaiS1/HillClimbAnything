@@ -122,6 +122,21 @@ class NoiseAndUnitsTests(unittest.TestCase):
         report = stats.noise_report(quiet, useful)
         self.assertLess(report["detectable"][20], report["detectable"][10])
 
+    def test_robust_sd_and_detectable_shift_back_noise_report(self):
+        rng = random.Random(11)
+        scores = [rng.gauss(0, 0.03) for _ in range(30)]
+        sd = stats.robust_sd(scores)
+        self.assertAlmostEqual(sd, 0.03, delta=0.012)
+        self.assertAlmostEqual(stats.robust_sd([0.1] * 5 + [0.3] * 4), 0.1, delta=0.11)         # zero MAD falls back to the population SD
+        self.assertGreater(stats.robust_sd([1.0, 1.0, 1.0, 2.0]), 0)
+        report = stats.noise_report(scores, 0.05)
+        self.assertEqual(report["noise_sd"], sd)
+        self.assertEqual(report["detectable"][10], stats.detectable_shift(sd, 10))
+        self.assertLess(stats.detectable_shift(sd, 20), stats.detectable_shift(sd, 10))
+        self.assertGreater(stats.detectable_shift(sd, 10, alpha=0.005), stats.detectable_shift(sd, 10, alpha=0.01))
+        with self.assertRaises(HcaError):
+            stats.robust_sd([])
+
     def test_log_ratio_direction_and_effect_parsing(self):
         self.assertGreater(stats.log_ratio(100, 90, "min"), 0)      # faster is better
         self.assertLess(stats.log_ratio(0.80, 0.70, "max"), 0)     # lower accuracy is worse

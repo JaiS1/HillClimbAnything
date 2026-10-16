@@ -172,6 +172,23 @@ def keep_decision(scores, useful: float, alpha: float = DEFAULT_ALPHA, look: int
     return result
 
 
+def robust_sd(scores) -> float:
+    """1.4826 * MAD around the median; the population SD when the MAD is zero (many identical scores)."""
+    scores = _finite_list(scores)
+    if not scores:
+        raise HcaError("a robust SD needs at least one score")
+    centre = statistics.median(scores)
+    sd = 1.4826 * statistics.median(abs(s - centre) for s in scores)
+    return sd if sd else statistics.pstdev(scores)
+
+
+def detectable_shift(sd: float, blocks: int, alpha: float = DEFAULT_ALPHA / 2, power: float = 0.8) -> float:
+    """Smallest log-ratio shift the signed-rank test detects with probability `power` at `blocks` blocks (normal approximation, ARE 0.955)."""
+    z_alpha = statistics.NormalDist().inv_cdf(1 - alpha)
+    z_power = statistics.NormalDist().inv_cdf(power)
+    return (z_alpha + z_power) * sd / math.sqrt(0.955 * blocks)
+
+
 def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA / 2, power: float = 0.8) -> dict:
     """From A/A block scores: the noise floor and the smallest shift detectable at 10 and 20 blocks.
 
@@ -187,16 +204,8 @@ def noise_report(aa_scores, useful: float, alpha: float = DEFAULT_ALPHA / 2, pow
     if len(scores) < NOISE_MIN_BLOCKS:
         raise HcaError(f"noise needs at least {NOISE_MIN_BLOCKS} A/A blocks (a robust SD from fewer is not a planning number)")
     centre = statistics.median(scores)
-    mad = statistics.median(abs(s - centre) for s in scores)
-    sd = 1.4826 * mad
-    if sd == 0:
-        sd = statistics.pstdev(scores)
-    z_alpha = statistics.NormalDist().inv_cdf(1 - alpha)
-    z_power = statistics.NormalDist().inv_cdf(power)
-    detectable = {}
-    for blocks in (MIN_BLOCKS, EXTENDED_BLOCKS):
-        shift = (z_alpha + z_power) * sd / math.sqrt(0.955 * blocks)
-        detectable[blocks] = shift
+    sd = robust_sd(scores)
+    detectable = {blocks: detectable_shift(sd, blocks, alpha, power) for blocks in (MIN_BLOCKS, EXTENDED_BLOCKS)}
     verdict = ("ok" if detectable[MIN_BLOCKS] <= useful else
                "needs-extension" if detectable[EXTENDED_BLOCKS] <= useful else "too-noisy")
     return {"blocks": len(scores), "aa_centre": centre, "aa_centre_pct": to_percent(centre),
