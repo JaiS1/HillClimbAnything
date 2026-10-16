@@ -119,7 +119,7 @@ class QuickTests(unittest.TestCase):
         root = Path(__file__).resolve().parent.parent
         done = subprocess.run([sys.executable, "-m", "hca", "--help"], cwd=root, capture_output=True, text=True, timeout=30)
         self.assertEqual(done.returncode, 0)
-        for word in ("quick", "doctor", "init", "try", "confirm", "report", "status"):
+        for word in ("quick", "compare", "doctor", "init", "try", "confirm", "report", "status"):
             self.assertIn(word, done.stdout)
 
 

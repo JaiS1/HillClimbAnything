@@ -17,11 +17,22 @@ EXIT_REFUSED = 2
 EXIT_INTERNAL = 4         # an unexpected exception: outside the 0 keep/pass, 1 revert/fail, 2 invalid/void, 3 usage contract
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse exits 2 on a bad option, but 2 means invalid/void in hca's contract; bad usage is 3."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"hca: {message}", file=sys.stderr)
+        raise SystemExit(EXIT_USAGE)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hca", description="HillClimbAnything: a noise-aware referee for hill-climbing any metric.")
+    parser = _Parser(prog="hca", description="HillClimbAnything: a noise-aware referee for hill-climbing any metric.")
     parser.add_argument("--version", action="version", version=f"hca {__version__}")
     sub = parser.add_subparsers(dest="cmd", metavar="<command>")
-    from .commands import doctor, quick, setup
+    from .commands import compare, doctor, quick, setup
+    compare.add_arguments(sub.add_parser("compare", help="A/B two commands with the referee's statistics, no setup at all",
+                                         description="Usage: hca compare [options] -- <command A ...> -- <command B ...>"))
     quick.add_arguments(sub.add_parser("quick", help="measure how noisy a command is (A/A), no spec needed",
                                        description="Usage: hca quick [options] -- <cmd...>"))
     doctor.add_arguments(sub.add_parser("doctor", help="check the environment for things that corrupt measurements"))
@@ -51,6 +62,8 @@ def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if tail is not None:
+        if args.cmd == "compare":                      # the tail holds two commands; compare splits it itself
+            args.stray = list(getattr(args, "command", None) or [])
         args.command = tail
     if args.cmd is None:
         parser.print_help()
@@ -77,6 +90,9 @@ def main(argv=None) -> int:
 
 
 def _dispatch(args, parser) -> int:
+    if args.cmd == "compare":
+        from .commands import compare
+        return compare.run(args)
     if args.cmd == "quick":
         from .commands import quick
         return quick.run(args)
