@@ -43,7 +43,7 @@ Ajanınız öneri getirir, HCA karar verir. HCA, bağımlılığı olmayan küç
 
 ## Hızlı başlangıç
 
-**1. Kurulum** (Python 3.11+; Linux ve WSL'de test edildi, macOS test edilmedi):
+**1. Kurulum** (Python 3.11+; Linux, WSL ve yerel Windows'ta test edildi, macOS test edilmedi):
 
 ```bash
 uv tool install hillclimbanything   # ya da: pipx install hillclimbanything
@@ -248,7 +248,7 @@ Bunun araçları planlanıyor.
 <details>
 <summary><strong>Windows?</strong></summary>
 
-WSL kullanın. Yerel Windows süreç kontrolü henüz test edilmedi, macOS da öyle.
+Yerel Windows çalışır (Python 3.11+). Zaman aşımında tüm süreç ağacı bir Job Object ve `taskkill` ile sonlandırılır. Kabuk yoktur, bu yüzden komutları argv listesi olarak yazın (bir batch dosyası `["cmd", "/c", "build.bat"]` olur). En sıkı süreç yalıtımını WSL vermeye devam eder, macOS test edilmedi.
 </details>
 
 ## Dokümantasyon

@@ -43,7 +43,7 @@ HillClimbAnything은 이 루프의 **심판**입니다.
 
 ## 빠른 시작
 
-**1. 설치** (Python 3.11+; Linux와 WSL에서 테스트했고 macOS는 테스트하지 않음):
+**1. 설치** (Python 3.11+; Linux, WSL, 네이티브 Windows에서 테스트했고 macOS는 테스트하지 않음):
 
 ```bash
 uv tool install hillclimbanything   # 또는: pipx install hillclimbanything
@@ -248,7 +248,7 @@ skill의 레퍼런스에는 수개월에 걸친 실제 모델 파인튜닝 캠�
 <details>
 <summary><strong>Windows는요?</strong></summary>
 
-WSL을 사용하세요. 네이티브 Windows의 프로세스 제어는 아직 테스트하지 않았고, macOS도 마찬가지입니다.
+네이티브 Windows도 동작합니다(Python 3.11+). 타임아웃이 되면 Job Object와 `taskkill`로 프로세스 트리 전체를 종료합니다. 셸이 없으므로 명령은 argv 리스트로 작성하세요(배치 파일은 `["cmd", "/c", "build.bat"]`). 가장 엄격한 프로세스 격리는 여전히 WSL이며, macOS는 테스트하지 않았습니다.
 </details>
 
 ## 문서

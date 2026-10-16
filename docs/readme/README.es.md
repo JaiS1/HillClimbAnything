@@ -46,7 +46,7 @@ Tu agente propone y HCA decide. HCA es una CLI de Python pequeña y sin dependen
 
 ## Inicio rápido
 
-**1. Instala** (Python 3.11+; probado en Linux y WSL, macOS sin probar):
+**1. Instala** (Python 3.11+; probado en Linux, WSL y Windows nativo, macOS sin probar):
 
 ```bash
 uv tool install hillclimbanything   # o: pipx install hillclimbanything
@@ -273,7 +273,7 @@ Las herramientas para esto están planificadas.
 <details>
 <summary><strong>¿Windows?</strong></summary>
 
-Usa WSL. El control de procesos nativo de Windows aún no se ha probado, y macOS tampoco.
+Windows nativo funciona (Python 3.11+). Un timeout mata todo el árbol de procesos mediante un Job Object y `taskkill`. No hay shell, así que escribe los comandos como listas argv (un archivo batch es `["cmd", "/c", "build.bat"]`). WSL sigue dando el aislamiento de procesos más estricto, y macOS no está probado.
 </details>
 
 ## Documentación

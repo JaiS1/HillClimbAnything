@@ -47,7 +47,7 @@ Skill (reines Markdown), der einem Coding-Agenten die Methode beibringt. Es wurd
 
 ## Schnellstart
 
-**1. Installieren** (Python 3.11+; getestet unter Linux und WSL, macOS ungetestet):
+**1. Installieren** (Python 3.11+; getestet unter Linux, WSL und nativem Windows, macOS ungetestet):
 
 ```bash
 uv tool install hillclimbanything   # oder: pipx install hillclimbanything
@@ -275,7 +275,7 @@ Das Tooling dafür ist geplant.
 <details>
 <summary><strong>Windows?</strong></summary>
 
-Nutze WSL. Native Prozesssteuerung unter Windows ist noch nicht getestet, macOS ebenfalls nicht.
+Natives Windows funktioniert (Python 3.11+). Ein Timeout beendet den gesamten Prozessbaum über ein Job Object und `taskkill`. Es gibt keine Shell, schreibe Befehle also als argv-Listen (eine Batch-Datei ist `["cmd", "/c", "build.bat"]`). WSL bietet weiterhin die strengste Prozessisolation, macOS ist ungetestet.
 </details>
 
 ## Dokumentation

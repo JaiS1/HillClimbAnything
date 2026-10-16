@@ -55,7 +55,7 @@ Known residuals, and what to do about each:
 - **Not built for concurrent use.** Don't edit, commit or switch branches in the checkout while a
   loop is running. Two `hca` commands at once are refused by a lock. v1 refuses repos with
   submodules or a half-finished merge or rebase.
-- **Platforms.** Linux, WSL and macOS. Native Windows process control is untested.
+- **Platforms.** Linux and WSL are the reference. Native Windows (Python 3.11+) is supported and runs in CI, but its process control is weaker than POSIX process groups: the command is put in a Job Object, and a timeout sends Ctrl-Break, then terminates the job and runs `taskkill /T /F`. A process spawned in the first milliseconds before the job is assigned can escape, and so can a grandchild when Windows refuses the job (the fallback walks parent pids, which a dead parent breaks). A returncode there is the raw exit code, never a negative signal. Commands run without a shell, so write a batch file as `["cmd", "/c", "x.bat"]`. macOS is covered by CI only.
 - **Not a benchmark harness.** You bring the command that measures; HCA decides what the
   measurement means.
 - **Not orchestration.** HCA doesn't call model APIs. Your agent drives; HCA referees.

@@ -43,7 +43,7 @@ Agent của bạn đề xuất, còn HCA quyết định. HCA là một CLI Pyth
 
 ## Bắt đầu nhanh
 
-**1. Cài đặt** (Python 3.11+; đã thử trên Linux và WSL, chưa thử trên macOS):
+**1. Cài đặt** (Python 3.11+; đã thử trên Linux, WSL và Windows gốc, chưa thử trên macOS):
 
 ```bash
 uv tool install hillclimbanything   # hoặc: pipx install hillclimbanything
@@ -248,7 +248,7 @@ Công cụ cho việc này đang được lên kế hoạch.
 <details>
 <summary><strong>Windows?</strong></summary>
 
-Hãy dùng WSL. Việc điều khiển tiến trình trên Windows gốc chưa được thử, macOS cũng vậy.
+Windows gốc hoạt động (Python 3.11+). Khi hết thời gian, toàn bộ cây tiến trình bị dừng qua Job Object và `taskkill`. Không có shell, nên hãy viết lệnh dưới dạng danh sách argv (file batch là `["cmd", "/c", "build.bat"]`). WSL vẫn cho cách ly tiến trình chặt chẽ nhất, còn macOS chưa được thử.
 </details>
 
 ## Tài liệu

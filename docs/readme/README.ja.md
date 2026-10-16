@@ -43,7 +43,7 @@ HillClimbAnything は、このループの**審判**です。
 
 ## クイックスタート
 
-**1. インストール**（Python 3.11+。Linux と WSL で動作確認済み、macOS は未確認）：
+**1. インストール**（Python 3.11+。Linux、WSL、ネイティブ Windows で動作確認済み、macOS は未確認）：
 
 ```bash
 uv tool install hillclimbanything   # または: pipx install hillclimbanything
@@ -248,7 +248,7 @@ skill のリファレンスには、数か月にわたる実際のモデルフ�
 <details>
 <summary><strong>Windows は？</strong></summary>
 
-WSL を使ってください。ネイティブ Windows のプロセス制御はまだテストしておらず、macOS も同様です。
+ネイティブ Windows でも動作します（Python 3.11+）。タイムアウト時は Job Object と `taskkill` でプロセスツリー全体を終了します。シェルは使わないので、コマンドは argv のリストで書いてください（バッチファイルは `["cmd", "/c", "build.bat"]`）。最も厳密なプロセス分離は引き続き WSL で、macOS は未確認です。
 </details>
 
 ## ドキュメント

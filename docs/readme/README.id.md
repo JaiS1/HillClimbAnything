@@ -43,7 +43,7 @@ Agent Anda mengusulkan, HCA yang memutuskan. HCA adalah CLI Python kecil tanpa d
 
 ## Mulai cepat
 
-**1. Instal** (Python 3.11+; diuji di Linux dan WSL, macOS belum diuji):
+**1. Instal** (Python 3.11+; diuji di Linux, WSL, dan Windows native, macOS belum diuji):
 
 ```bash
 uv tool install hillclimbanything   # atau: pipx install hillclimbanything
@@ -248,7 +248,7 @@ Tooling untuk ini direncanakan.
 <details>
 <summary><strong>Windows?</strong></summary>
 
-Gunakan WSL. Kontrol proses Windows native belum diuji, begitu pula macOS.
+Windows native berfungsi (Python 3.11+). Timeout mematikan seluruh pohon proses lewat Job Object dan `taskkill`. Tidak ada shell, jadi tulis perintah sebagai daftar argv (file batch menjadi `["cmd", "/c", "build.bat"]`). WSL tetap memberi isolasi proses paling ketat, dan macOS belum diuji.
 </details>
 
 ## Dokumentasi

@@ -47,7 +47,7 @@ Markdown), который обучает кодинг-агента этому м
 
 ## Быстрый старт
 
-**1. Установите** (Python 3.11+; проверено на Linux и WSL, macOS не проверялась):
+**1. Установите** (Python 3.11+; проверено на Linux, WSL и нативном Windows, macOS не проверялась):
 
 ```bash
 uv tool install hillclimbanything   # или: pipx install hillclimbanything
@@ -272,7 +272,7 @@ flowchart LR
 <details>
 <summary><strong>Windows?</strong></summary>
 
-Используйте WSL. Нативное управление процессами в Windows пока не проверено, как и macOS.
+Нативный Windows работает (Python 3.11+). По таймауту всё дерево процессов завершается через Job Object и `taskkill`. Оболочки нет, поэтому пишите команды списками argv (batch-файл — это `["cmd", "/c", "build.bat"]`). Самую строгую изоляцию процессов по-прежнему даёт WSL, а macOS не проверялась.
 </details>
 
 ## Документация

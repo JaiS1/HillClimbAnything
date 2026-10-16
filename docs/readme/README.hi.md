@@ -43,7 +43,7 @@ HillClimbAnything इस loop का **रेफ़री** है:
 
 ## Quick start
 
-**1. Install करें** (Python 3.11+; Linux और WSL पर test किया गया, macOS पर test नहीं हुआ):
+**1. Install करें** (Python 3.11+; Linux, WSL और native Windows पर test किया गया, macOS पर test नहीं हुआ):
 
 ```bash
 uv tool install hillclimbanything   # या: pipx install hillclimbanything
@@ -248,7 +248,7 @@ Skill के references में महीनों चले एक असल�
 <details>
 <summary><strong>Windows?</strong></summary>
 
-WSL इस्तेमाल करें। Native Windows process control अभी test नहीं हुआ है, और macOS भी नहीं।
+Native Windows काम करता है (Python 3.11+)। Timeout पर Job Object और `taskkill` पूरे process tree को खत्म कर देते हैं। कोई shell नहीं है, इसलिए commands को argv list की तरह लिखें (batch file `["cmd", "/c", "build.bat"]` होती है)। सबसे सख्त process isolation अब भी WSL देता है, और macOS test नहीं हुआ है।
 </details>
 
 ## Documentation

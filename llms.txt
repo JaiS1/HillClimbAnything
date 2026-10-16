@@ -8,7 +8,7 @@ Workflow: `hca quick -- <cmd>` (noise and detectable effect, no setup) → write
 
 Exit codes: `hca try` 0 keep, 1 revert, 2 invalid/void/refused, 3 usage, 4 internal error; `hca confirm` 0 pass, 1 fail (rolled back), 2 inconclusive/refused.
 
-Do not use it when there is no repeatable command that prints the number, or for remote paid runs (the skill covers the method for those; there is no tooling yet). Tested on Linux and WSL with Claude Code; macOS and native Windows are untested.
+Do not use it when there is no repeatable command that prints the number, or for remote paid runs (the skill covers the method for those; there is no tooling yet). Tested on Linux, WSL and native Windows (Python 3.11+); macOS is untested.
 
 Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; never commit yourself (HCA commits keeps); no caches keyed on benchmark content or special-casing of inputs; report only confirmed results with their bound and the number of tries.
 

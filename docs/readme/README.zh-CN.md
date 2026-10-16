@@ -43,7 +43,7 @@ agent 负责提出改动，HCA 负责裁决。HCA 是一个零依赖的小型 Py
 
 ## 快速开始
 
-**1. 安装**（Python 3.11+；在 Linux 和 WSL 上测试过，macOS 未测试）：
+**1. 安装**（Python 3.11+；在 Linux、WSL 和原生 Windows 上测试过，macOS 未测试）：
 
 ```bash
 uv tool install hillclimbanything   # 或: pipx install hillclimbanything
@@ -248,7 +248,7 @@ skill 的参考资料沿用了一次持续数月的真实模型微调 campaign �
 <details>
 <summary><strong>Windows 呢？</strong></summary>
 
-请使用 WSL。原生 Windows 的进程控制尚未测试，macOS 也是。
+原生 Windows 可用（Python 3.11+）。超时后，会通过 Job Object 和 `taskkill` 结束整个进程树。这里没有 shell，所以请把命令写成 argv 列表（批处理文件写作 `["cmd", "/c", "build.bat"]`）。最严格的进程隔离仍由 WSL 提供，macOS 未测试。
 </details>
 
 ## 文档

@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-EN = (ROOT / "README.md").read_text()
+EN = (ROOT / "README.md").read_text(encoding="utf-8")
 NUMBERS = ["53.8", "53.0", "63.5", "17.9", "1.7", "1,126", "110", "23,000", "17–55", "76–96", "3.11.1", "28.6",
            "0.6", "224", "3.11"]
 LINK = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)|(?:src|srcset)=\"([^\"]+)\"")
@@ -25,7 +25,7 @@ def main():
     en = counts(EN)
     bad = 0
     for path in sorted((ROOT / "docs" / "readme").glob("README.*.md")):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         problems = []
         c = counts(text)
         for key, value in en.items():

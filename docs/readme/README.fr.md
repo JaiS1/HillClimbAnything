@@ -47,7 +47,7 @@ skill (du Markdown brut) qui enseigne la méthode à un agent de code. Il a ét�
 
 ## Démarrage rapide
 
-**1. Installez** (Python 3.11+ ; testé sous Linux et WSL, macOS non testé) :
+**1. Installez** (Python 3.11+ ; testé sous Linux, WSL et Windows natif, macOS non testé) :
 
 ```bash
 uv tool install hillclimbanything   # ou: pipx install hillclimbanything
@@ -274,7 +274,7 @@ L'outillage correspondant est prévu.
 <details>
 <summary><strong>Windows ?</strong></summary>
 
-Utilisez WSL. Le contrôle natif des processus sous Windows n'est pas encore testé, pas plus que macOS.
+Windows natif fonctionne (Python 3.11+). Un timeout tue tout l'arbre de processus via un Job Object et `taskkill`. Il n'y a pas de shell : écrivez les commandes comme des listes argv (un fichier batch s'écrit `["cmd", "/c", "build.bat"]`). WSL garde l'isolation des processus la plus stricte, et macOS n'est pas testé.
 </details>
 
 ## Documentation
