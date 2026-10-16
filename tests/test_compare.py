@@ -34,6 +34,12 @@ else:
 '''
 
 
+
+def spinner(seconds):
+    """A child that busy-waits for exactly `seconds`. OS sleeps overshoot by whole timer ticks and a loaded macOS runner showed
+    +-113% per-block noise on `time.sleep` children, so the wall-time tests spin on perf_counter with a wide 3x gap."""
+    return [sys.executable, "-S", "-c", f"import time\nt = time.perf_counter()\nwhile time.perf_counter() - t < {seconds}: pass"]
+
 class CompareTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="hca-compare-test-")
@@ -77,8 +83,7 @@ class CompareTests(unittest.TestCase):
         self.assertNotIn("Keep rule", text)                           # no --min-effect: report only
 
     def test_wall_time_is_the_default_metric_and_reads_faster(self):
-        sleeper = lambda s: [sys.executable, "-S", "-c", f"import time; time.sleep({s})"]
-        code, text = self.run_compare(sleeper(0.04), sleeper(0.02), metric=None, blocks=8, warmup=1)
+        code, text = self.run_compare(spinner(0.12), spinner(0.04), metric=None, blocks=8, warmup=1)
         self.assertEqual(code, 0, text)
         self.assertIn("wall time (wall_s)", text)
         self.assertRegex(text, r"B is \d+\.\d% faster than A \(\d\.\d\d× the speed, 98% CI")
@@ -205,8 +210,7 @@ class CompareTests(unittest.TestCase):
     def test_wording_ratio_zero_noise_and_the_threshold(self):
         _, text = self.run_compare(self.bench("A", 100), self.bench("B", 80))
         self.assertRegex(text, r"lower \(better\) than A \(")
-        sleeper = lambda s: [sys.executable, "-S", "-c", f"import time; time.sleep({s})"]
-        _, text = self.run_compare(sleeper(0.04), sleeper(0.02), metric=None, blocks=8)
+        _, text = self.run_compare(spinner(0.12), spinner(0.04), metric=None, blocks=8)
         self.assertRegex(text, r"faster than A \(\d\.\d\d× the speed, ")
         flat = [sys.executable, "-S", "-c", "print('METRIC lat=5')"]
         _, text = self.run_compare(flat, flat)
