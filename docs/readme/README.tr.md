@@ -124,6 +124,25 @@ Bir Sonnet kodlama ajanı, HCA'yı hakem olarak kullanarak [Python-Markdown](htt
 
 En büyük kazanç, metin, her eşleşmenin gerektirdiği bir karakteri içeremiyorsa inline regex desenlerini atlamaktan geldi. [Yazı, patch, deneme başına log ve ham ledger](../../showcases/python-markdown/README.md) bağlantısından okuyabilirsiniz. Tek bir makine ve tek bir çalıştırmadır; patch upstream tarafından incelenmedi.
 
+## Showcase: js-yaml, %15 daha hızlı
+
+İkinci tırmanış: başka bir dilde ve farklı türde bir metrikle. Node üzerinde [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0; 491 gerçek GitHub Actions, Kubernetes, Helm, Compose ve OpenAPI dosyasında her belge için `load()` bir kez ölçüldü. Bir kodlama ajanı yaklaşık bir saatte 12 deneme yaptı, 3'ü tutuldu.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="js-yaml `load()` süresi, 12 denemede: tutulan üç değişiklik onu adım adım düşürüyor; ayrılmış belgelerde tek bir confirm -15.3 yüzde ile geçiyor" width="900" />
+</picture>
+</div>
+
+| Kontrol | Sonuç |
+|---|---|
+| Ayrılmış (held-out) belgelerde `hca confirm` (aynı türler, çoğunlukla farklı dosyalar) | `load()` süresi, öğe başına medyan **−15.3%** (en az −13.3%) |
+| Temiz klonda, orijinal sürüme karşı A/B, 200 yeni süreç | toplam süre **−15.3%** (%95 GA: −16.6% ile −14.4%) |
+| Çıktı: js-yaml'in kendi 1,633 testi, ESM ve CJS derlemelerinin her birinde 25,384 karşılaştırma, 11,250 fuzz karşılaştırması | 5.5.0'dan **0 fark** |
+
+Kazanımlar, ayrıştırıcıda işten tasarruf eden küçük değişikliklerdir: düğüm başına daha az ayırma, ilk karaktere göre yönlendirme ve düz skalerler için hızlı yol. Tutulan üç denemenin ikisi, tek başına tutma eşiğinin altında kalan değişiklikleri birleştiriyor; yazıda bu açıkça belirtiliyor, confirm ise son durumu kapsıyor. Metrik, çoğunlukla küçük belgelerde çağrı başına, görece soğuk süredir; sıcak döngüde verim değildir. Tek bir makine söz konusu ve patch upstream'e gönderilmedi. [Yazı, patch, ledger ve harness](../../showcases/js-yaml/README.md) bağlantısından okuyabilirsiniz.
+
 ## Neden bir hakem?
 
 İki özdeş build, çoğu döngünün karşılaştırdığı biçimde karşılaştırıldı ([Phase 0](../../spikes/phase0/RESULT.md)):
@@ -165,7 +184,7 @@ Bir komutun sayıya çevirebildiği her şey; yeter ki sayı, gürültüsünü �
 
 | Hedef | Örnek metrik | Durum |
 |---|---|---|
-| Kütüphane hot path'i | render / parse süresi | ✅ showcase var (Python-Markdown, −53.8%) |
+| Kütüphane hot path'i | render / parse süresi | ✅ showcase var (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI ve build süresi | duvar saati saniyesi | 🧪 kalibre edildi ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Web sunucusu gecikmesi | route başına ilk bayta kadar süre | 🧪 kalibre edildi ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Tarayıcıda sayfa yüklenmesi | sayfa başına LCP | 🗺️ planlanan showcase |
@@ -254,6 +273,7 @@ Yerel Windows çalışır (Python 3.11+). Zaman aşımında tüm süreç ağacı
 ## Dokümantasyon
 
 - [Showcase: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Showcase: js-yaml](../../showcases/js-yaml/README.md)
 - [Sınırlar ve bilinen boşluklar](../LIMITS.md)
 - [Phase 0 kalibrasyonu](../../spikes/phase0/RESULT.md)
 - [Tasarım](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ Yerel Windows çalışır (Python 3.11+). Zaman aşımında tüm süreç ağacı
 
 ## Durum ve katkılar
 
-Erken araştırma sürümü (0.2.0.dev): çekirdek döngü ve bir showcase. HCA, eşleştirilmiş istatistiklerini koruduğu [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)'tan doğdu. [autoresearch](https://github.com/karpathy/autoresearch) tarzı döngülerden ve [Harness Learning](https://arxiv.org/abs/2609.35738) makalesinin değerlendirme hijyeninden fikirler ödünç alır.
+Erken araştırma sürümü (0.2.0.dev): çekirdek döngü ve iki showcase. HCA, eşleştirilmiş istatistiklerini koruduğu [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)'tan doğdu. [autoresearch](https://github.com/karpathy/autoresearch) tarzı döngülerden ve [Harness Learning](https://arxiv.org/abs/2609.35738) makalesinin değerlendirme hijyeninden fikirler ödünç alır.
 
 ```bash
 python3 -m unittest discover -s tests      # geliştirme

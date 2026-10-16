@@ -124,6 +124,25 @@ Sonnet 코딩 에이전트가 HCA를 심판으로 삼아 [Python-Markdown](https
 
 가장 큰 개선은, 모든 매치에 필요한 문자가 텍스트에 있을 수 없을 때 인라인 정규식 패턴을 건너뛰는 것이었습니다. [작성 문서, 패치, 시도별 로그, 원본 레저](../../showcases/python-markdown/README.md)를 읽어 보세요. 한 대의 머신에서 한 번 실행한 결과이며, 패치는 업스트림 리뷰를 받지 않았습니다.
 
+## 쇼케이스: js-yaml, 15% 빨라짐
+
+두 번째 개선입니다. 언어도 지표의 종류도 다릅니다. Node 위의 [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0에서 GitHub Actions, Kubernetes, Helm, Compose, OpenAPI의 실제 파일 491개를 문서당 `load()` 한 번씩 측정했습니다. 코딩 에이전트가 약 한 시간 동안 12번 시도해 3번을 keep했습니다.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="12번의 시도에 걸친 js-yaml의 `load()` 시간: keep된 변경 3개가 단계적으로 낮춥니다. 홀드아웃 문서에서 한 번의 confirm이 -15.3%로 통과합니다" width="900" />
+</picture>
+</div>
+
+| 확인 항목 | 결과 |
+|---|---|
+| 홀드아웃 문서에서 `hca confirm` (같은 장르, 대부분 다른 파일) | `load()` 시간 **−15.3%** (항목별 중앙값, 최소 −13.3%) |
+| 원본 릴리스와 클린 클론에서 A/B, 새 프로세스 200개 | 전체 시간 **−15.3%** (95% 신뢰구간 −16.6% ~ −14.4%) |
+| 출력: js-yaml 자체 테스트 1,633개, ESM과 CJS 빌드 각각에서 비교 25,384건, fuzz 비교 11,250건 | 5.5.0과 **차이 0건** |
+
+개선은 파서에서 불필요한 일을 줄이는 작은 변경들입니다. 노드마다 할당을 줄이고, 첫 글자로 분기하고, 단순 스칼라에 빠른 경로를 둡니다. keep된 3번 중 2번은 단독으로는 keep 기준에 못 미치는 변경들을 묶은 것이며, 작성 문서에 이를 밝혀 두었고 confirm은 최종 상태를 대상으로 합니다. 지표는 대부분 작은 문서에서의 호출당 시간(다소 콜드 쪽)이며, 뜨거운 루프에서의 처리량이 아닙니다. 한 대의 머신에서 얻은 결과이고, 패치는 업스트림에 제출하지 않았습니다. [작성 문서, 패치, 레저, 하네스](../../showcases/js-yaml/README.md)를 읽어 보세요.
+
 ## 왜 심판이 필요한가?
 
 동일한 두 빌드를 대부분의 루프가 비교하는 방식으로 비교했습니다([Phase 0](../../spikes/phase0/RESULT.md)).
@@ -165,7 +184,7 @@ flowchart LR
 
 | 대상 | 지표 예시 | 상태 |
 |---|---|---|
-| 라이브러리 핫 패스 | 렌더링 / 파싱 시간 | ✅ 쇼케이스 완료 (Python-Markdown, −53.8%) |
+| 라이브러리 핫 패스 | 렌더링 / 파싱 시간 | ✅ 쇼케이스 완료 (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI와 빌드 시간 | 실제 경과 시간(초) | 🧪 보정 완료 ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | 웹 서버 지연 시간 | 라우트별 TTFB | 🧪 보정 완료 ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | 브라우저의 페이지 로드 | 페이지별 LCP | 🗺️ 쇼케이스 계획 중 |
@@ -254,6 +273,7 @@ skill의 레퍼런스에는 수개월에 걸친 실제 모델 파인튜닝 캠�
 ## 문서
 
 - [쇼케이스: Python-Markdown](../../showcases/python-markdown/README.md)
+- [쇼케이스: js-yaml](../../showcases/js-yaml/README.md)
 - [한계와 알려진 허점](../LIMITS.md)
 - [Phase 0 보정](../../spikes/phase0/RESULT.md)
 - [설계](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ skill의 레퍼런스에는 수개월에 걸친 실제 모델 파인튜닝 캠�
 
 ## 상태와 크레딧
 
-초기 연구 릴리스(0.2.0.dev): 핵심 루프와 쇼케이스 하나. HCA는 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)에서 출발했으며 그 쌍체(paired) 통계를 이어받았습니다. [autoresearch](https://github.com/karpathy/autoresearch) 방식 루프의 아이디어와 [Harness Learning](https://arxiv.org/abs/2609.35738) 논문의 평가 위생(evaluation hygiene)에서도 영감을 얻었습니다.
+초기 연구 릴리스(0.2.0.dev): 핵심 루프와 쇼케이스 두 개. HCA는 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)에서 출발했으며 그 쌍체(paired) 통계를 이어받았습니다. [autoresearch](https://github.com/karpathy/autoresearch) 방식 루프의 아이디어와 [Harness Learning](https://arxiv.org/abs/2609.35738) 논문의 평가 위생(evaluation hygiene)에서도 영감을 얻었습니다.
 
 ```bash
 python3 -m unittest discover -s tests      # 개발용

@@ -131,6 +131,25 @@ Le plus gros gain a consisté à sauter les motifs regex inline quand le texte n
 caractère que toute correspondance exige. Lisez le [compte rendu, le patch, le journal par essai et le ledger brut](../../showcases/python-markdown/README.md).
 Il s'agit d'une seule machine et d'une seule exécution, et le patch n'a pas été relu en amont.
 
+## Étude de cas : js-yaml, 15% plus rapide
+
+Une deuxième ascension, dans un autre langage et avec un autre type de métrique : [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 sur Node, en chronométrant `load()` une fois par document sur 491 vrais fichiers GitHub Actions, Kubernetes, Helm, Compose et OpenAPI. Un agent de code a fait 12 essais en environ une heure, et 3 ont été conservés.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="Temps de `load()` de js-yaml sur 12 essais : trois changements conservés le font baisser par paliers ; une confirmation sur des documents mis de côté passe à -15.3 pour cent" width="900" />
+</picture>
+</div>
+
+| Vérification | Résultat |
+|---|---|
+| `hca confirm` sur des documents mis de côté (mêmes genres, fichiers pour la plupart différents) | temps de `load()` **−15.3%** en médiane par item (au moins −13.3%) |
+| A/B dans un clone propre contre la version d'origine, 200 processus neufs | temps total **−15.3%** (IC à 95 % : −16.6% à −14.4%) |
+| Sortie : les 1 633 tests propres à js-yaml, 25 384 comparaisons pour chacun des builds ESM et CJS, 11 250 comparaisons de fuzz | **0 différence** avec 5.5.0 |
+
+Les gains viennent de petits changements qui évitent du travail dans l'analyseur : moins d'allocations par nœud, un aiguillage sur le premier caractère et un chemin rapide pour les scalaires simples. Deux des trois essais conservés regroupent des changements qui étaient chacun sous le seuil de conservation, ce que le compte rendu signale ; la confirmation couvre l'état final. La métrique est le temps par appel, plutôt à froid, sur des documents surtout petits, pas le débit dans une boucle chaude. Il s'agit d'une seule machine, et le patch n'a pas été proposé en amont. Lisez le [compte rendu, le patch, le ledger et le harnais](../../showcases/js-yaml/README.md).
+
 ## Pourquoi un arbitre ?
 
 Deux builds identiques, comparés comme la plupart des boucles les comparent ([Phase 0](../../spikes/phase0/RESULT.md)) :
@@ -181,7 +200,7 @@ pour qu'on puisse mesurer son bruit.
 
 | Cible | Exemple de métrique | Statut |
 |---|---|---|
-| Chemin critique d'une bibliothèque | temps de rendu / d'analyse | ✅ étude de cas (Python-Markdown, −53.8%) |
+| Chemin critique d'une bibliothèque | temps de rendu / d'analyse | ✅ étude de cas (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI et temps de build | secondes d'horloge | 🧪 calibré ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Latence d'un serveur web | délai jusqu'au premier octet par route | 🧪 calibré ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Chargement de page dans un navigateur | LCP par page | 🗺️ étude de cas prévue |
@@ -280,6 +299,7 @@ Windows natif fonctionne (Python 3.11+). Un timeout tue tout l'arbre de processu
 ## Documentation
 
 - [Étude de cas : Python-Markdown](../../showcases/python-markdown/README.md)
+- [Étude de cas : js-yaml](../../showcases/js-yaml/README.md)
 - [Limites et lacunes connues](../LIMITS.md)
 - [Calibration de la Phase 0](../../spikes/phase0/RESULT.md)
 - [Conception](../DESIGN-hca.md)
@@ -287,7 +307,7 @@ Windows natif fonctionne (Python 3.11+). Un timeout tue tout l'arbre de processu
 
 ## Statut et crédits
 
-Version de recherche précoce (0.2.0.dev) : la boucle centrale et une étude de cas. HCA est issu de
+Version de recherche précoce (0.2.0.dev) : la boucle centrale et deux études de cas. HCA est issu de
 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), dont il conserve les statistiques
 appariées. Il emprunte des idées aux boucles de type [autoresearch](https://github.com/karpathy/autoresearch)
 et à l'hygiène d'évaluation de l'article [Harness Learning](https://arxiv.org/abs/2609.35738).

@@ -124,6 +124,25 @@ useful_effect = "5%"           # 值得保留的最小提升
 
 收益最大的一項變更是：當文字中不可能出現某個字元，而每個比對都需要該字元時，就跳過相應的行內正規表達式模式。完整內容請見[文字說明、patch、逐次紀錄與原始帳本](../../showcases/python-markdown/README.md)。這只是一台機器、一次執行，patch 也尚未經過上游審查。
 
+## 展示案例：js-yaml 快 15%
+
+第二次爬山，換了語言，指標類型也不同：Node 上的 [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0，對 491 個真實的 GitHub Actions、Kubernetes、Helm、Compose 與 OpenAPI 檔案，每份文件計時一次 `load()`。一個程式開發 agent 在大約一小時內嘗試 12 次，保留 3 次。
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="js-yaml 的 `load()` 時間在 12 次嘗試中的變化：3 次保留的變更讓它逐級下降；在保留文件上的一次 confirm 以 -15.3% 通過" width="900" />
+</picture>
+</div>
+
+| 檢查項目 | 結果 |
+|---|---|
+| 在保留文件（held-out；體裁相同，檔案大多不同）上執行 `hca confirm` | `load()` 時間 **−15.3%**（逐項中位數，至少 −13.3%） |
+| 在乾淨的複製中與原始發行版做 A/B，200 個全新行程 | 總時間 **−15.3%**（95% 信賴區間 −16.6% 至 −14.4%） |
+| 輸出：js-yaml 自帶的 1,633 個測試，ESM 與 CJS 兩種建置各 25,384 次比較，11,250 次 fuzz 比較 | 與 5.5.0 **零差異** |
+
+收益來自解析器裡一些省掉多餘工作的小變更：每個節點更少的記憶體配置、依首字元分派，以及為簡單純量走的快速路徑。保留的 3 次嘗試中有 2 次打包了若干單獨都低於保留門檻的變更，文字說明裡已如實寫明，而 confirm 涵蓋的是最終狀態。指標是每次呼叫的耗時（偏冷啟動），對象主要是較小的文件，並非熱迴圈下的吞吐量。這只是一台機器，patch 也尚未提交給上游。完整內容請見[文字說明、patch、帳本與測試框架](../../showcases/js-yaml/README.md)。
+
 ## 為什麼需要裁判？
 
 兩個完全相同的建置，用大多數迴圈慣用的方式比較（[Phase 0](../../spikes/phase0/RESULT.md)）：
@@ -165,7 +184,7 @@ flowchart LR
 
 | 目標 | 範例指標 | 狀態 |
 |---|---|---|
-| 函式庫的熱點路徑 | 渲染 / 解析時間 | ✅ 已有展示案例（Python-Markdown，−53.8%） |
+| 函式庫的熱點路徑 | 渲染 / 解析時間 | ✅ 已有展示案例（Python-Markdown，−53.8%；js-yaml，−15.3%） |
 | CLI 與建置時間 | 實際經過秒數 | 🧪 已校準（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | Web 伺服器延遲 | 每個路由的首位元組時間 | 🧪 已校準（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | 瀏覽器中的頁面載入 | 每個頁面的 LCP | 🗺️ 規劃中的展示案例 |
@@ -254,6 +273,7 @@ skill 的參考資料沿用了一次持續數月的真實模型微調 campaign �
 ## 文件
 
 - [展示案例：Python-Markdown](../../showcases/python-markdown/README.md)
+- [展示案例：js-yaml](../../showcases/js-yaml/README.md)
 - [限制與已知缺口](../LIMITS.md)
 - [Phase 0 校準](../../spikes/phase0/RESULT.md)
 - [設計](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ skill 的參考資料沿用了一次持續數月的真實模型微調 campaign �
 
 ## 狀態與致謝
 
-早期研究版本（0.2.0.dev）：核心迴圈加一個展示案例。HCA 源自 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)，並保留了它的配對統計方法。它借鏡了 [autoresearch](https://github.com/karpathy/autoresearch) 式迴圈的想法，以及 [Harness Learning](https://arxiv.org/abs/2609.35738) 論文中的評估規範。
+早期研究版本（0.2.0.dev）：核心迴圈加兩個展示案例。HCA 源自 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)，並保留了它的配對統計方法。它借鏡了 [autoresearch](https://github.com/karpathy/autoresearch) 式迴圈的想法，以及 [Harness Learning](https://arxiv.org/abs/2609.35738) 論文中的評估規範。
 
 ```bash
 python3 -m unittest discover -s tests      # 開發

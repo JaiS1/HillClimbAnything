@@ -132,6 +132,25 @@ Der größte Gewinn kam daher, Inline-Regex-Muster zu überspringen, wenn der Te
 kann, das jeder Treffer braucht. Lies den [Bericht, den Patch, das Log pro Versuch und das rohe Ledger](../../showcases/python-markdown/README.md).
 Es ist eine Maschine und ein Lauf, und der Patch wurde upstream nicht begutachtet.
 
+## Fallstudie: js-yaml, 15% schneller
+
+Ein zweiter Durchlauf, in einer anderen Sprache und mit einer anderen Art von Metrik: [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 auf Node, gemessen wird `load()` einmal pro Dokument an 491 echten Dateien für GitHub Actions, Kubernetes, Helm, Compose und OpenAPI. Ein Coding-Agent machte in etwa einer Stunde 12 Versuche, 3 wurden behalten.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="`load()`-Zeit von js-yaml über 12 Versuche: drei behaltene Änderungen senken sie schrittweise; eine Bestätigung auf zurückgehaltenen Dokumenten besteht bei -15.3 Prozent" width="900" />
+</picture>
+</div>
+
+| Prüfung | Ergebnis |
+|---|---|
+| `hca confirm` auf zurückgehaltenen Dokumenten (gleiche Gattungen, überwiegend andere Dateien) | `load()`-Zeit **−15.3%** im Median pro Item (mindestens −13.3%) |
+| A/B-Vergleich in einem frischen Klon gegen das Original-Release, 200 frische Prozesse | Gesamtzeit **−15.3%** (95%-KI −16.6% bis −14.4%) |
+| Ausgabe: js-yamls eigene 1.633 Tests, 25.384 Vergleiche je für den ESM- und den CJS-Build, 11.250 Fuzz-Vergleiche | **0 Unterschiede** zu 5.5.0 |
+
+Die Gewinne sind kleine Änderungen im Parser, die Arbeit einsparen: weniger Allokationen pro Knoten, ein Dispatch nach dem ersten Zeichen und ein schneller Pfad für einfache Skalare. Zwei der drei behaltenen Versuche bündeln Änderungen, die einzeln jeweils unter der Behalte-Schwelle lagen; der Bericht legt das offen, und die Bestätigung deckt den Endstand ab. Die Metrik ist die Zeit pro Aufruf, eher kalt, an überwiegend kleinen Dokumenten, kein Durchsatz in einer heißen Schleife. Es ist eine Maschine, und der Patch wurde nicht upstream eingereicht. Lies den [Bericht, den Patch, das Ledger und das Harness](../../showcases/js-yaml/README.md).
+
 ## Warum ein Schiedsrichter?
 
 Zwei identische Builds, verglichen so, wie die meisten Loops vergleichen ([Phase 0](../../spikes/phase0/RESULT.md)):
@@ -182,7 +201,7 @@ Rauschen zu messen.
 
 | Ziel | Beispielmetrik | Status |
 |---|---|---|
-| Hot Path einer Bibliothek | Render- / Parse-Zeit | ✅ Fallstudie (Python-Markdown, −53.8%) |
+| Hot Path einer Bibliothek | Render- / Parse-Zeit | ✅ Fallstudie (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI und Build-Zeit | Wanduhr-Sekunden | 🧪 kalibriert ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Webserver-Latenz | Time to First Byte pro Route | 🧪 kalibriert ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Seitenladezeit im Browser | LCP pro Seite | 🗺️ Fallstudie geplant |
@@ -281,6 +300,7 @@ Natives Windows funktioniert (Python 3.11+). Ein Timeout beendet den gesamten Pr
 ## Dokumentation
 
 - [Fallstudie: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Fallstudie: js-yaml](../../showcases/js-yaml/README.md)
 - [Grenzen und bekannte Lücken](../LIMITS.md)
 - [Phase-0-Kalibrierung](../../spikes/phase0/RESULT.md)
 - [Design](../DESIGN-hca.md)
@@ -288,7 +308,7 @@ Natives Windows funktioniert (Python 3.11+). Ein Timeout beendet den gesamten Pr
 
 ## Status und Danksagung
 
-Früher Forschungs-Release (0.2.0.dev): die Kernschleife und eine Fallstudie. HCA ging aus
+Früher Forschungs-Release (0.2.0.dev): die Kernschleife und zwei Fallstudien. HCA ging aus
 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1) hervor, dessen gepaarte Statistik
 es beibehält. Es übernimmt Ideen aus Loops im Stil von [autoresearch](https://github.com/karpathy/autoresearch)
 und aus der Evaluationshygiene des Papers [Harness Learning](https://arxiv.org/abs/2609.35738).

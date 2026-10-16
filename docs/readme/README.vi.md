@@ -124,6 +124,25 @@ Một agent lập trình Sonnet đã leo [Python-Markdown](https://github.com/Py
 
 Cải thiện lớn nhất đến từ việc bỏ qua các pattern regex inline khi văn bản không thể chứa một ký tự mà mọi kết quả khớp đều cần. Xem [bài viết, patch, log từng lần thử và ledger thô](../../showcases/python-markdown/README.md). Đây là một máy và một lần chạy, và patch chưa được upstream review.
 
+## Showcase: js-yaml nhanh hơn 15%
+
+Lần leo thứ hai, ở một ngôn ngữ khác và với một loại chỉ số khác: [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 trên Node, đo `load()` một lần cho mỗi tài liệu trên 491 tệp thật của GitHub Actions, Kubernetes, Helm, Compose và OpenAPI. Một agent lập trình đã thử 12 lần trong khoảng một giờ, 3 lần được giữ.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="Thời gian `load()` của js-yaml qua 12 lần thử: ba thay đổi được giữ kéo nó xuống từng bậc; một lần confirm trên tài liệu held-out đạt -15.3 phần trăm" width="900" />
+</picture>
+</div>
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `hca confirm` trên tài liệu held-out (cùng thể loại, phần lớn là tệp khác) | thời gian `load()` **−15.3%** (trung vị theo từng mục, tối thiểu −13.3%) |
+| A/B trong bản clone sạch so với bản phát hành gốc, 200 tiến trình mới | tổng thời gian **−15.3%** (KTC 95% −16.6% đến −14.4%) |
+| Đầu ra: 1,633 test riêng của js-yaml, 25,384 phép so sánh cho mỗi bản build ESM và CJS, 11,250 phép so sánh fuzz | **0 khác biệt** so với 5.5.0 |
+
+Các cải thiện là những thay đổi nhỏ giúp tránh việc thừa trong parser: ít cấp phát hơn cho mỗi node, rẽ nhánh theo ký tự đầu tiên và một đường nhanh cho scalar thông thường. Hai trong ba lần thử được giữ gộp những thay đổi mà riêng từng cái đều dưới ngưỡng giữ; bài viết có nói rõ điều này, và confirm bao trùm trạng thái cuối. Chỉ số là thời gian mỗi lần gọi, thiên về chạy nguội, trên các tài liệu phần lớn nhỏ, không phải thông lượng trong vòng lặp nóng. Đây là một máy, và patch chưa được gửi lên upstream. Xem [bài viết, patch, ledger và harness](../../showcases/js-yaml/README.md).
+
 ## Vì sao cần trọng tài?
 
 Hai bản build giống hệt nhau, được so sánh theo cách hầu hết các vòng lặp vẫn làm ([Phase 0](../../spikes/phase0/RESULT.md)):
@@ -165,7 +184,7 @@ Bất cứ thứ gì một lệnh có thể biến thành con số, miễn là c
 
 | Mục tiêu | Chỉ số ví dụ | Trạng thái |
 |---|---|---|
-| Hot path của thư viện | thời gian render / parse | ✅ đã có showcase (Python-Markdown, −53.8%) |
+| Hot path của thư viện | thời gian render / parse | ✅ đã có showcase (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI và thời gian build | giây theo đồng hồ treo tường | 🧪 đã hiệu chuẩn ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Độ trễ web server | time to first byte theo từng route | 🧪 đã hiệu chuẩn ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Tải trang trong trình duyệt | LCP theo từng trang | 🗺️ showcase dự kiến |
@@ -254,6 +273,7 @@ Windows gốc hoạt động (Python 3.11+). Khi hết thời gian, toàn bộ c
 ## Tài liệu
 
 - [Showcase: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Showcase: js-yaml](../../showcases/js-yaml/README.md)
 - [Giới hạn và các lỗ hổng đã biết](../LIMITS.md)
 - [Hiệu chuẩn Phase 0](../../spikes/phase0/RESULT.md)
 - [Thiết kế](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ Windows gốc hoạt động (Python 3.11+). Khi hết thời gian, toàn bộ c
 
 ## Trạng thái và ghi công
 
-Bản phát hành nghiên cứu sớm (0.2.0.dev): vòng lặp lõi và một showcase. HCA phát triển từ [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), dự án mà nó kế thừa phần thống kê theo cặp. HCA mượn ý tưởng từ các vòng lặp kiểu [autoresearch](https://github.com/karpathy/autoresearch) và từ cách giữ vệ sinh đánh giá trong bài báo [Harness Learning](https://arxiv.org/abs/2609.35738).
+Bản phát hành nghiên cứu sớm (0.2.0.dev): vòng lặp lõi và hai showcase. HCA phát triển từ [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), dự án mà nó kế thừa phần thống kê theo cặp. HCA mượn ý tưởng từ các vòng lặp kiểu [autoresearch](https://github.com/karpathy/autoresearch) và từ cách giữ vệ sinh đánh giá trong bài báo [Harness Learning](https://arxiv.org/abs/2609.35738).
 
 ```bash
 python3 -m unittest discover -s tests      # phát triển

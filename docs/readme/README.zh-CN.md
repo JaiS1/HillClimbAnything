@@ -124,6 +124,25 @@ useful_effect = "5%"           # 值得保留的最小提升
 
 收益最大的一项改动是：当文本中不可能出现某个字符，而每个匹配都需要该字符时，就跳过相应的行内正则模式。完整内容见[文字说明、补丁、逐次记录和原始账本](../../showcases/python-markdown/README.md)。这只是一台机器、一次运行，补丁也没有经过上游评审。
 
+## 展示案例：js-yaml 快 15%
+
+第二次爬山，换了语言，指标类型也不同：Node 上的 [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0，对 491 个真实的 GitHub Actions、Kubernetes、Helm、Compose 和 OpenAPI 文件，每个文档计时一次 `load()`。一个编码 agent 在大约一小时内尝试 12 次，保留 3 次。
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="js-yaml 的 `load()` 时间在 12 次尝试中的变化：3 次保留的改动让它逐级下降；在留出文档上的一次 confirm 以 -15.3% 通过" width="900" />
+</picture>
+</div>
+
+| 检查项 | 结果 |
+|---|---|
+| 在留出文档（体裁相同，文件大多不同）上运行 `hca confirm` | `load()` 时间 **−15.3%**（逐项中位数，至少 −13.3%） |
+| 在干净克隆中与原始发布版做 A/B，200 个全新进程 | 总时间 **−15.3%**（95% 置信区间 −16.6% 至 −14.4%） |
+| 输出：js-yaml 自带的 1,633 个测试，ESM 和 CJS 两种构建各 25,384 次比较，11,250 次 fuzz 比较 | 与 5.5.0 **零差异** |
+
+收益来自解析器里一些省掉多余工作的小改动：每个节点更少的内存分配、按首字符分派，以及为简单标量走的快速路径。保留的 3 次尝试中有 2 次打包了若干单独都低于保留门槛的改动，文字说明里已如实写明，而 confirm 覆盖的是最终状态。指标是每次调用的耗时（偏冷启动），对象主要是较小的文档，并非热循环下的吞吐量。这只是一台机器，补丁也没有提交给上游。完整内容见[文字说明、补丁、账本和测试框架](../../showcases/js-yaml/README.md)。
+
 ## 为什么需要裁判？
 
 两个完全相同的构建，用大多数循环常用的方式比较（[Phase 0](../../spikes/phase0/RESULT.md)）：
@@ -165,7 +184,7 @@ flowchart LR
 
 | 目标 | 示例指标 | 状态 |
 |---|---|---|
-| 库的热点路径 | 渲染 / 解析时间 | ✅ 已有展示案例（Python-Markdown，−53.8%） |
+| 库的热点路径 | 渲染 / 解析时间 | ✅ 已有展示案例（Python-Markdown，−53.8%；js-yaml，−15.3%） |
 | CLI 与构建时间 | 墙钟秒数 | 🧪 已校准（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | Web 服务器延迟 | 每个路由的首字节时间 | 🧪 已校准（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | 浏览器中的页面加载 | 每个页面的 LCP | 🗺️ 计划中的展示案例 |
@@ -254,6 +273,7 @@ skill 的参考资料沿用了一次持续数月的真实模型微调 campaign �
 ## 文档
 
 - [展示案例：Python-Markdown](../../showcases/python-markdown/README.md)
+- [展示案例：js-yaml](../../showcases/js-yaml/README.md)
 - [局限与已知缺口](../LIMITS.md)
 - [Phase 0 校准](../../spikes/phase0/RESULT.md)
 - [设计](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ skill 的参考资料沿用了一次持续数月的真实模型微调 campaign �
 
 ## 状态与致谢
 
-早期研究版本（0.2.0.dev）：核心循环加一个展示案例。HCA 源自 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)，并保留了它的配对统计方法。它借鉴了 [autoresearch](https://github.com/karpathy/autoresearch) 式循环的思路，以及 [Harness Learning](https://arxiv.org/abs/2609.35738) 论文中的评估规范。
+早期研究版本（0.2.0.dev）：核心循环加两个展示案例。HCA 源自 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1)，并保留了它的配对统计方法。它借鉴了 [autoresearch](https://github.com/karpathy/autoresearch) 式循环的思路，以及 [Harness Learning](https://arxiv.org/abs/2609.35738) 论文中的评估规范。
 
 ```bash
 python3 -m unittest discover -s tests      # 开发

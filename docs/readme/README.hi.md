@@ -124,6 +124,25 @@ useful_effect = "5%"           # रखने लायक़ सबसे छ�
 
 सबसे बड़ी जीत यह थी कि जब text में वह character हो ही नहीं सकता जो हर match के लिए ज़रूरी है, तब inline regex patterns को छोड़ दिया जाए। [write-up, patch, हर try का log और raw ledger](../../showcases/python-markdown/README.md) पढ़ें। यह एक मशीन और एक run है, और patch की upstream में review नहीं हुई है।
 
+## Showcase: js-yaml, 15% तेज़
+
+दूसरी climb, दूसरी भाषा और अलग तरह के metric पर: Node पर [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0, GitHub Actions, Kubernetes, Helm, Compose और OpenAPI की 491 असली files पर हर document के लिए `load()` एक बार नापा गया। एक coding agent ने लगभग एक घंटे में 12 tries कीं, 3 keep हुईं।
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="12 tries में js-yaml का `load()` time: तीन kept बदलाव उसे सीढ़ी-दर-सीढ़ी घटाते हैं; held-out documents पर एक confirm -15.3 प्रतिशत पर पास होता है" width="900" />
+</picture>
+</div>
+
+| जाँच | नतीजा |
+|---|---|
+| held-out documents पर `hca confirm` (वही genres, ज़्यादातर अलग files) | `load()` time **−15.3%** (हर item का median; कम से कम −13.3%) |
+| मूल release के मुक़ाबले clean clone में A/B, 200 नए processes | कुल समय **−15.3%** (95% CI −16.6% से −14.4%) |
+| Output: js-yaml के अपने 1,633 tests, ESM और CJS दोनों builds में से हर एक पर 25,384 तुलनाएँ, 11,250 fuzz तुलनाएँ | 5.5.0 से **0 अंतर** |
+
+फ़ायदा parser में काम बचाने वाले छोटे बदलावों से आता है: हर node पर कम allocations, पहले character पर dispatch, और सादे scalars के लिए तेज़ रास्ता। तीन kept tries में से दो ऐसे बदलाव मिलाती हैं जो अकेले keep की सीमा से नीचे थे; write-up यह बताता है, और confirm अंतिम स्थिति को कवर करता है। Metric हर call का समय है, कुछ हद तक cold, ज़्यादातर छोटे documents पर; यह hot loop का throughput नहीं है। यह एक मशीन है, और patch upstream को भेजा नहीं गया है। [write-up, patch, ledger और harness](../../showcases/js-yaml/README.md) पढ़ें।
+
 ## रेफ़री क्यों?
 
 दो एक जैसे builds, जिन्हें उसी तरह compare किया गया जैसे ज़्यादातर loops करते हैं ([Phase 0](../../spikes/phase0/RESULT.md)):
@@ -165,7 +184,7 @@ flowchart LR
 
 | Target | उदाहरण metric | Status |
 |---|---|---|
-| Library hot path | render / parse time | ✅ showcase हो चुका है (Python-Markdown, −53.8%) |
+| Library hot path | render / parse time | ✅ showcase हो चुका है (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI और build time | wall seconds | 🧪 calibrated ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Web server latency | हर route का time to first byte | 🧪 calibrated ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Browser में page load | हर page का LCP | 🗺️ planned showcase |
@@ -254,6 +273,7 @@ Native Windows काम करता है (Python 3.11+)। Timeout पर Jo
 ## Documentation
 
 - [Showcase: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Showcase: js-yaml](../../showcases/js-yaml/README.md)
 - [Limits और ज्ञात कमियाँ](../LIMITS.md)
 - [Phase 0 calibration](../../spikes/phase0/RESULT.md)
 - [Design](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ Native Windows काम करता है (Python 3.11+)। Timeout पर Jo
 
 ## Status और credits
 
-शुरुआती research release (0.2.0.dev): core loop और एक showcase। HCA [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1) से निकला है, जिसकी paired statistics यह रखता है। यह [autoresearch](https://github.com/karpathy/autoresearch)-style loops से और [Harness Learning](https://arxiv.org/abs/2609.35738) paper की evaluation hygiene से विचार उधार लेता है।
+शुरुआती research release (0.2.0.dev): core loop और दो showcases। HCA [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1) से निकला है, जिसकी paired statistics यह रखता है। यह [autoresearch](https://github.com/karpathy/autoresearch)-style loops से और [Harness Learning](https://arxiv.org/abs/2609.35738) paper की evaluation hygiene से विचार उधार लेता है।
 
 ```bash
 python3 -m unittest discover -s tests      # development

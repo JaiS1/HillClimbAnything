@@ -124,6 +124,25 @@ Sebuah coding agent Sonnet mendaki [Python-Markdown](https://github.com/Python-M
 
 Kemenangan terbesar datang dari melewati pola regex inline ketika teks tidak mungkin memuat karakter yang dibutuhkan setiap kecocokan. Baca [tulisan lengkap, patch, log per percobaan, dan ledger mentah](../../showcases/python-markdown/README.md). Ini satu mesin dan satu kali jalan, dan patch-nya belum ditinjau di upstream.
 
+## Showcase: js-yaml, 15% lebih cepat
+
+Pendakian kedua, dalam bahasa lain dan dengan jenis metrik yang berbeda: [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 di Node, mengukur `load()` sekali per dokumen pada 491 file nyata GitHub Actions, Kubernetes, Helm, Compose, dan OpenAPI. Sebuah coding agent melakukan 12 percobaan dalam sekitar satu jam, dan 3 di-keep.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="Waktu `load()` js-yaml selama 12 percobaan: tiga perubahan yang di-keep menurunkannya bertahap; satu confirm pada dokumen held-out lolos di -15.3 persen" width="900" />
+</picture>
+</div>
+
+| Pemeriksaan | Hasil |
+|---|---|
+| `hca confirm` pada dokumen held-out (genre yang sama, sebagian besar file berbeda) | waktu `load()` **−15.3%** median per item (minimal −13.3%) |
+| A/B di clone bersih terhadap rilis asli, 200 proses baru | total waktu **−15.3%** (CI 95% −16.6% sampai −14.4%) |
+| Output: 1,633 test milik js-yaml sendiri, 25,384 perbandingan untuk masing-masing build ESM dan CJS, 11,250 perbandingan fuzz | **0 perbedaan** dari 5.5.0 |
+
+Peningkatannya berasal dari perubahan kecil yang menghindari kerja berlebih di parser: lebih sedikit alokasi per node, dispatch berdasarkan karakter pertama, dan jalur cepat untuk scalar biasa. Dua dari tiga percobaan yang di-keep menggabungkan perubahan yang masing-masing berada di bawah batas keep, dan tulisan lengkapnya menyatakan hal ini; confirm mencakup kondisi akhir. Metriknya adalah waktu per panggilan, cenderung dingin, pada dokumen yang sebagian besar kecil, bukan throughput di loop panas. Ini satu mesin, dan patch belum diajukan ke upstream. Baca [tulisan lengkap, patch, ledger, dan harness](../../showcases/js-yaml/README.md).
+
 ## Mengapa perlu wasit?
 
 Dua build identik, dibandingkan dengan cara yang dipakai kebanyakan loop ([Phase 0](../../spikes/phase0/RESULT.md)):
@@ -165,7 +184,7 @@ Apa pun yang dapat diubah oleh sebuah perintah menjadi angka, selama angkanya cu
 
 | Target | Contoh metrik | Status |
 |---|---|---|
-| Hot path library | waktu render / parse | ✅ sudah ada showcase (Python-Markdown, −53.8%) |
+| Hot path library | waktu render / parse | ✅ sudah ada showcase (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | Waktu CLI dan build | detik wall-clock | 🧪 terkalibrasi ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Latensi web server | time to first byte per route | 🧪 terkalibrasi ([Phase 0](../../spikes/phase0/RESULT.md)) |
 | Pemuatan halaman di browser | LCP per halaman | 🗺️ showcase direncanakan |
@@ -254,6 +273,7 @@ Windows native berfungsi (Python 3.11+). Timeout mematikan seluruh pohon proses 
 ## Dokumentasi
 
 - [Showcase: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Showcase: js-yaml](../../showcases/js-yaml/README.md)
 - [Batasan dan celah yang diketahui](../LIMITS.md)
 - [Kalibrasi Phase 0](../../spikes/phase0/RESULT.md)
 - [Desain](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ Windows native berfungsi (Python 3.11+). Timeout mematikan seluruh pohon proses 
 
 ## Status dan kredit
 
-Rilis riset awal (0.2.0.dev): loop inti dan satu showcase. HCA tumbuh dari [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), yang statistik berpasangannya dipertahankan. HCA meminjam gagasan dari loop bergaya [autoresearch](https://github.com/karpathy/autoresearch) dan dari kebersihan evaluasi dalam makalah [Harness Learning](https://arxiv.org/abs/2609.35738).
+Rilis riset awal (0.2.0.dev): loop inti dan dua showcase. HCA tumbuh dari [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), yang statistik berpasangannya dipertahankan. HCA meminjam gagasan dari loop bergaya [autoresearch](https://github.com/karpathy/autoresearch) dan dari kebersihan evaluasi dalam makalah [Harness Learning](https://arxiv.org/abs/2609.35738).
 
 ```bash
 python3 -m unittest discover -s tests      # pengembangan

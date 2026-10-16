@@ -124,6 +124,25 @@ Sonnet のコーディングエージェントが、HCA を審判として [Pyth
 
 最大の改善は、すべてのマッチに必要な文字がテキストに含まれ得ない場合に、インラインの正規表現パターンをスキップしたことです。[解説、パッチ、試行ごとのログ、生の台帳](../../showcases/python-markdown/README.md)をご覧ください。これは 1 台のマシンでの 1 回の実行であり、パッチは上流のレビューを受けていません。
 
+## ショーケース：js-yaml が 15% 高速に
+
+2 つ目の山登りです。言語も指標の種類も別で、Node 上の [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 について、GitHub Actions、Kubernetes、Helm、Compose、OpenAPI の実在ファイル 491 件を、1 文書につき `load()` を 1 回ずつ計測しました。コーディングエージェントが約 1 時間で 12 回試行し、3 回を keep しています。
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="12 回の試行における js-yaml の `load()` 時間：keep された 3 つの変更によって段階的に下がる。ホールドアウト文書での 1 回の confirm は -15.3% で通過" width="900" />
+</picture>
+</div>
+
+| チェック | 結果 |
+|---|---|
+| ホールドアウト文書での `hca confirm`（同じジャンル、ファイルはほぼ別） | `load()` 時間 **−15.3%**（項目ごとの中央値。少なくとも −13.3%） |
+| クリーンなクローンでの元リリースとの A/B、新規プロセス 200 回 | 合計時間 **−15.3%**（95% 信頼区間 −16.6% から −14.4%） |
+| 出力：js-yaml 自身の 1,633 テスト、ESM と CJS の各ビルドで 25,384 件の比較、fuzz 11,250 件の比較 | 5.5.0 との差は **0 件** |
+
+改善は、パーサーでの無駄な処理を省く小さな変更によるものです。ノードごとの割り当てを減らし、先頭文字で分岐し、単純なスカラーに高速経路を設けています。keep された 3 回のうち 2 回は、単独では keep の下限に届かない変更をまとめたもので、解説にその旨を明記しており、confirm は最終状態を対象にしています。指標は、小さな文書が中心の 1 回呼び出しあたりの時間（どちらかといえばコールド寄り）で、ホットなループでのスループットではありません。1 台のマシンでの結果で、パッチは上流に提出していません。[解説、パッチ、台帳、ハーネス](../../showcases/js-yaml/README.md)をご覧ください。
+
 ## なぜ審判が必要か
 
 同一の 2 つのビルドを、多くのループと同じ方法で比較した結果です（[Phase 0](../../spikes/phase0/RESULT.md)）。
@@ -165,7 +184,7 @@ flowchart LR
 
 | 対象 | 指標の例 | 状態 |
 |---|---|---|
-| ライブラリのホットパス | レンダリング / パース時間 | ✅ ショーケースあり（Python-Markdown、−53.8%） |
+| ライブラリのホットパス | レンダリング / パース時間 | ✅ ショーケースあり（Python-Markdown、−53.8%；js-yaml、−15.3%） |
 | CLI とビルド時間 | 実時間（秒） | 🧪 キャリブレーション済み（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | Web サーバーのレイテンシ | ルートごとの TTFB | 🧪 キャリブレーション済み（[Phase 0](../../spikes/phase0/RESULT.md)） |
 | ブラウザでのページ読み込み | ページごとの LCP | 🗺️ ショーケース予定 |
@@ -254,6 +273,7 @@ skill のリファレンスには、数か月にわたる実際のモデルフ�
 ## ドキュメント
 
 - [ショーケース：Python-Markdown](../../showcases/python-markdown/README.md)
+- [ショーケース：js-yaml](../../showcases/js-yaml/README.md)
 - [制限事項と既知の穴](../LIMITS.md)
 - [Phase 0 キャリブレーション](../../spikes/phase0/RESULT.md)
 - [設計](../DESIGN-hca.md)
@@ -261,7 +281,7 @@ skill のリファレンスには、数か月にわたる実際のモデルフ�
 
 ## ステータスとクレジット
 
-初期の研究リリース（0.2.0.dev）：コアのループと 1 つのショーケース。HCA は [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1) から生まれ、そのペア統計を引き継いでいます。[autoresearch](https://github.com/karpathy/autoresearch) 型のループの発想と、[Harness Learning](https://arxiv.org/abs/2609.35738) 論文の評価の衛生管理からも着想を得ています。
+初期の研究リリース（0.2.0.dev）：コアのループと 2 つのショーケース。HCA は [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1) から生まれ、そのペア統計を引き継いでいます。[autoresearch](https://github.com/karpathy/autoresearch) 型のループの発想と、[Harness Learning](https://arxiv.org/abs/2609.35738) 論文の評価の衛生管理からも着想を得ています。
 
 ```bash
 python3 -m unittest discover -s tests      # 開発用

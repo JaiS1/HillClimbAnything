@@ -130,6 +130,25 @@ O maior ganho veio de pular os padrões regex inline quando o texto não pode co
 toda correspondência precisa. Leia o [relato, o patch, o log por tentativa e o ledger bruto](../../showcases/python-markdown/README.md).
 É uma única máquina e uma única execução, e o patch não foi revisado pelo projeto original.
 
+## Estudo de caso: js-yaml, 15% mais rápido
+
+Uma segunda escalada, em outra linguagem e com outro tipo de métrica: o [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 em Node, cronometrando `load()` uma vez por documento em 491 arquivos reais de GitHub Actions, Kubernetes, Helm, Compose e OpenAPI. Um agente de programação fez 12 tentativas em cerca de uma hora, e 3 foram mantidas.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="Tempo de `load()` do js-yaml em 12 tentativas: três mudanças mantidas o reduzem aos poucos; uma confirmação em documentos reservados passa em -15.3 por cento" width="900" />
+</picture>
+</div>
+
+| Verificação | Resultado |
+|---|---|
+| `hca confirm` em documentos reservados (mesmos gêneros, em sua maioria arquivos diferentes) | tempo de `load()` **−15.3%** de mediana por item (no mínimo −13.3%) |
+| A/B em um clone limpo contra a versão original, 200 processos novos | tempo total **−15.3%** (IC de 95%: −16.6% a −14.4%) |
+| Saída: os 1.633 testes do próprio js-yaml, 25.384 comparações em cada um dos builds ESM e CJS, 11.250 comparações de fuzz | **0 diferenças** em relação ao 5.5.0 |
+
+Os ganhos são pequenas mudanças que evitam trabalho no parser: menos alocações por nó, um despacho pelo primeiro caractere e um caminho rápido para escalares simples. Duas das três tentativas mantidas juntam mudanças que, sozinhas, ficavam abaixo do piso de manutenção, o que o relato declara; a confirmação cobre o estado final. A métrica é o tempo por chamada, mais para frio, em documentos na maioria pequenos, não a vazão em um loop quente. É uma única máquina, e o patch não foi enviado ao projeto original. Leia o [relato, o patch, o ledger e o harness](../../showcases/js-yaml/README.md).
+
 ## Por que um árbitro?
 
 Dois builds idênticos, comparados do jeito que a maioria dos loops compara ([Fase 0](../../spikes/phase0/RESULT.md)):
@@ -179,7 +198,7 @@ bastante para medir seu ruído.
 
 | Alvo | Métrica de exemplo | Situação |
 |---|---|---|
-| Caminho crítico de uma biblioteca | tempo de renderização / parsing | ✅ estudo de caso (Python-Markdown, −53.8%) |
+| Caminho crítico de uma biblioteca | tempo de renderização / parsing | ✅ estudo de caso (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI e tempo de build | segundos de relógio | 🧪 calibrado ([Fase 0](../../spikes/phase0/RESULT.md)) |
 | Latência de servidor web | tempo até o primeiro byte por rota | 🧪 calibrado ([Fase 0](../../spikes/phase0/RESULT.md)) |
 | Carregamento de página em um navegador | LCP por página | 🗺️ estudo de caso planejado |
@@ -278,6 +297,7 @@ O Windows nativo funciona (Python 3.11+). Um timeout encerra toda a árvore de p
 ## Documentação
 
 - [Estudo de caso: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Estudo de caso: js-yaml](../../showcases/js-yaml/README.md)
 - [Limites e brechas conhecidas](../LIMITS.md)
 - [Calibração da Fase 0](../../spikes/phase0/RESULT.md)
 - [Design](../DESIGN-hca.md)
@@ -285,7 +305,7 @@ O Windows nativo funciona (Python 3.11+). Um timeout encerra toda a árvore de p
 
 ## Status e créditos
 
-Versão de pesquisa inicial (0.2.0.dev): o loop principal e um estudo de caso. O HCA nasceu do
+Versão de pesquisa inicial (0.2.0.dev): o loop principal e dois estudos de caso. O HCA nasceu do
 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), cuja estatística pareada ele
 mantém. Toma emprestadas ideias de loops no estilo [autoresearch](https://github.com/karpathy/autoresearch)
 e da higiene de avaliação do paper [Harness Learning](https://arxiv.org/abs/2609.35738).

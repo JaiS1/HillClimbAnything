@@ -130,6 +130,25 @@ La mayor mejora fue omitir los patrones regex en línea cuando el texto no puede
 necesita toda coincidencia. Lee el [informe, el parche, el registro por intento y el ledger en bruto](../../showcases/python-markdown/README.md).
 Es una sola máquina y una sola ejecución, y el parche no ha sido revisado en el proyecto original.
 
+## Caso de estudio: js-yaml, un 15% más rápido
+
+Una segunda escalada, en otro lenguaje y con otro tipo de métrica: [js-yaml](https://github.com/nodeca/js-yaml) 5.5.0 sobre Node, midiendo `load()` una vez por documento en 491 archivos reales de GitHub Actions, Kubernetes, Helm, Compose y OpenAPI. Un agente de programación hizo 12 intentos en aproximadamente una hora y se conservaron 3.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/climb-yaml-dark.svg" />
+  <img src="../assets/climb-yaml-light.svg" alt="Tiempo de `load()` de js-yaml en 12 intentos: tres cambios conservados lo bajan por escalones; una confirmación con documentos reservados pasa con -15.3 por ciento" width="900" />
+</picture>
+</div>
+
+| Comprobación | Resultado |
+|---|---|
+| `hca confirm` con documentos reservados (los mismos géneros, en su mayoría archivos distintos) | tiempo de `load()` **−15.3%** de mediana por ítem (al menos −13.3%) |
+| A/B en un clon limpio contra la versión original, 200 procesos nuevos | tiempo total **−15.3%** (IC del 95%: −16.6% a −14.4%) |
+| Salida: las 1633 pruebas propias de js-yaml, 25 384 comparaciones en cada una de las compilaciones ESM y CJS y 11 250 comparaciones de fuzz | **0 diferencias** con 5.5.0 |
+
+Las mejoras son pequeños cambios que evitan trabajo en el parser: menos asignaciones por nodo, un despacho por el primer carácter y una vía rápida para escalares simples. Dos de los tres intentos conservados agrupan cambios que por separado quedaban por debajo del umbral de conservación, lo que el informe declara; la confirmación cubre el estado final. La métrica es el tiempo por llamada, más bien en frío, sobre documentos mayormente pequeños, no el rendimiento en un bucle caliente. Es una sola máquina y el parche no se ha enviado al proyecto original. Lee el [informe, el parche, el ledger y el arnés](../../showcases/js-yaml/README.md).
+
 ## ¿Por qué un árbitro?
 
 Dos compilaciones idénticas, comparadas como las comparan la mayoría de los bucles ([Fase 0](../../spikes/phase0/RESULT.md)):
@@ -180,7 +199,7 @@ repetible como para medir su ruido.
 
 | Objetivo | Métrica de ejemplo | Estado |
 |---|---|---|
-| Ruta crítica de una librería | tiempo de render / parseo | ✅ caso de estudio (Python-Markdown, −53.8%) |
+| Ruta crítica de una librería | tiempo de render / parseo | ✅ caso de estudio (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI y tiempo de compilación | segundos de reloj | 🧪 calibrado ([Fase 0](../../spikes/phase0/RESULT.md)) |
 | Latencia de un servidor web | tiempo hasta el primer byte por ruta | 🧪 calibrado ([Fase 0](../../spikes/phase0/RESULT.md)) |
 | Carga de página en un navegador | LCP por página | 🗺️ caso de estudio planificado |
@@ -279,6 +298,7 @@ Windows nativo funciona (Python 3.11+). Un timeout mata todo el árbol de proces
 ## Documentación
 
 - [Caso de estudio: Python-Markdown](../../showcases/python-markdown/README.md)
+- [Caso de estudio: js-yaml](../../showcases/js-yaml/README.md)
 - [Límites y brechas conocidas](../LIMITS.md)
 - [Calibración de la Fase 0](../../spikes/phase0/RESULT.md)
 - [Diseño](../DESIGN-hca.md)
@@ -286,7 +306,7 @@ Windows nativo funciona (Python 3.11+). Un timeout mata todo el árbol de proces
 
 ## Estado y créditos
 
-Versión de investigación temprana (0.2.0.dev): el bucle principal y un caso de estudio. HCA surgió de
+Versión de investigación temprana (0.2.0.dev): el bucle principal y dos casos de estudio. HCA surgió de
 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), cuyas estadísticas pareadas
 conserva. Toma ideas de los bucles al estilo [autoresearch](https://github.com/karpathy/autoresearch)
 y de la higiene de evaluación del paper [Harness Learning](https://arxiv.org/abs/2609.35738).
