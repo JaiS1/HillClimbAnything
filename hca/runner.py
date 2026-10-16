@@ -80,7 +80,7 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
     out_dir.mkdir(parents=True, exist_ok=True)
     stdout_path, stderr_path = out_dir / f"{name}.stdout", out_dir / f"{name}.stderr"
     env, dropped = build_env(deny, env_extra, base_env)
-    start = time.monotonic()
+    start = time.perf_counter()
     timed_out = orphans = False
     tree = None
     returncode = None
@@ -107,7 +107,7 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
                 watcher.start()
                 returncode = proc.wait()
                 finished = True
-                seconds = time.monotonic() - start
+                seconds = time.perf_counter() - start
                 done.set()
                 timer.cancel()
                 timed_out = expired.is_set()
@@ -126,7 +126,7 @@ def run(argv, cwd, out_dir, name, timeout, env_extra=None, deny=(), base_env=Non
             if tree is not None:
                 tree.close()
     if proc is None:
-        seconds = time.monotonic() - start
+        seconds = time.perf_counter() - start
     return RunResult(argv, returncode, timed_out, seconds, stdout_path, stderr_path,
                      read_tail(stderr_path, TAIL_BYTES), dropped, bool(orphans))
 
