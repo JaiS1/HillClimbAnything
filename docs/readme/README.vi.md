@@ -1,4 +1,4 @@
-Translated from README.md at commit b9bad05. The English README is authoritative for numbers.
+Translated from README.md at commit 59b1150. The English README is authoritative for numbers.
 
 <div align="center">
 
@@ -12,7 +12,7 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,12 +88,15 @@ cùng tôi viết hca.toml, leo bằng `hca try`, và chỉ báo cáo những g�
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # kết quả đầu tiên trong 2 phút: B có thật sự tốt hơn A không? không cần git, không cần hca.toml
 hca quick -- <cmd>     # 2 phút, không cần thiết lập: con số này nhiễu cỡ nào, ta phát hiện được mức cải thiện nào?
 hca init               # đóng băng evaluator, tạo branch, đo mức nhiễu baseline
 hca try -m "why"       # đo thay đổi của bạn so với lần keep gần nhất → keep (commit) hoặc revert
 hca confirm            # đo lại tổng mức cải thiện so với bản gốc, trên dữ liệu held-out
 hca report             # mọi lần thử, kết luận và bằng chứng của nó
 ```
+
+`hca compare` không cần repo lẫn config: nó chạy hai lệnh trong các block A/B được xáo ngẫu nhiên và báo mức chênh lệch kèm khoảng tin cậy và giá trị p, mức nhiễu đã thấy, và chênh lệch nhỏ nhất mà nó có thể phát hiện, để "không phát hiện được chênh lệch" thực sự có ý nghĩa. Exit code 0 nghĩa là B tốt hơn A một cách có ý nghĩa thống kê, 1 nghĩa là không, 2 nghĩa là có một lần chạy thất bại hoặc không trả về metric. Các lệnh chạy không qua shell (viết `sh -c '...'` nếu cần); metric mặc định là wall time, hoặc truyền `--metric NAME` để đọc dòng `METRIC NAME=value`. Muốn leo dốc có kiểm soát trên code của bạn thì bước tiếp theo là `hca init`.
 
 Một tác vụ gồm một bản brief, các đường dẫn agent được phép sửa, và một lệnh in ra con số:
 

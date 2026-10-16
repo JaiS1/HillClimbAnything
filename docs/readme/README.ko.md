@@ -1,4 +1,4 @@
-README.md(commit b9bad05)를 번역한 문서입니다. 수치는 영어 README가 기준입니다.
+README.md(commit 59b1150)를 번역한 문서입니다. 수치는 영어 README가 기준입니다.
 
 <div align="center">
 
@@ -12,7 +12,7 @@ README.md(commit b9bad05)를 번역한 문서입니다. 수치는 영어 README�
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#빠른-시작)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,12 +88,15 @@ hca 스킬(HillClimbAnything)을 사용해 `python bench.py`를 더 빠르게 �
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # 2분 만에 얻는 첫 결과: B가 정말 A보다 나은가? git도 hca.toml도 필요 없음
 hca quick -- <cmd>     # 2분, 설정 불필요: 이 숫자의 노이즈는 어느 정도이고, 어느 정도의 개선까지 감지할 수 있는가?
 hca init               # 평가기를 고정하고, 브랜치를 만들고, 기준선 노이즈를 측정
 hca try -m "why"       # 마지막 keep과 비교해 수정을 측정 → keep(커밋) 또는 revert
 hca confirm            # 원본 대비 전체 개선을 홀드아웃 데이터로 다시 측정
 hca report             # 모든 시도와 그 판정, 근거
 ```
+
+`hca compare`는 저장소도 설정도 필요 없습니다. 두 명령을 무작위 순서의 A/B 블록으로 실행해, 차이를 구간과 p값과 함께 보고합니다. 관측한 노이즈와 감지할 수 있었던 가장 작은 차이도 함께 알려 주므로 "감지 가능한 차이 없음"이라는 결과가 의미를 갖습니다. 종료 코드 0은 B가 A보다 유의하게 낫다는 뜻이고, 1은 그렇지 않다는 뜻이며, 2는 실행이 실패했거나 지표가 없었다는 뜻입니다. 명령은 셸 없이 실행됩니다(필요하면 `sh -c '...'`라고 쓰세요). 기본 지표는 실행 시간이며, `--metric NAME`을 주면 `METRIC NAME=value` 줄을 읽습니다. 내 코드를 보호 장치와 함께 개선하고 싶다면 다음 단계는 `hca init`입니다.
 
 작업(task)은 설명, 에이전트가 수정해도 되는 경로, 그리고 숫자를 출력하는 명령 하나로 이루어집니다.
 

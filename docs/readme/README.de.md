@@ -1,4 +1,4 @@
-Übersetzt aus README.md, Commit b9bad05. Für Zahlen ist das englische README maßgeblich.
+Übersetzt aus README.md, Commit 59b1150. Für Zahlen ist das englische README maßgeblich.
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#schnellstart)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -93,12 +93,15 @@ was `hca confirm` besteht.
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # 2-Minuten-Erstergebnis: ist B wirklich besser als A? kein git, keine hca.toml
 hca quick -- <cmd>     # 2 Minuten, ohne Setup: Wie verrauscht ist diese Zahl, welchen Gewinn können wir erkennen?
 hca init               # den Evaluator einfrieren, einen Branch anlegen, das Basisrauschen messen
 hca try -m "why"       # deine Änderung gegen den letzten keep messen → keep (Commit) oder revert
 hca confirm            # den Gesamtgewinn gegen das Original neu messen, auf zurückgehaltenen Daten
 hca report             # jeder Versuch mit Urteil und Belegen
 ```
+
+`hca compare` braucht weder ein Repo noch eine Konfiguration: Es führt die beiden Befehle in randomisierten A/B-Blöcken aus und meldet den Unterschied mit Intervall und p-Wert, das gesehene Rauschen und den kleinsten Unterschied, den es hätte erkennen können – damit "kein erkennbarer Unterschied" etwas bedeutet. Exit-Code 0 heißt: B ist deutlich besser als A, 1: nicht, 2: ein Lauf ist fehlgeschlagen oder lieferte die Metrik nicht. Die Befehle laufen ohne Shell (schreibe `sh -c '...'`, wenn du eine brauchst); die Standardmetrik ist die Laufzeit, mit `--metric NAME` liest es stattdessen eine Zeile `METRIC NAME=value`. Für eine abgesicherte Optimierung deines eigenen Codes ist `hca init` der nächste Schritt.
 
 Eine Aufgabe besteht aus einem Briefing, den Pfaden, die der Agent ändern darf, und einem Befehl, der die Zahl ausgibt:
 

@@ -1,4 +1,4 @@
-Translated from README.md at commit b9bad05. The English README is authoritative for numbers.
+Translated from README.md at commit 59b1150. The English README is authoritative for numbers.
 
 <div align="center">
 
@@ -12,7 +12,7 @@ Translated from README.md at commit b9bad05. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,12 +88,15 @@ hca.toml dosyasını benimle birlikte yaz, `hca try` ile tırman ve yalnızca `h
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # 2 dakikada ilk sonuç: B gerçekten A'dan iyi mi? git yok, hca.toml yok
 hca quick -- <cmd>     # 2 dakika, kurulum yok: bu sayı ne kadar gürültülü, hangi kazancı tespit edebiliriz?
 hca init               # evaluator'ı dondur, bir branch oluştur, başlangıç gürültüsünü ölç
 hca try -m "why"       # düzenlemeni son keep'e karşı ölç → keep (commit) ya da revert
 hca confirm            # toplam kazancı, ayrılmış (held-out) veride orijinale karşı yeniden ölç
 hca report             # her deneme, kararı ve kanıtı
 ```
+
+`hca compare` ne repo ne de config ister: iki komutu rastgele sıralı A/B bloklarında çalıştırır ve farkı aralık ve p-değeriyle, gördüğü noise'u ve tespit edebileceği en küçük farkı raporlar; böylece "tespit edilebilir fark yok" bir şey ifade eder. Exit code 0, B'nin A'dan anlamlı ölçüde iyi olduğu anlamına gelir; 1 değil; 2 bir run'ın fail olduğu veya metriği vermediği. Komutlar shell olmadan çalışır (gerekirse `sh -c '...'` yazın); varsayılan metrik wall time'dır, `--metric NAME` verirseniz `METRIC NAME=value` satırı okunur. Kendi kodunuzda korumalı bir tırmanış isterseniz sıradaki adım `hca init`.
 
 Bir görev; bir brief, ajanın düzenleyebileceği yollar ve sayıyı yazdıran tek bir komuttan oluşur:
 

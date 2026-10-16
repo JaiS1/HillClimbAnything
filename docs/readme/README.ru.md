@@ -1,4 +1,4 @@
-Переведено с README.md, коммит b9bad05. Для чисел авторитетна английская версия README.
+Переведено с README.md, коммит 59b1150. Для чисел авторитетна английская версия README.
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#быстрый-старт)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -92,12 +92,15 @@ npx skills add JaiS1/HillClimbAnything --skill hca
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # первый результат за 2 минуты: B действительно лучше A? без git, без hca.toml
 hca quick -- <cmd>     # 2 минуты, без настройки: насколько шумно это число и какой выигрыш можно заметить?
 hca init               # заморозить оценщик, создать ветку, измерить базовый шум
 hca try -m "why"       # измерить вашу правку относительно последнего keep → keep (коммит) или revert
 hca confirm            # заново измерить общий выигрыш относительно оригинала на отложенных данных
 hca report             # каждая попытка, её вердикт и доказательства
 ```
+
+`hca compare` не требует ни репозитория, ни конфигурации: он запускает две команды случайно упорядоченными A/B-блоками и сообщает разницу с интервалом и p-значением, увиденный шум и наименьшую разницу, которую он мог бы заметить, — поэтому «заметной разницы нет» что-то значит. Код выхода 0 означает, что B значимо лучше A, 1 — что нет, 2 — что запуск завершился ошибкой или не выдал метрику. Команды запускаются без оболочки (если она нужна, напишите `sh -c '...'`); метрика по умолчанию — время выполнения, а с `--metric NAME` читается строка `METRIC NAME=value`. Если нужен защищённый подъём по метрике на вашем коде, следующий шаг — `hca init`.
 
 Задача состоит из описания, путей, которые агенту разрешено править, и одной команды, выводящей число:
 

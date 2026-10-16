@@ -1,4 +1,4 @@
-译自 commit b9bad05 的 README.md。数字以英文版 README 为准。
+译自 commit 59b1150 的 README.md。数字以英文版 README 为准。
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#快速开始)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,12 +88,15 @@ npx skills add JaiS1/HillClimbAnything --skill hca
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # 2 分钟拿到第一个结果：B 真的比 A 好吗？无需 git，无需 hca.toml
 hca quick -- <cmd>     # 2 分钟，无需配置：这个数字的噪声有多大，能检测到多大的提升？
 hca init               # 冻结评估器，创建分支，测量基线噪声
 hca try -m "why"       # 把你的改动与上一个 keep 对比 → keep（提交）或 revert
 hca confirm            # 在留出数据上，重新测量相对原始版本的总提升
 hca report             # 每次尝试、它的结论和证据
 ```
+
+`hca compare` 既不需要仓库也不需要配置：它用随机顺序的 A/B 区块运行这两条命令，报告差异及其区间和 p 值、观测到的噪声，以及它本来能检测到的最小差异，这样“检测不到差异”才有意义。退出码 0 表示 B 显著优于 A，1 表示没有，2 表示某次运行失败或没有给出指标。命令不经过 shell 运行（需要时请写 `sh -c '...'`）；默认指标是运行耗时，传 `--metric NAME` 则读取 `METRIC NAME=value` 这一行。想在自己的代码上做带保护的爬坡时，下一步是 `hca init`。
 
 一个任务由这几部分组成：一段说明、agent 可以编辑的路径，以及一条输出该数字的命令：
 

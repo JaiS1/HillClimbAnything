@@ -1,4 +1,4 @@
-譯自 commit b9bad05 的 README.md。數字以英文版 README 為準。
+譯自 commit 59b1150 的 README.md。數字以英文版 README 為準。
 
 <div align="center">
 
@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#快速開始)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-249_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-274_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,12 +88,15 @@ npx skills add JaiS1/HillClimbAnything --skill hca
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # 2 分鐘拿到第一個結果：B 真的比 A 好嗎？免 git，免 hca.toml
 hca quick -- <cmd>     # 2 分鐘，免設定：這個數字的雜訊有多大，能偵測到多大的提升？
 hca init               # 凍結評估器，建立分支，量測基線雜訊
 hca try -m "why"       # 把你的修改與上一個 keep 比較 → keep（commit）或 revert
 hca confirm            # 在保留資料（held-out）上，重新量測相對原始版本的整體提升
 hca report             # 每次嘗試、它的結論與證據
 ```
+
+`hca compare` 既不需要儲存庫也不需要設定：它用隨機順序的 A/B 區塊執行這兩條指令，報告差異及其區間與 p 值、觀測到的雜訊，以及它原本能偵測到的最小差異，這樣「偵測不到差異」才有意義。結束碼 0 表示 B 顯著優於 A，1 表示沒有，2 表示某次執行失敗或沒有給出指標。指令不經過 shell 執行（需要時請寫 `sh -c '...'`）；預設指標是執行耗時，傳 `--metric NAME` 則讀取 `METRIC NAME=value` 這一行。想在自己的程式碼上做有防護的爬坡時，下一步是 `hca init`。
 
 一個任務由這幾部分組成：一段說明、agent 可以編輯的路徑，以及一條輸出該數字的指令：
 
