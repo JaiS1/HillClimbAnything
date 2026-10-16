@@ -61,4 +61,4 @@ Known residuals, and what to do about each:
 - **Not orchestration.** HCA doesn't call model APIs. Your agent drives; HCA referees.
 - **Expensive remote runs** (paid GPUs, notebooks) are covered by the skill's campaign references
   (card, launch checklist, review, deep evaluation). There is no remote tooling yet.
-- **Not proven broadly.** There is one showcase, on one machine.
+- **Not proven broadly.** There are two showcases (Python-Markdown, js-yaml), each on one machine.

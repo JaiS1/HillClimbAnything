@@ -17,6 +17,8 @@ hca setup                                        # add the agent skill to Claude
 - **Showcase:** a coding agent refereed by HCA cut Python-Markdown's render time by **53.8%**
   (confirmed on held-out documents, output byte-identical).
   [Read the write-up](https://github.com/JaiS1/HillClimbAnything/blob/main/showcases/python-markdown/README.md).
+  A second climb cut js-yaml's `load()` time by **15.3%** (held-out, results identical;
+  [write-up](https://github.com/JaiS1/HillClimbAnything/blob/main/showcases/js-yaml/README.md)).
 - **Why a referee:** on an ordinary desktop, keeping the raw best score kept 17–55% of changes that
   did nothing. HCA's exact signed-rank test on randomised blocks keeps at most 1%.
 - **Python 3.11+, zero dependencies.** It never calls an LLM. Tested on Linux and WSL.

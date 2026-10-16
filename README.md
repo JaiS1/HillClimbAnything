@@ -131,6 +131,32 @@ The biggest win was skipping inline regex patterns when the text can't contain a
 every match needs. Read the [write-up, patch, per-try log and raw ledger](showcases/python-markdown/README.md).
 It is one machine and one run, and the patch has not been reviewed upstream.
 
+## Showcase: js-yaml, 15% faster
+
+A second climb, in another language and on a different kind of metric: [js-yaml](https://github.com/nodeca/js-yaml)
+5.5.0 on Node, timing `load()` once per document over 491 real GitHub Actions, Kubernetes, Helm,
+Compose and OpenAPI files. A coding agent made 12 tries in about an hour, and 3 were kept.
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/climb-yaml-dark.svg" />
+  <img src="docs/assets/climb-yaml-light.svg" alt="js-yaml load() time across 12 tries: three kept changes step it down; one confirm on held-out documents passes at -15.3 percent" width="900" />
+</picture>
+</div>
+
+| Check | Result |
+|---|---|
+| `hca confirm` on held-out documents (same genres, mostly different files) | `load()` time **−15.3%** median per item (at least −13.3%) |
+| Clean-clone A/B against the original release, 200 fresh processes | total time **−15.3%** (95% CI −16.6% to −14.4%) |
+| Output: js-yaml's own 1,633 tests, 25,384 comparisons on each of the ESM and CJS builds, 11,250 fuzz comparisons | **0 differences** from 5.5.0 |
+
+The wins are small avoid-work changes in the parser: fewer allocations per node, a first-character
+dispatch, and a fast path for plain scalars. Two of the three kept tries bundle changes that were
+each below the keep floor alone, which the write-up discloses; the confirm covers the final state.
+The metric is per-call, cold-ish time on mostly small documents, not hot-loop throughput. It is one
+machine, and the patch has not been submitted upstream. Read the
+[write-up, patch, ledger and harness](showcases/js-yaml/README.md).
+
 ## Why a referee?
 
 Two identical builds, compared the way most loops compare them ([Phase 0](spikes/phase0/RESULT.md)):
@@ -180,7 +206,7 @@ noise.
 
 | Target | Example metric | Status |
 |---|---|---|
-| Library hot path | render / parse time | ✅ showcased (Python-Markdown, −53.8%) |
+| Library hot path | render / parse time | ✅ showcased (Python-Markdown, −53.8%; js-yaml, −15.3%) |
 | CLI and build time | wall seconds | 🧪 calibrated ([Phase 0](spikes/phase0/RESULT.md)) |
 | Web server latency | time to first byte per route | 🧪 calibrated ([Phase 0](spikes/phase0/RESULT.md)) |
 | Page load in a browser | LCP per page | 🗺️ planned showcase |
@@ -279,6 +305,7 @@ Native Windows works (Python 3.11+). A timeout kills the whole process tree thro
 ## Documentation
 
 - [Showcase: Python-Markdown](showcases/python-markdown/README.md)
+- [Showcase: js-yaml](showcases/js-yaml/README.md)
 - [Limits and known gaps](docs/LIMITS.md)
 - [Phase 0 calibration](spikes/phase0/RESULT.md)
 - [Design](docs/DESIGN-hca.md)
@@ -286,7 +313,7 @@ Native Windows works (Python 3.11+). A timeout kills the whole process tree thro
 
 ## Status and credits
 
-Early research release (0.2.0.dev): the core loop and one showcase. HCA grew out of
+Early research release (0.2.0.dev): the core loop and two showcases. HCA grew out of
 [Dream Loop](https://github.com/JaiS1/dream-loop/tree/dream-loop-v0.1), whose paired statistics it
 keeps. It borrows ideas from [autoresearch](https://github.com/karpathy/autoresearch)-style loops
 and from the evaluation hygiene of the [Harness Learning](https://arxiv.org/abs/2609.35738) paper.

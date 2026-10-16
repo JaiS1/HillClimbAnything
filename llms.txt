@@ -29,6 +29,7 @@ Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; neve
 ## Evidence
 
 - [Showcase: Python-Markdown render time -53.8% confirmed, output identical](https://github.com/JaiS1/HillClimbAnything/blob/main/showcases/python-markdown/README.md)
+- [Showcase: js-yaml load() time -15.3% confirmed, results identical](https://github.com/JaiS1/HillClimbAnything/blob/main/showcases/js-yaml/README.md)
 - [Phase 0 calibration: raw best-score keeps 17-55% of no-op changes; HCA's test <= 1%](https://github.com/JaiS1/HillClimbAnything/blob/main/spikes/phase0/RESULT.md)
 
 ## Optional
