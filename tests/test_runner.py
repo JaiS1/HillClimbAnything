@@ -36,10 +36,11 @@ class RunnerTests(unittest.TestCase):
     def test_wall_time_is_not_quantised_by_polling(self):
         # Regression: Popen.wait(timeout=...) polls with sleeps up to 50 ms, so commands of 30 ms and
         # 50 ms both used to read as the same ~64 ms. A referee that cannot see a 20 ms gap is blind.
-        short = min(self.py("import time; time.sleep(0.03)", name=f"s{i}").seconds for i in range(3))
-        long = min(self.py("import time; time.sleep(0.05)", name=f"l{i}").seconds for i in range(3))
-        # Windows sleeps in 15.6 ms ticks, so the 20 ms gap can read as 31 ms there; the polling bug it guards against was 50 ms.
-        self.assertAlmostEqual(long - short, 0.02, delta=0.016 if WINDOWS else 0.008)
+        short = min(self.py("import time; time.sleep(0.03)", name=f"s{i}").seconds for i in range(5))
+        long = min(self.py("import time; time.sleep(0.05)", name=f"l{i}").seconds for i in range(5))
+        # Windows sleeps in 15.6 ms ticks, so the 20 ms gap can read as 31 ms there, and macOS CI runners vary
+        # interpreter start-up by ~10 ms; the polling bug this guards against read both commands the same (gap ~0).
+        self.assertAlmostEqual(long - short, 0.02, delta=0.016 if WINDOWS else 0.012 if sys.platform == "darwin" else 0.008)
 
     def test_captures_streams_to_files_and_reports_status(self):
         result = self.py("import sys; print('hello'); sys.stderr.write('oops'); sys.exit(3)")

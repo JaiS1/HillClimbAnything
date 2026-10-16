@@ -108,7 +108,7 @@ class GitopsTests(repokit.RepoTestCase):
     def test_git_runs_without_a_terminal_editor_or_stdin_but_hooks_still_run(self):
         out = self.tmp / "hook.out"
         hook = self.root / ".git" / "hooks" / "pre-commit"
-        hook.write_text('#!/bin/sh\n{ echo "$GIT_TERMINAL_PROMPT"; echo "$GIT_EDITOR"; if [ /dev/fd/0 -ef /dev/null ]; then echo /dev/null; else echo not-dev-null; fi; } > "$HOOKOUT"\n')
+        hook.write_text('#!/bin/sh\n{ echo "$GIT_TERMINAL_PROMPT"; echo "$GIT_EDITOR"; if [ -t 0 ]; then echo tty; elif IFS= read -r line; then echo has-input; else echo /dev/null; fi; } > "$HOOKOUT"\n')
         hook.chmod(0o755)
         with repokit.env(HOOKOUT=str(out)):
             gitops.git(self.root, "commit", "-q", "--allow-empty", "-m", "hook probe")
