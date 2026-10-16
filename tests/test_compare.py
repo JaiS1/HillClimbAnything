@@ -45,7 +45,7 @@ class CompareTests(unittest.TestCase):
         return [sys.executable, "-S", str(self.tmp / "bench.py"), label, str(base), str(amp), mode]
 
     def run_compare(self, a, b, cwd=None, **opts):
-        values = dict(metric="lat", direction="min", min_effect=None, blocks=None, warmup=1, cwd_a=None, cwd_b=None,
+        values = dict(metric="lat", direction="min", min_effect=None, blocks=None, extend_to=None, out=None, warmup=1, cwd_a=None, cwd_b=None,
                       timeout=60.0, json=False, seed=1, command=list(a) + ["--"] + list(b))
         values.update(opts)
         lines = []
@@ -155,6 +155,34 @@ class CompareTests(unittest.TestCase):
             self.run_compare(self.bench("A", 100), self.bench("B", 60), blocks=6)
         self.assertIn("at least 7", str(caught.exception))
 
+    def test_two_sided_json_says_better_worse_or_neither(self):
+        _, up = self.as_json(self.bench("A", 100), self.bench("B", 80))
+        _, down = self.as_json(self.bench("A", 80), self.bench("B", 100))
+        _, same = self.as_json(self.bench("A", 100, 0.02), self.bench("B", 100, 0.02))
+        self.assertEqual([(d["better"], d["worse"]) for d in (up, down, same)], [(True, False), (False, True), (False, False)])
+        self.assertEqual([d["exit"] for d in (up, down, same)], [0, 1, 1])
+
+    def test_extend_to_sets_the_second_look(self):
+        _, data = self.as_json(self.bench("A", 100, 0.05), self.bench("B", 98, 0.05), seed=3, blocks=10, extend_to=14)
+        self.assertEqual((data["blocks"], data["looks"], data["extended"]), (14, 2, True), data)
+        _, data = self.as_json(self.bench("A", 100), self.bench("B", 70), blocks=8, extend_to=12)
+        self.assertEqual((data["blocks"], data["looks"], data["extended"]), (8, 2, False))     # decisive at the first look
+        for bad in (dict(blocks=10, extend_to=10), dict(blocks=7, extend_to=12)):
+            with self.assertRaises(HcaError):
+                self.run_compare(self.bench("A", 100), self.bench("B", 80), **bad)
+        code, out, err = self.cli("compare", "--extend-to", "5", "--", "true", "--", "true")
+        self.assertEqual(code, 3)
+
+    def test_out_dir_keeps_the_report_and_every_raw_run(self):
+        out = self.tmp / "keep"
+        self.run_compare(self.bench("A", 100), self.bench("B", 80), blocks=8, out=str(out))
+        report = json.loads((out / "compare.json").read_text())
+        runs = [json.loads(line) for line in (out / "runs.jsonl").read_text().splitlines()]
+        runs = [r for r in runs if r["kind"] == "run" and r["block"] >= 0]
+        self.assertEqual(len(runs), 16)
+        self.assertEqual(sorted(r["value"] for r in runs if r["arm"] == "baseline"), sorted(report["a"]["values"]))
+        self.assertTrue(all("order" in r and "wall_seconds" in r for r in runs))
+
     # --- --min-effect: the keep floor is half the useful effect, plus significance --------------------
 
     def min_effect(self, text):
@@ -215,11 +243,12 @@ class CompareTests(unittest.TestCase):
     def test_json_shape(self):
         code, data = self.as_json(self.bench("A", 100), self.bench("B", 80), min_effect="5%")
         self.assertEqual(code, 0)
-        self.assertEqual(set(data), {"verdict", "keep", "exit", "metric", "direction", "wall_time", "blocks", "looks", "extended", "seed",
+        self.assertEqual(set(data), {"verdict", "better", "worse", "p", "keep", "exit", "metric", "direction", "wall_time", "blocks", "looks", "extended", "seed",
                                      "warmup", "estimate_pct", "ci_pct", "ci_level", "p_value", "alpha_one_sided", "noise", "min_effect",
                                      "a", "b", "scores"})
         self.assertEqual((data["verdict"], data["keep"], data["exit"], data["metric"], data["direction"], data["wall_time"], data["seed"]),
                          ("b_better", True, 0, "lat", "min", False, 1))
+        self.assertEqual((data["better"], data["worse"], data["p"]), (True, False, data["p_value"]))
         self.assertLess(data["estimate_pct"], -15)                         # B's lat is about 20% lower
         self.assertEqual(len(data["ci_pct"]), 2)
         self.assertLess(data["ci_pct"][0], data["ci_pct"][1])

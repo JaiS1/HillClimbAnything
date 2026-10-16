@@ -170,17 +170,21 @@ agent's working tree; it is not a security boundary.
     per-block direction-adjusted log ratios, and `stats.keep_decision` (exact signed-rank test, Hodges-Lehmann
     estimate and interval). Default is the two-look rule: 10 blocks, extended once to 20 when B looks promising
     (or, since a compare is symmetric, when A does), each look at one-sided α = 0.005. `--blocks N` (at least 7)
-    is one look at α = 0.01. The interval is two-sided at the same level (99% or 98%), the p-value is two-sided.
+    is one look at α = 0.01. `--blocks N --extend-to M` sets both looks (N at least 8, M > N, e.g. 20 and 40 for
+    noisy targets); the per-look level stays α/2 = 0.005 for any N and M, because `stats.keep_decision` splits α over two looks
+    whatever their sizes (more than two looks would need a smaller per-look α; there is deliberately no such option). The interval is two-sided at the same level (99% or 98%), the p-value is two-sided.
   - Noise comes from the same blocks: the robust SD of the block log ratios and of A's own runs, and the
     smallest shift detectable at 80% power at the N actually run (`stats.detectable_shift`).
   - `--min-effect X%` adds the keep rule of `try`: significance plus an estimate of at least half the useful
     effect (in log terms), and makes exit 0 require it. Without it, exit 0 means B is significantly better.
   - Any run that fails, times out or lacks the metric makes the compare **invalid** (exit 2), with the
     run's stderr tail; a comparison is never made from partial data.
-  - `--json` prints one object (`verdict` `b_better|a_better|no_difference|invalid`, `keep`, `exit`,
-    `estimate_pct`, `ci_pct`, `ci_level`, `p_value`, `noise`, `min_effect`, both commands' values, the block scores).
+  - `--json` prints one object (`verdict` `b_better|a_better|no_difference|invalid`, `better`, `worse` (each
+    significant at the level above), `keep`, `exit`, `estimate_pct`, `ci_pct`, `ci_level`, `p`/`p_value`, `noise`, `min_effect`, both commands' values, the block scores).
   - Exit codes: 0 B is better than A by a significant amount (and passes the keep rule with `--min-effect`),
-    1 it is not, 2 invalid, 3 usage, 4 internal error. It writes nothing outside a temp directory.
+    1 it is not, 2 invalid, 3 usage, 4 internal error. `--seed` fixes the block order; the JSON carries every block's
+    values and scores, and `--out DIR` also saves `compare.json` and `runs.jsonl` (every run with block, order, value
+    and wall time). Otherwise it writes nothing outside a temp directory. Runs are strictly sequential.
   - It is a measurement of two commands on this machine now; it does not guard output equality or generalisation
     (that is what `init`/`try`/`confirm` add).
 - **`hca init [--heldout PATH]`**

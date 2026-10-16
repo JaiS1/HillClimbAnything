@@ -23,7 +23,7 @@ referee or work around it. A win it can't confirm is not a win.
    could have detected. Exit 0 means B is better than A by a significant amount, 1 means not, 2 means a run
    failed or lacked the metric, 3 usage. Commands run without a shell (`sh -c '...'` if needed); the default
    metric is wall time, or pass `--metric NAME` for a `METRIC NAME=value` line. `--min-effect 5%` adds the
-   keep rule `hca try` uses. "No detectable difference" is only as strong as the detectable size it prints.
+   keep rule `hca try` uses; `--json` gives `better`/`worse`/`estimate_pct`/`ci_pct`/`p`, `--seed` and `--out DIR` keep it reproducible. "No detectable difference" is only as strong as the detectable size it prints.
    Then run `hca quick -- <command>`. It reports the noise and the smallest win it can detect in about
    2 minutes. If it says **too noisy**, fix the measurement first (more items, longer runs, fewer
    background jobs). Do not start climbing.

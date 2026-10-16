@@ -27,6 +27,7 @@ from . import common
 
 DEFAULT_METRIC = "wall_s"
 FIXED_MIN_BLOCKS = 7        # the fewest blocks at which one look can reach p <= 0.01 (2**-7 < 0.01)
+TWO_LOOK_MIN_BLOCKS = 8     # the fewest blocks at which a look at one-sided alpha 0.005 can reject (2**-8 < 0.005)
 FIRST_LOOK, SECOND_LOOK = stats.MIN_BLOCKS, stats.EXTENDED_BLOCKS
 
 
@@ -35,13 +36,16 @@ def add_arguments(parser) -> None:
     parser.add_argument("--direction", choices=("min", "max"), default="min", help="min if lower is better (default)")
     parser.add_argument("--min-effect", metavar="X%", help='smallest difference worth caring about, e.g. "5%%"; adds a keep-rule line and '
                         "makes exit 0 require it (default: report only)")
-    parser.add_argument("--blocks", type=int, help=f"fixed number of blocks, one look (default: {FIRST_LOOK}, extended to {SECOND_LOOK} when promising; "
-                        f"at least {FIXED_MIN_BLOCKS})")
+    parser.add_argument("--blocks", type=int, help=f"blocks at the first look (default {FIRST_LOOK}). Alone, it is a fixed number of blocks with one "
+                        f"look (at least {FIXED_MIN_BLOCKS}); with --extend-to it is the first of two looks (at least {TWO_LOOK_MIN_BLOCKS})")
+    parser.add_argument("--extend-to", type=int, metavar="M", help=f"total blocks after the one extension, taken when B (or A) looks promising "
+                        f"(default {SECOND_LOOK} when --blocks is not given); e.g. --blocks 20 --extend-to 40 for noisy targets")
     parser.add_argument("--warmup", type=int, default=1, help="discarded runs of each command first (default 1)")
     parser.add_argument("--cwd-a", metavar="DIR", help="directory to run command A in (default: the current directory)")
     parser.add_argument("--cwd-b", metavar="DIR", help="directory to run command B in (default: the current directory)")
     parser.add_argument("--timeout", type=float, default=300.0, help="seconds allowed per run (default 300)")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the report")
+    parser.add_argument("--out", metavar="DIR", help="also write compare.json (the report) and runs.jsonl (every run: block, order, value, wall time) here")
     parser.add_argument("--seed", type=int, help="seed for the block order (default: random)")
     parser.add_argument("command", nargs="*", help="`-- <command A ...> -- <command B ...>`")
 
@@ -70,8 +74,19 @@ def run(args, out=print, cwd=None) -> int:
     wall = args.metric is None
     metric = DEFAULT_METRIC if wall else args.metric
     useful = stats.parse_effect(args.min_effect, direction) if args.min_effect else 0.0
-    if args.blocks is not None and args.blocks < FIXED_MIN_BLOCKS:
-        raise HcaError(f"--blocks must be at least {FIXED_MIN_BLOCKS} (fewer cannot reach p <= 0.01 even if B wins every block).")
+    extend_to = getattr(args, "extend_to", None)
+    if extend_to is not None or args.blocks is None:
+        first = args.blocks or FIRST_LOOK
+        second = extend_to or SECOND_LOOK
+        looks = 2
+        if first < TWO_LOOK_MIN_BLOCKS:
+            raise HcaError(f"--blocks must be at least {TWO_LOOK_MIN_BLOCKS} with two looks (fewer cannot reach p <= 0.005 even if B wins every block).")
+        if second <= first:
+            raise HcaError(f"--extend-to ({second}) must be larger than the first look ({first} blocks).")
+    else:
+        first, second, looks = args.blocks, args.blocks, 1
+        if first < FIXED_MIN_BLOCKS:
+            raise HcaError(f"--blocks must be at least {FIXED_MIN_BLOCKS} (fewer cannot reach p <= 0.01 even if B wins every block).")
     if args.warmup < 0:
         raise HcaError("--warmup must be 0 or more.")
     if not args.timeout > 0:
@@ -84,7 +99,6 @@ def run(args, out=print, cwd=None) -> int:
             raise HcaError(f"--cwd-{'a' if arm == 'baseline' else 'b'} {dirs[arm]} is not a directory.")
     rng, seed = common.make_rng(args.seed)
     commands = {"baseline": a, "candidate": b}
-    looks = 1 if args.blocks else 2
 
     with tempfile.TemporaryDirectory(prefix="hca-compare-") as tmp:
         tmp = Path(tmp)
@@ -111,7 +125,6 @@ def run(args, out=print, cwd=None) -> int:
             failure = _failure_or_none(measure_one(-(k + 1)), tmp, -(k + 1))
             if failure:
                 break
-        first = args.blocks or FIRST_LOOK
         if not failure:
             failure = blocks(first, 0)
         extended = False
@@ -119,14 +132,20 @@ def run(args, out=print, cwd=None) -> int:
         if not failure:
             decision = _decide(scores, useful, 1, looks, direction)
             if looks == 2 and _wants_extension(scores, useful, direction):
-                failure = blocks(SECOND_LOOK - FIRST_LOOK, FIRST_LOOK)
+                failure = blocks(second - first, first)
                 extended = True
                 if not failure:
                     decision = _decide(scores, useful, 2, looks, direction)
         wall_seconds = _total_seconds(tmp)
+        raw = (tmp / "runs.jsonl").read_text(encoding="utf-8") if getattr(args, "out", None) and (tmp / "runs.jsonl").exists() else ""
     if failure:
         return _invalid(failure, args, out, a, b)
-    report = _report(scores, a_values, b_values, decision, useful, direction, metric, wall, args, extended, looks, seed, wall_seconds, a, b)
+    report = _report(scores, a_values, b_values, decision, useful, direction, metric, wall, args, extended, looks, seed, wall_seconds, a, b, first)
+    if getattr(args, "out", None):
+        target = Path(args.out)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "compare.json").write_text(json.dumps(report["json"], indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        (target / "runs.jsonl").write_text(raw, encoding="utf-8")
     if args.json:
         out(json.dumps(report["json"], indent=2, allow_nan=False))
     else:
@@ -213,7 +232,7 @@ def _total_seconds(tmp) -> float:
 
 # --- the report --------------------------------------------------------------------------------------
 
-def _report(scores, a_values, b_values, decision, useful, direction, metric, wall, args, extended, looks, seed, wall_seconds, a, b) -> dict:
+def _report(scores, a_values, b_values, decision, useful, direction, metric, wall, args, extended, looks, seed, wall_seconds, a, b, first) -> dict:
     n = len(scores)
     level = decision["level"]
     est = decision["estimate_change_pct"]                      # B vs A in the metric's own terms
@@ -230,7 +249,7 @@ def _report(scores, a_values, b_values, decision, useful, direction, metric, wal
 
     unit = " s" if wall else ""
     lines = [f"Compared A and B on {'wall time (' + metric + ')' if wall else 'METRIC ' + metric}: {n} blocks"
-             + (f" (extended from {FIRST_LOOK})" if extended else "") + f", order randomised, {args.warmup} warm-up run(s) of each discarded, "
+             + (f" (extended from {first})" if extended else "") + f", order randomised, {args.warmup} warm-up run(s) of each discarded, "
              f"{wall_seconds:.0f} s of runs.",
              f"Medians: A {_med(a_values)}{unit}, B {_med(b_values)}{unit}."]
     noise = f"Noise: ±{stats.to_percent(sd):.1f}% per block" if sd else "Noise: none seen (the values did not vary)"
@@ -257,10 +276,10 @@ def _report(scores, a_values, b_values, decision, useful, direction, metric, wal
         lines.append(min_line)
     lines.append("To go further, `hca init` runs a guarded climb on your code (frozen evaluator, keep or revert each change, held-out confirm); "
                  "see the README.")
-    data = {"verdict": verdict, "keep": keep, "exit": common.EXIT_KEEP if keep else common.EXIT_REVERT,
+    data = {"verdict": verdict, "better": better, "worse": worse, "keep": keep, "exit": common.EXIT_KEEP if keep else common.EXIT_REVERT,
             "metric": metric, "direction": direction, "wall_time": wall,
             "blocks": n, "looks": looks, "extended": extended, "seed": seed, "warmup": args.warmup,
-            "estimate_pct": est, "ci_pct": ci, "ci_level": ci_level / 100, "p_value": p, "alpha_one_sided": level,
+            "estimate_pct": est, "ci_pct": ci, "ci_level": ci_level / 100, "p": p, "p_value": p, "alpha_one_sided": level,
             "noise": {"block_sd_pct": stats.to_percent(sd), "a_run_sd_pct": stats.to_percent(a_sd) if a_sd else None, "detectable_pct": detect},
             "min_effect": ({"requested": args.min_effect, "keep_floor_pct": abs(decision["keep_floor_change_pct"]), "passes": keep}
                            if args.min_effect else None),
