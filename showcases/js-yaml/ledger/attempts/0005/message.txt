@@ -1,0 +1,1 @@
+T3: avoid allocating a ParserSnapshot per parseNode call and per block-mapping key (capture fields in locals, build the object only when a property is read or a restore is needed); fewer allocations/GC on the hottest parser paths

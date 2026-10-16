@@ -1,0 +1,53 @@
+{
+  "n": 12,
+  "message": "T10: combine three individually sub-floor but real wins (T7 -1.8% p=.003, T9 -2.1% p=.001): (1) no-options load() fast path in loadDocuments, (2) parseNode first-char dispatch before sequence/flow/block-scalar/quoted/alias readers + inline plain scalar event, (3) readPlainScalar scans ordinary ASCII runs with a table lookup and a local cursor (total_ms should improve ~8% locally). Local A/B median item ~-5%",
+  "at": "2026-10-16T06:23:24-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 259654161436808,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "8e33e6cecb2014cda3ef53f9eff28eba32268dae",
+  "snapshot": "032cc0e35acd41a857cfce069f23fbca81c32f41",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.0327529469757726,
+  "estimate": -3.222237755437998,
+  "lower": -1.205918779740569,
+  "upper": -5.402166030035635,
+  "p": 0.00029277801513671875,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9107999999999999,
+      "ms_compose": 1.8923,
+      "ms_gha": 31.7423005,
+      "ms_helm": 25.001299999999993,
+      "ms_k8s": 54.31249150000002,
+      "ms_openapi": 51.855101,
+      "total_ms": 167.75205050000014
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.8764,
+      "ms_compose": 1.8287499999999999,
+      "ms_gha": 30.15745049999999,
+      "ms_helm": 24.1956005,
+      "ms_k8s": 49.54525049999996,
+      "ms_openapi": 46.936099999999996,
+      "total_ms": 155.89940199999995
+    }
+  },
+  "commit": "032cc0e35acd41a857cfce069f23fbca81c32f41",
+  "wall_seconds": 258.543
+}

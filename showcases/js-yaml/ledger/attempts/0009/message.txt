@@ -1,0 +1,1 @@
+T7: cut calls per scalar node: parseNode dispatches on first char before the sequence/flow/block-scalar/quoted/alias readers (T6 idea, which measured -0.7% alone) plus readPlainScalar pushes its scalar event inline instead of via the 11-arg addScalarEvent. Local A/B ~-2..-5%

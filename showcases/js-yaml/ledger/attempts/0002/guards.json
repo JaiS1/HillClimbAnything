@@ -1,0 +1,79 @@
+[
+  {
+    "name": "tests",
+    "kind": "command",
+    "passed": true,
+    "attempts": [
+      {
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 5.586,
+        "error_tail": ""
+      }
+    ]
+  },
+  {
+    "name": "equality",
+    "kind": "command",
+    "passed": false,
+    "attempts": [
+      {
+        "returncode": 1,
+        "timed_out": false,
+        "seconds": 6.386,
+        "error_tail": ""
+      },
+      {
+        "returncode": 1,
+        "timed_out": false,
+        "seconds": 6.283,
+        "error_tail": ""
+      }
+    ]
+  },
+  {
+    "name": "equality-cjs",
+    "kind": "command",
+    "passed": false,
+    "attempts": [
+      {
+        "returncode": 1,
+        "timed_out": false,
+        "seconds": 6.739,
+        "error_tail": ""
+      },
+      {
+        "returncode": 1,
+        "timed_out": false,
+        "seconds": 6.676,
+        "error_tail": ""
+      }
+    ]
+  },
+  {
+    "name": "source",
+    "kind": "command",
+    "passed": true,
+    "attempts": [
+      {
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 0.247,
+        "error_tail": ""
+      }
+    ]
+  },
+  {
+    "name": "fuzz",
+    "kind": "command",
+    "passed": true,
+    "attempts": [
+      {
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 1.808,
+        "error_tail": ""
+      }
+    ]
+  }
+]

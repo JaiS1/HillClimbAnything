@@ -1,0 +1,53 @@
+{
+  "n": 6,
+  "message": "T4 bundle of three avoid-work changes, each ~1% alone (T1/T2/T3 reverted separately as sub-noise; local A/B of the bundle: ~-4%): (a) skip checkPrintable slice+regex for plain scalars with only printable-ASCII chars, (b) skip nodeTags Map.set unless schema has a merge tag, (c) no ParserSnapshot allocation per parseNode call / per block-mapping key",
+  "at": "2026-10-16T05:45:27-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 47312762670875,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "def18d64fff128d309eeebc0130426587e0c7808",
+  "snapshot": "d3320e6af679deaadb2e1285334e1c88691d4ae8",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.027407617291054478,
+  "estimate": -2.7035436496248297,
+  "lower": -0.7817704443829615,
+  "upper": -4.710777675064257,
+  "p": 0.00024127960205078125,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9957,
+      "ms_compose": 2.1906499999999998,
+      "ms_gha": 34.863350000000004,
+      "ms_helm": 27.4306505,
+      "ms_k8s": 61.88735,
+      "ms_openapi": 54.7152005,
+      "total_ms": 183.36629850000003
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9773499999999999,
+      "ms_compose": 2.0505500000000003,
+      "ms_gha": 33.42135,
+      "ms_helm": 27.040100000000006,
+      "ms_k8s": 58.90799999999999,
+      "ms_openapi": 50.81699999999999,
+      "total_ms": 178.67415
+    }
+  },
+  "commit": "d3320e6af679deaadb2e1285334e1c88691d4ae8",
+  "wall_seconds": 268.532
+}

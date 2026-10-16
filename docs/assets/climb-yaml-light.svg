@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" width="960" height="440" role="img" aria-labelledby="t d" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<title id="t">js-yaml load() time across an HCA climb</title>
+<desc id="d">load() time as a percentage of js-yaml 5.5.0 over 12 tries. Three kept changes step it down to about 90 percent on the train documents; the one confirm on held-out documents passed at -15.3 percent. Nine tries were reverted or invalid.</desc>
+<rect width="960" height="440" rx="12" fill="#fcfcfb"/>
+<text x="72" y="40" font-size="20" font-weight="650" fill="#0b0b0b">js-yaml load() time, one try at a time</text>
+<text x="72" y="64" font-size="14" fill="#52514e">% of 5.5.0 · lower is better · line: kept changes on the 491 train docs · diamond: confirmed on held-out docs</text>
+<line x1="72" x2="810" y1="92.0" y2="92.0" stroke="#e6e5e1" stroke-width="1"/>
+<text x="62" y="96.0" font-size="12" text-anchor="end" fill="#52514e">100%</text>
+<line x1="72" x2="810" y1="186.7" y2="186.7" stroke="#e6e5e1" stroke-width="1"/>
+<text x="62" y="190.7" font-size="12" text-anchor="end" fill="#52514e">90%</text>
+<line x1="72" x2="810" y1="281.3" y2="281.3" stroke="#e6e5e1" stroke-width="1"/>
+<text x="62" y="285.3" font-size="12" text-anchor="end" fill="#52514e">80%</text>
+<line x1="72" x2="810" y1="376.0" y2="376.0" stroke="#e6e5e1" stroke-width="1"/>
+<text x="62" y="380.0" font-size="12" text-anchor="end" fill="#52514e">70%</text>
+<text x="133.5" y="398" font-size="12" text-anchor="middle" fill="#52514e">1</text>
+<text x="318.0" y="398" font-size="12" text-anchor="middle" fill="#52514e">4</text>
+<text x="564.0" y="398" font-size="12" text-anchor="middle" fill="#52514e">8</text>
+<text x="810.0" y="398" font-size="12" text-anchor="middle" fill="#52514e">12</text>
+<text x="441" y="426" font-size="12" text-anchor="middle" fill="#52514e">try</text>
+<path d="M72.0,92.0 L441.0,92.0 L441.0,117.6 L502.5,117.6 L502.5,162.5 L810.0,162.5 L810.0,190.8 L810.0,190.8" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="133.5" cy="92.0" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="195.0" cy="92.0" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="256.5" cy="92.0" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="318.0" cy="92.0" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="379.5" cy="92.0" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="564.0" cy="162.5" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="625.5" cy="162.5" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="687.0" cy="162.5" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="748.5" cy="162.5" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<circle cx="441.0" cy="117.6" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="502.5" cy="162.5" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<circle cx="810.0" cy="190.8" r="4.5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"/>
+<rect x="804.0" y="230.8" width="12" height="12" transform="rotate(45 810.0 236.8)" fill="#fcfcfb" stroke="#2a78d6" stroke-width="2"/>
+<text x="824.0" y="230.8" font-size="22" font-weight="700" fill="#0b0b0b">−15.3%</text>
+<text x="824.0" y="250.8" font-size="12" fill="#52514e">confirmed on</text>
+<text x="824.0" y="266.8" font-size="12" fill="#52514e">held-out docs</text>
+<circle cx="829" cy="100" r="4.5" fill="#2a78d6"/>
+<text x="842" y="104" font-size="12" fill="#52514e">kept (train)</text>
+<circle cx="829" cy="122" r="4.5" fill="#fcfcfb" stroke="#8a8984" stroke-width="2"/>
+<text x="842" y="126" font-size="12" fill="#52514e">reverted</text>
+<rect x="824" y="138" width="10" height="10" transform="rotate(45 829 143)" fill="#fcfcfb" stroke="#2a78d6" stroke-width="2"/>
+<text x="842" y="148" font-size="12" fill="#52514e">confirmed</text>
+</svg>

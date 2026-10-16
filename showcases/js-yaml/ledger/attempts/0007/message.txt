@@ -1,0 +1,1 @@
+T5: parseNode no longer allocates a NodeProperties object per node: share one never-written empty object and allocate only when a '!' or '&' property is about to be read (the loop also now breaks on a first-char check before calling both property readers). Mechanism: fewer allocations + calls on every node. Local A/B ~-6%

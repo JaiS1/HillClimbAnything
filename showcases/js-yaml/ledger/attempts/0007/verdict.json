@@ -1,0 +1,53 @@
+{
+  "n": 7,
+  "message": "T5: parseNode no longer allocates a NodeProperties object per node: share one never-written empty object and allocate only when a '!' or '&' property is about to be read (the loop also now breaks on a first-char check before calling both property readers). Mechanism: fewer allocations + calls on every node. Local A/B ~-6%",
+  "at": "2026-10-16T05:52:28-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "d3320e6af679deaadb2e1285334e1c88691d4ae8",
+  "verdict": "keep",
+  "valid": true,
+  "reasons": [],
+  "seed": 177234379983414,
+  "confirm": "confirmed",
+  "again": false,
+  "tree": "c73dbd7f524e54600842c3661f9d294418f3d80f",
+  "snapshot": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": 0.050035921475098624,
+  "estimate": -4.880474444966805,
+  "lower": -2.6593956985061737,
+  "upper": -7.7447181664216105,
+  "p": 0.0009765625,
+  "level": 0.005,
+  "includes_useful": true,
+  "look": 1,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.96865,
+      "ms_compose": 2.04175,
+      "ms_gha": 33.85724999999999,
+      "ms_helm": 25.523000999999997,
+      "ms_k8s": 60.01974899999999,
+      "ms_openapi": 51.355299,
+      "total_ms": 175.42564450000006
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9157500000000001,
+      "ms_compose": 1.9131999999999998,
+      "ms_gha": 31.17100049999999,
+      "ms_helm": 24.944300000000005,
+      "ms_k8s": 54.365349,
+      "ms_openapi": 51.6626995,
+      "total_ms": 168.69660149999987
+    }
+  },
+  "commit": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "wall_seconds": 150.462
+}

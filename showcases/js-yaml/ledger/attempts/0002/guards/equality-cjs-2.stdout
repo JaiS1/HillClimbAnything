@@ -1,0 +1,24 @@
+candidate build: CommonJS (dist/js-yaml.cjs.js)
+corpus docs: 491; hand-written edge cases: 904; yaml-test-suite cases: 406; API cases: 468; comparisons that were errors in both: 6708
+equality: 25384 comparisons, 24 differences
+  DIFF [api/api] options schemaNull / text 0
+    input:     "a: 1\nb: [x, y]\nc: {d: 2}\n"
+    original:  ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'lookupMappingTag')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'lookupMappingTag')"}
+    candidate: ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'tags')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'tags')"}
+  DIFF [api/api] options schemaNull / loadAll / text 0
+    input:     "a: 1\nb: [x, y]\nc: {d: 2}\n"
+    original:  ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'lookupMappingTag')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'lookupMappingTag')"}
+    candidate: ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'tags')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'tags')"}
+  DIFF [api/api] options schemaNull / text 2
+    input:     "a: &x [1]\nb: *x"
+    original:  ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'lookupMappingTag')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'lookupMappingTag')"}
+    candidate: ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'tags')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'tags')"}
+  DIFF [api/api] options schemaNull / loadAll / text 2
+    input:     "a: &x [1]\nb: *x"
+    original:  ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'lookupMappingTag')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'lookupMappingTag')"}
+    candidate: ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'tags')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'tags')"}
+  DIFF [api/api] options schemaNull / text 3
+    input:     "[[[[[1]]]]]"
+    original:  ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'lookupSequenceTag')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'lookupSequenceTag')"}
+    candidate: ERR:TypeError>Error>|TypeError|"Cannot read properties of null (reading 'tags')"|OObject{"message"ewc:S"Cannot read properties of null (reading 'tags')"}
+  ... and 19 more

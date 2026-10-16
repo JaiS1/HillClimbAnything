@@ -1,0 +1,1 @@
+T4 bundle of three avoid-work changes, each ~1% alone (T1/T2/T3 reverted separately as sub-noise; local A/B of the bundle: ~-4%): (a) skip checkPrintable slice+regex for plain scalars with only printable-ASCII chars, (b) skip nodeTags Map.set unless schema has a merge tag, (c) no ParserSnapshot allocation per parseNode call / per block-mapping key

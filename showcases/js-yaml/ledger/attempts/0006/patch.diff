@@ -1,0 +1,143 @@
+diff --git a/src/parser/constructor.ts b/src/parser/constructor.ts
+index 5bfa791..bb8cb2e 100644
+--- a/src/parser/constructor.ts
++++ b/src/parser/constructor.ts
+@@ -127,6 +127,9 @@ interface ConstructorState extends Required<ConstructorOptions> {
+   // Mapping tag each sequence element was built with, keyed by the element
+   // itself. Needed by `<<` merge, which sees only the finished element values.
+   nodeTags: Map<unknown, MappingTagDefinition<any, any>>
++  // `nodeTags` is read only by `<<` merge, which needs a scalar tag named
++  // `merge` in the schema; without one, skip recording every mapping element.
++  trackNodeTags: boolean | undefined
+   tagHandlers: TagHandlers
+   totalMergeKeys: number
+   aliasCount: number
+@@ -320,7 +323,11 @@ function addValue (state: ConstructorState, value: unknown, tag: AnyTag) {
+   } else if (frame.kind === 'sequence') {
+     // Any element may later be folded in by a `<<` merge, which by then has no
+     // way to tell what built it.
+-    if (isMappingTag(tag)) state.nodeTags.set(value, tag)
++    if (isMappingTag(tag)) {
++      // Resolved lazily, after the schema has already served this event.
++      state.trackNodeTags ??= state.schema.tags.some(t => t.tagName === MERGE_TAG_NAME)
++      if (state.trackNodeTags) state.nodeTags.set(value, tag)
++    }
+     const err = frame.tag.addItem(frame.value, value, frame.index++)
+     if (err) throwError(state, err)
+   } else if (frame.hasKey) {
+@@ -373,6 +380,7 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
+     frames: [],
+     anchors: new Map(),
+     nodeTags: new Map(),
++    trackNodeTags: undefined,
+     tagHandlers: Object.create(null),
+     totalMergeKeys: 0,
+     aliasCount: 0
+diff --git a/src/parser/parser.ts b/src/parser/parser.ts
+index 1d79161..87a6f8c 100644
+--- a/src/parser/parser.ts
++++ b/src/parser/parser.ts
+@@ -800,6 +800,9 @@ function readPlainScalar (state: ParserState, nodeIndent: number, nodeContext: N
+   // trailing whitespace from the range, so no folding is needed (see
+   // getScalarValue fast path). Folded line breaks make it non-simple.
+   let multiline = false
++  // Set when a char outside printable ASCII (plus tab/LF/CR) is seen; only then
++  // can checkPrintable() find anything, so pure-ASCII scalars skip its slice+regex.
++  let maybeNonPrintable = false
+ 
+   while (ch !== 0) {
+     if (testDocumentBoundary(state)) break
+@@ -833,13 +836,14 @@ function readPlainScalar (state: ParserState, nodeIndent: number, nodeContext: N
+       break
+     }
+ 
++    if (ch < 0x20 ? (ch !== 0x09 && ch !== 0x0A && ch !== 0x0D) : ch >= 0x7F) maybeNonPrintable = true
+     if (!isWhiteSpace(ch)) end = state.position + 1
+     ch = state.input.charCodeAt(++state.position)
+   }
+ 
+   if (end === start) return false
+ 
+-  checkPrintable(state, start, end)
++  if (maybeNonPrintable) checkPrintable(state, start, end)
+   addScalarEvent(state, start, end, props.anchorStart, props.anchorEnd, props.tagStart, props.tagEnd, SCALAR_STYLE.PLAIN, CHOMPING_MODE.CLIP, -1, !multiline)
+   return true
+ }
+@@ -1079,7 +1083,12 @@ function readBlockMapping (state: ParserState, nodeIndent: number, flowIndent: n
+         atExplicitKey = false
+       }
+ 
+-      const beforeKey = snapshotState(state)
++      const keyPosition = state.position
++      const keyLine = state.line
++      const keyLineStart = state.lineStart
++      const keyLineIndent = state.lineIndent
++      const keyFirstTab = state.firstTabInLine
++      const keyEvents = state.events.length
+ 
+       if (!parseNode(state, flowIndent, CONTEXT_FLOW_OUT, false, true)) {
+         break
+@@ -1102,9 +1111,9 @@ function readBlockMapping (state: ParserState, nodeIndent: number, flowIndent: n
+           if (!mappingOpened) {
+             // The key is already parsed; insert the MAPPING event before its
+             // events instead of rolling back and re-reading the key.
+-            state.events.splice(beforeKey.eventsLength, 0, {
++            state.events.splice(keyEvents, 0, {
+               type: EVENT_ID.MAPPING,
+-              start: beforeKey.position,
++              start: keyPosition,
+               anchorStart: props.anchorStart,
+               anchorEnd: props.anchorEnd,
+               tagStart: props.tagStart,
+@@ -1123,7 +1132,7 @@ function readBlockMapping (state: ParserState, nodeIndent: number, flowIndent: n
+           // Not a mapping. If outer properties are pending, roll back so the
+           // caller re-reads this node with them attached (events are append-only).
+           if (props.anchorStart !== NO_RANGE || props.tagStart !== NO_RANGE) {
+-            restoreState(state, beforeKey)
++            restoreState(state, { position: keyPosition, line: keyLine, lineStart: keyLineStart, lineIndent: keyLineIndent, firstTabInLine: keyFirstTab, eventsLength: keyEvents })
+             return false
+           }
+           return true
+@@ -1132,7 +1141,7 @@ function readBlockMapping (state: ParserState, nodeIndent: number, flowIndent: n
+         throwError(state, 'can not read a block mapping entry; a multiline key may not be an implicit key')
+       } else {
+         if (props.anchorStart !== NO_RANGE || props.tagStart !== NO_RANGE) {
+-          restoreState(state, beforeKey)
++          restoreState(state, { position: keyPosition, line: keyLine, lineStart: keyLineStart, lineIndent: keyLineIndent, firstTabInLine: keyFirstTab, eventsLength: keyEvents })
+           return false
+         }
+         return true
+@@ -1205,7 +1214,14 @@ function parseNode (
+   if (indentStatus === 1) {
+     while (true) {
+       const ch = state.input.charCodeAt(state.position)
+-      const propertyState = snapshotState(state)
++      // Captured as plain locals; the snapshot object is built only when a
++      // property is actually read (the common node has none).
++      const pPosition = state.position
++      const pLine = state.line
++      const pLineStart = state.lineStart
++      const pLineIndent = state.lineIndent
++      const pFirstTab = state.firstTabInLine
++      const pEvents = state.events.length
+ 
+       if (atNewLine &&
+           indentStatus !== 1 &&
+@@ -1240,7 +1256,16 @@ function parseNode (
+         break
+       }
+ 
+-      if (propertyStart === null) propertyStart = propertyState
++      if (propertyStart === null) {
++        propertyStart = {
++          position: pPosition,
++          line: pLine,
++          lineStart: pLineStart,
++          lineIndent: pLineIndent,
++          firstTabInLine: pFirstTab,
++          eventsLength: pEvents
++        }
++      }
+ 
+       if (skipSeparationSpace(state, true)) {
+         atNewLine = true

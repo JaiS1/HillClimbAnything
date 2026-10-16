@@ -1,0 +1,54 @@
+{
+  "n": 11,
+  "message": "T9: loadDocuments fast path for the common no-options call: pass the shared default parser options and a bare {source} to constructFromEvents instead of merging {...defaults,...options}, Object.keys x2 and two pick() copies per call (identical values). Targets fixed per-call cost that dominates small documents (median item); local A/B median item ~-2..-4%, total ~-1%",
+  "at": "2026-10-16T06:18:05-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "estimate is +2.10% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 201837846052775,
+  "confirm": null,
+  "again": false,
+  "tree": "78aedb204d8e543430fdf0309af44f43de2e4d22",
+  "snapshot": "41eb77b9a2dd9d296ae79ae5cb52cc98d049cc50",
+  "extended": true,
+  "blocks": 19,
+  "blocks_run": 20,
+  "estimate_log": 0.021196918183982567,
+  "estimate": -2.097384246653599,
+  "lower": -0.33103502774811855,
+  "upper": -4.034861580704074,
+  "p": 0.0014190673828125,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9208999999999999,
+      "ms_compose": 1.9345999999999999,
+      "ms_gha": 31.515700000000002,
+      "ms_helm": 25.395201000000007,
+      "ms_k8s": 54.933600000000055,
+      "ms_openapi": 50.4132,
+      "total_ms": 166.5796009999999
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.8934000000000001,
+      "ms_compose": 1.855,
+      "ms_gha": 31.606600000000007,
+      "ms_helm": 24.2128,
+      "ms_k8s": 53.94369999999998,
+      "ms_openapi": 51.251799000000005,
+      "total_ms": 166.3937
+    }
+  },
+  "wall_seconds": 261.63
+}

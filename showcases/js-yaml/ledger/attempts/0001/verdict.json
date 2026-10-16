@@ -1,0 +1,55 @@
+{
+  "n": 1,
+  "message": "T1: skip checkPrintable slice+regex for plain scalars unless a non-printable-ASCII char was seen while scanning (saves a slice and regex exec per scalar); total_ms/slices checked in report",
+  "at": "2026-10-16T05:31:48-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.00534 > 0.005",
+    "estimate is +1.99% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 57643226581885,
+  "confirm": null,
+  "again": false,
+  "tree": "a2eb68e3d081bbba73e6e666fb36ba0edf1584da",
+  "snapshot": "a146c95b6f96bf62df527bcedea52134c81ae8f1",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.020136005095412877,
+  "estimate": -1.9934629642185735,
+  "lower": 0.04216327222455536,
+  "upper": -4.0052671412992105,
+  "p": 0.005344390869140625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9944,
+      "ms_compose": 2.09785,
+      "ms_gha": 34.555702999999994,
+      "ms_helm": 27.211849500000007,
+      "ms_k8s": 62.7986505,
+      "ms_openapi": 53.929049,
+      "total_ms": 184.46905049999992
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9667000000000001,
+      "ms_compose": 2.0624000000000002,
+      "ms_gha": 33.750499999999995,
+      "ms_helm": 26.794300000000003,
+      "ms_k8s": 59.67299900000002,
+      "ms_openapi": 51.6037,
+      "total_ms": 179.00180399999988
+    }
+  },
+  "wall_seconds": 268.567
+}

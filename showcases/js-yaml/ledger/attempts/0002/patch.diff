@@ -1,0 +1,38 @@
+diff --git a/src/parser/constructor.ts b/src/parser/constructor.ts
+index 5bfa791..b03146a 100644
+--- a/src/parser/constructor.ts
++++ b/src/parser/constructor.ts
+@@ -127,6 +127,9 @@ interface ConstructorState extends Required<ConstructorOptions> {
+   // Mapping tag each sequence element was built with, keyed by the element
+   // itself. Needed by `<<` merge, which sees only the finished element values.
+   nodeTags: Map<unknown, MappingTagDefinition<any, any>>
++  // `nodeTags` is read only by `<<` merge, which needs a scalar tag named
++  // `merge` in the schema; without one, skip recording every mapping element.
++  trackNodeTags: boolean
+   tagHandlers: TagHandlers
+   totalMergeKeys: number
+   aliasCount: number
+@@ -320,7 +323,7 @@ function addValue (state: ConstructorState, value: unknown, tag: AnyTag) {
+   } else if (frame.kind === 'sequence') {
+     // Any element may later be folded in by a `<<` merge, which by then has no
+     // way to tell what built it.
+-    if (isMappingTag(tag)) state.nodeTags.set(value, tag)
++    if (state.trackNodeTags && isMappingTag(tag)) state.nodeTags.set(value, tag)
+     const err = frame.tag.addItem(frame.value, value, frame.index++)
+     if (err) throwError(state, err)
+   } else if (frame.hasKey) {
+@@ -373,11 +376,14 @@ function constructFromEvents (events: Event[], options: ConstructorOptions): unk
+     frames: [],
+     anchors: new Map(),
+     nodeTags: new Map(),
++    trackNodeTags: false,
+     tagHandlers: Object.create(null),
+     totalMergeKeys: 0,
+     aliasCount: 0
+   }
+ 
++  state.trackNodeTags = state.schema.tags.some(tag => tag.tagName === MERGE_TAG_NAME)
++
+   while (state.eventIndex < state.events.length) {
+     const event = state.events[state.eventIndex++]
+     state.position = eventPosition(event)

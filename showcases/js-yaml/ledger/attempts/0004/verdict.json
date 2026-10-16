@@ -1,0 +1,55 @@
+{
+  "n": 4,
+  "message": "T2b: record nodeTags (Map.set per mapping sequence element) only when the schema defines a merge tag (resolved lazily so odd-schema errors are unchanged), since only << merge reads it; removes a Map insertion per mapping-in-sequence",
+  "at": "2026-10-16T05:38:11-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.652 > 0.005",
+    "estimate is -0.47% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 107403295777681,
+  "confirm": null,
+  "again": false,
+  "tree": "3bc27cf12833fb5f3fedcee8e8a96b3aa37345a6",
+  "snapshot": "80a8f907178a987484c2215e17994478d59c68d3",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": -0.0046918893647510725,
+  "estimate": 0.47029135122734556,
+  "lower": 3.8914847299783584,
+  "upper": -2.2125886724468096,
+  "p": 0.65234375,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.97835,
+      "ms_compose": 2.0603,
+      "ms_gha": 35.15235,
+      "ms_helm": 27.432250500000002,
+      "ms_k8s": 62.4311,
+      "ms_openapi": 54.9801,
+      "total_ms": 183.75224999999998
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9981000000000001,
+      "ms_compose": 2.14995,
+      "ms_gha": 34.995350000000016,
+      "ms_helm": 27.55055,
+      "ms_k8s": 62.40894999999999,
+      "ms_openapi": 54.7303,
+      "total_ms": 184.04859700000011
+    }
+  },
+  "wall_seconds": 152.143
+}

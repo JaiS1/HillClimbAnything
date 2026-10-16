@@ -1,0 +1,1 @@
+T9: loadDocuments fast path for the common no-options call: pass the shared default parser options and a bare {source} to constructFromEvents instead of merging {...defaults,...options}, Object.keys x2 and two pick() copies per call (identical values). Targets fixed per-call cost that dominates small documents (median item); local A/B median item ~-2..-4%, total ~-1%

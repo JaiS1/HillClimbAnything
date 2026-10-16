@@ -1,0 +1,54 @@
+{
+  "n": 9,
+  "message": "T7: cut calls per scalar node: parseNode dispatches on first char before the sequence/flow/block-scalar/quoted/alias readers (T6 idea, which measured -0.7% alone) plus readPlainScalar pushes its scalar event inline instead of via the 11-arg addScalarEvent. Local A/B ~-2..-5%",
+  "at": "2026-10-16T06:05:54-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "estimate is +1.81% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 67644229382760,
+  "confirm": null,
+  "again": false,
+  "tree": "6532da01a2c1381180a60cfe9195987bf0fbfe64",
+  "snapshot": "29f20c167387ea9d1c532ee60575fbdf2945b7a6",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.018250360028451876,
+  "estimate": -1.8084830727276051,
+  "lower": -0.12368475345575407,
+  "upper": -3.1461391663419462,
+  "p": 0.0031948089599609375,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9331505,
+      "ms_compose": 1.9231999999999996,
+      "ms_gha": 31.964150499999988,
+      "ms_helm": 25.275051500000004,
+      "ms_k8s": 55.116449499999966,
+      "ms_openapi": 50.9497995,
+      "total_ms": 168.8278094999999
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9224,
+      "ms_compose": 1.98985,
+      "ms_gha": 31.788450000000005,
+      "ms_helm": 25.357946,
+      "ms_k8s": 50.441200000000016,
+      "ms_openapi": 50.4744005,
+      "total_ms": 163.1343035
+    }
+  },
+  "wall_seconds": 262.52
+}

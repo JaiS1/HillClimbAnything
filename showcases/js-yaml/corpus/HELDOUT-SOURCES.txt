@@ -1,0 +1,16 @@
+Held-out corpus sources (outside the repo; do not read while climbing)
+
+| Source repo | Licence | Commit | Kind | Docs | KB |
+|---|---|---|---|---:|---:|
+| docker/awesome-compose | CC0-1.0 | `30f4b7f6a6` | compose | 13 | 10 |
+| pytorch/pytorch | BSD-3-Clause | `1e233a2e93` | gha | 12 | 64 |
+| actions/starter-workflows | MIT | `e3c451d60f` | gha | 10 | 21 |
+| microsoft/vscode | MIT | `cba2384e94` | gha | 16 | 110 |
+| bitnami/charts | Apache-2.0 | `bb5e98a6e3` | helm | 9 | 286 |
+| grafana/helm-charts | Apache-2.0 | `434266a8ba` | helm | 1 | 4 |
+| traefik/traefik-helm-chart | Apache-2.0 | `b0cbed305b` | helm | 4 | 3 |
+| istio/istio | Apache-2.0 | `93ffc7debc` | k8s | 78 | 247 |
+| prometheus-operator/kube-prometheus | Apache-2.0 | `f81c076ab8` | k8s | 23 | 46 |
+| OAI/learn.openapis.org | CC-BY-4.0 (attribution) | `82b82f372a` | openapi | 7 | 26 |
+| APIs-guru/openapi-directory | CC0-1.0 (individual API specs carry their own terms) | `f04b8d0bcd` | openapi | 1 | 394 |
+| Redocly/redoc | MIT | `d6d785ff9c` | openapi | 21 | 19 |

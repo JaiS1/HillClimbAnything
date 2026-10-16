@@ -1,0 +1,56 @@
+{
+  "n": 5,
+  "message": "T3: avoid allocating a ParserSnapshot per parseNode call and per block-mapping key (capture fields in locals, build the object only when a property is read or a restore is needed); fewer allocations/GC on the hottest parser paths",
+  "at": "2026-10-16T05:41:41-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "revert",
+  "valid": false,
+  "reasons": [
+    "p = 0.722 > 0.005",
+    "estimate is -0.77% better, below the keep floor of +2.53% better (half the useful effect)",
+    "the candidate failed or reported invalid items in 1 of 10 blocks (scored as the worst value; a candidate that is flaky is never kept)"
+  ],
+  "seed": 34403638779,
+  "confirm": null,
+  "again": false,
+  "tree": "4391e3212525a33eebe7262fc9e9d480b0731604",
+  "snapshot": "ff321b0827ca60fac441c5acc4f8da96c42456de",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": -0.007645862873227595,
+  "estimate": 0.7675167120574187,
+  "lower": 13.022535484299791,
+  "upper": -3.463128159030597,
+  "p": 0.7216796875,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9937,
+      "ms_compose": 2.08695,
+      "ms_gha": 34.24430000000001,
+      "ms_helm": 27.8382,
+      "ms_k8s": 61.57760000000002,
+      "ms_openapi": 54.6262995,
+      "total_ms": 183.84124950000006
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9825000000000002,
+      "ms_compose": 2.022,
+      "ms_gha": 34.392801000000006,
+      "ms_helm": 26.401601,
+      "ms_k8s": 61.382600000000004,
+      "ms_openapi": 55.306899,
+      "total_ms": 186.17989999999998
+    }
+  },
+  "wall_seconds": 152.053
+}

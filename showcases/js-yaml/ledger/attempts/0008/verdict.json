@@ -1,0 +1,55 @@
+{
+  "n": 8,
+  "message": "T6: parseNode dispatches on the node's first character before calling the block-sequence, flow-collection, block-scalar, quoted-scalar and alias readers (each began with the same char test and returned false), so a plain scalar skips ~5 failed calls per node. Local A/B ~-3.3%",
+  "at": "2026-10-16T05:58:52-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.0266 > 0.005",
+    "estimate is +0.72% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 122826399183324,
+  "confirm": null,
+  "again": false,
+  "tree": "ac6230dc11814f5f177e4e9b5fcdd5cbfc085b6a",
+  "snapshot": "5b83961f6a96fa4882f71a161456477d8e9dbac5",
+  "extended": true,
+  "blocks": 20,
+  "blocks_run": 20,
+  "estimate_log": 0.007208826900308082,
+  "estimate": -0.7182905632380167,
+  "lower": 1.0452058533759525,
+  "upper": -2.5395443556042383,
+  "p": 0.026584625244140625,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 2,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.9092500000000001,
+      "ms_compose": 1.94405,
+      "ms_gha": 32.1409505,
+      "ms_helm": 25.480249500000006,
+      "ms_k8s": 55.33124999999999,
+      "ms_openapi": 50.44655,
+      "total_ms": 166.91480400000023
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9198000000000001,
+      "ms_compose": 1.8651999999999997,
+      "ms_gha": 32.088550500000004,
+      "ms_helm": 24.686900500000004,
+      "ms_k8s": 51.0417005,
+      "ms_openapi": 50.2046,
+      "total_ms": 162.34555050000006
+    }
+  },
+  "wall_seconds": 261.436
+}

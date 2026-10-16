@@ -1,0 +1,51 @@
+diff --git a/src/parser/parser.ts b/src/parser/parser.ts
+index ba4d1a5..02b1892 100644
+--- a/src/parser/parser.ts
++++ b/src/parser/parser.ts
+@@ -1302,10 +1302,15 @@ function parseNode (
+       : parentIndent + 1
+     const blockIndent = state.position - state.lineStart
+ 
++    let startChar = 0
++
+     if (indentStatus === 1) {
+       if ((allowBlockCollections &&
+-          (readBlockSequence(state, blockIndent, props) ||
++          ((state.input.charCodeAt(state.position) === 0x2D/* - */ && readBlockSequence(state, blockIndent, props)) ||
+            readBlockMapping(state, blockIndent, flowIndent, props))) ||
++          // Each reader below starts with a first-character test; doing it here
++          // saves a failed call per node.
++          ((startChar = state.input.charCodeAt(state.position)) === 0x5B/* [ */ || startChar === 0x7B/* { */) &&
+           readFlowCollection(state, flowIndent, props)) {
+         hasContent = true
+       } else {
+@@ -1326,17 +1331,21 @@ function parseNode (
+           }
+         }
+ 
+-        if (!hasContent &&
+-            ((allowBlockScalars && readBlockScalar(state, flowIndent, props)) ||
+-             readSingleQuotedScalar(state, flowIndent, props) ||
+-             readDoubleQuotedScalar(state, flowIndent, props) ||
+-             readAlias(state, props) ||
+-             readPlainScalar(state, flowIndent, nodeContext, props))) {
+-          hasContent = true
++        if (!hasContent) {
++          const c = state.input.charCodeAt(state.position)
++
++          if (((c === 0x7C/* | */ || c === 0x3E/* > */) && allowBlockScalars && readBlockScalar(state, flowIndent, props)) ||
++              (c === 0x27/* ' */ && readSingleQuotedScalar(state, flowIndent, props)) ||
++              (c === 0x22/* " */ && readDoubleQuotedScalar(state, flowIndent, props)) ||
++              (c === 0x2A/* * */ && readAlias(state, props)) ||
++              readPlainScalar(state, flowIndent, nodeContext, props)) {
++            hasContent = true
++          }
+         }
+       }
+     } else if (indentStatus === 0) {
+-      hasContent = allowBlockCollections && readBlockSequence(state, blockIndent, props)
++      hasContent = allowBlockCollections && state.input.charCodeAt(state.position) === 0x2D/* - */ &&
++        readBlockSequence(state, blockIndent, props)
+     }
+   }
+ 

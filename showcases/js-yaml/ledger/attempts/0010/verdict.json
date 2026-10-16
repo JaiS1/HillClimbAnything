@@ -1,0 +1,55 @@
+{
+  "n": 10,
+  "message": "T8: T7 (first-char dispatch in parseNode + inline plain scalar event; measured -1.8%, p=0.003, below floor) plus two more per-call/per-scalar cuts: ASCII char-code table for implicit scalar resolver dispatch (no charAt+Map.get per scalar), and load option key lists hoisted to module scope with an indexed pick loop (no Object.keys x2 per load call)",
+  "at": "2026-10-16T06:12:29-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "466714a5450f998b1f8c6e54fd57ad1bf54213a5",
+  "verdict": "revert",
+  "valid": true,
+  "reasons": [
+    "p = 0.615 > 0.005",
+    "estimate is -0.04% better, below the keep floor of +2.53% better (half the useful effect)"
+  ],
+  "seed": 73942521600845,
+  "confirm": null,
+  "again": false,
+  "tree": "4c7a50ddd1c82aa4182d19ad9b457f5af0537d40",
+  "snapshot": "2636d485a4abec17dac935622b593b20f7482af0",
+  "extended": false,
+  "blocks": 10,
+  "blocks_run": 10,
+  "estimate_log": -0.00041355988644069914,
+  "estimate": 0.04136454141204017,
+  "lower": 2.52434768202432,
+  "upper": -2.94468959262102,
+  "p": 0.615234375,
+  "level": 0.005,
+  "includes_useful": false,
+  "look": 1,
+  "looks": 2,
+  "useful": -5.0,
+  "arm_medians": {
+    "baseline": {
+      "kb": 12.19140625,
+      "load_ms": 0.91655,
+      "ms_compose": 1.9267500000000002,
+      "ms_gha": 31.12525,
+      "ms_helm": 25.471449999999997,
+      "ms_k8s": 55.283399500000016,
+      "ms_openapi": 49.9064,
+      "total_ms": 167.8003479999999
+    },
+    "candidate": {
+      "kb": 12.19140625,
+      "load_ms": 0.9174500000000001,
+      "ms_compose": 1.9881995,
+      "ms_gha": 31.3979,
+      "ms_helm": 24.0439,
+      "ms_k8s": 49.70989900000001,
+      "ms_openapi": 51.282849999999996,
+      "total_ms": 162.59224799999998
+    }
+  },
+  "wall_seconds": 148.43
+}

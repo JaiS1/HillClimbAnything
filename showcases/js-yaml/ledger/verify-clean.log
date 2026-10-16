@@ -1,0 +1,22 @@
+== fresh clone of /home/jai/hca-showcase-yaml/js-yaml at HEAD into /tmp/yaml-verify.6O8Ty9
+== npm ci (+ the linux rolldown binding the lockfile lacks)
+== yaml-test-suite (spec:get) and build
+== guards
+tests: pass (# pass 1633)
+source: 44 files under src/, 132 lines differ from 5.5.0, dist/js-yaml.mjs 133034 bytes; 0 problems
+corpus docs: 491; hand-written edge cases: 904; yaml-test-suite cases: 406; API cases: 468; comparisons that were errors in both: 6730
+equality: 25384 comparisons, 0 differences
+corpus docs: 491; hand-written edge cases: 904; yaml-test-suite cases: 406; API cases: 468; comparisons that were errors in both: 6730
+equality: 25384 comparisons, 0 differences
+fuzz: 11250 comparisons, 0 differences
+== benchmark (train corpus), then 200-process alternating A/B against the pinned original
+491 docs in 89 items x 15 fresh processes; median total load 158.7 ms (compose 2, gha 32, helm 23, k8s 54, openapi 46); child accounted 98.9-99.3% of wall; import 5.2 ms (original 5.17); invalid items: 0
+A/B over 100 pairs (200 fresh processes): candidate/original total time = 0.8466 (-15.3%, 95% CI -16.6% to -14.4%)
+  compose  -11.2%
+  gha      -11.3%
+  helm     -10.8%
+  k8s      -20.9%
+  openapi  -15.5%
+output mismatches vs recorded original: 0; timing cross-check problems: 0
+== verify-clean: OK
+exit 0

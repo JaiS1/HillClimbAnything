@@ -1,0 +1,20 @@
+diff --git a/src/load.ts b/src/load.ts
+index ed13684..50601fd 100644
+--- a/src/load.ts
++++ b/src/load.ts
+@@ -23,7 +23,14 @@ const DEFAULT_LOAD_OPTIONS: Required<LoadOptions> = {
+   ...DEFAULT_CONSTRUCTOR_OPTIONS
+ }
+ 
+-function loadDocuments (input: string, options: LoadOptions = {}) {
++function loadDocuments (input: string, options: LoadOptions | undefined = undefined) {
++  // Most calls pass no options: use the defaults as they are instead of merging
++  // and re-splitting an options object that would come out identical.
++  if (options === undefined) {
++    const source = String(input)
++    return constructFromEvents(parseEvents(source, DEFAULT_PARSER_OPTIONS), { source })
++  }
++
+   const opts = { ...DEFAULT_LOAD_OPTIONS, ...options }
+   const source = String(input)
+ 

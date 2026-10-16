@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "changed": [
+    "src/parser/parser.ts"
+  ],
+  "untracked": [],
+  "untracked_outside_editable": [],
+  "violations": []
+}

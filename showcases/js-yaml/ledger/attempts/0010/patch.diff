@@ -1,0 +1,152 @@
+diff --git a/src/common/object.ts b/src/common/object.ts
+index 1b3721a..d25e2e7 100644
+--- a/src/common/object.ts
++++ b/src/common/object.ts
+@@ -9,7 +9,8 @@ function isPlainObject (data: unknown): boolean {
+ // the `Partial` return.
+ function pick<T extends object, K extends keyof T> (object: T, keys: readonly K[]): Partial<Pick<T, K>> {
+   const result: Partial<Pick<T, K>> = {}
+-  for (const key of keys) {
++  for (let i = 0; i < keys.length; i++) {
++    const key = keys[i]
+     if (object[key] !== undefined) result[key] = object[key]
+   }
+   return result
+diff --git a/src/load.ts b/src/load.ts
+index ed13684..3ce737c 100644
+--- a/src/load.ts
++++ b/src/load.ts
+@@ -23,15 +23,16 @@ const DEFAULT_LOAD_OPTIONS: Required<LoadOptions> = {
+   ...DEFAULT_CONSTRUCTOR_OPTIONS
+ }
+ 
++// Option key lists depend only on the defaults; compute them once.
++const PARSER_OPT_KEYS = Object.keys(DEFAULT_PARSER_OPTIONS) as
++  (keyof typeof DEFAULT_PARSER_OPTIONS)[]
++const CONSTRUCTOR_OPT_KEYS = Object.keys(DEFAULT_CONSTRUCTOR_OPTIONS) as
++  (keyof typeof DEFAULT_CONSTRUCTOR_OPTIONS)[]
++
+ function loadDocuments (input: string, options: LoadOptions = {}) {
+   const opts = { ...DEFAULT_LOAD_OPTIONS, ...options }
+   const source = String(input)
+ 
+-  const PARSER_OPT_KEYS = Object.keys(DEFAULT_PARSER_OPTIONS) as
+-    (keyof typeof DEFAULT_PARSER_OPTIONS)[]
+-  const CONSTRUCTOR_OPT_KEYS = Object.keys(DEFAULT_CONSTRUCTOR_OPTIONS) as
+-    (keyof typeof DEFAULT_CONSTRUCTOR_OPTIONS)[]
+-
+   const events = parseEvents(source, pick(opts, PARSER_OPT_KEYS))
+   return constructFromEvents(events, { ...pick(opts, CONSTRUCTOR_OPT_KEYS), source })
+ }
+diff --git a/src/parser/parser.ts b/src/parser/parser.ts
+index ba4d1a5..295120d 100644
+--- a/src/parser/parser.ts
++++ b/src/parser/parser.ts
+@@ -848,7 +848,20 @@ function readPlainScalar (state: ParserState, nodeIndent: number, nodeContext: N
+   if (end === start) return false
+ 
+   if (maybeNonPrintable) checkPrintable(state, start, end)
+-  addScalarEvent(state, start, end, props.anchorStart, props.anchorEnd, props.tagStart, props.tagEnd, SCALAR_STYLE.PLAIN, CHOMPING_MODE.CLIP, -1, !multiline)
++  // Same event addScalarEvent() builds, pushed directly (hot path).
++  state.events.push({
++    type: EVENT_ID.SCALAR,
++    valueStart: start,
++    valueEnd: end,
++    anchorStart: props.anchorStart,
++    anchorEnd: props.anchorEnd,
++    tagStart: props.tagStart,
++    tagEnd: props.tagEnd,
++    style: SCALAR_STYLE.PLAIN,
++    chomping: CHOMPING_MODE.CLIP,
++    indent: -1,
++    fast: !multiline
++  })
+   return true
+ }
+ 
+@@ -1302,10 +1315,15 @@ function parseNode (
+       : parentIndent + 1
+     const blockIndent = state.position - state.lineStart
+ 
++    let startChar = 0
++
+     if (indentStatus === 1) {
+       if ((allowBlockCollections &&
+-          (readBlockSequence(state, blockIndent, props) ||
++          ((state.input.charCodeAt(state.position) === 0x2D/* - */ && readBlockSequence(state, blockIndent, props)) ||
+            readBlockMapping(state, blockIndent, flowIndent, props))) ||
++          // Each reader below starts with a first-character test; doing it here
++          // saves a failed call per node.
++          ((startChar = state.input.charCodeAt(state.position)) === 0x5B/* [ */ || startChar === 0x7B/* { */) &&
+           readFlowCollection(state, flowIndent, props)) {
+         hasContent = true
+       } else {
+@@ -1326,17 +1344,21 @@ function parseNode (
+           }
+         }
+ 
+-        if (!hasContent &&
+-            ((allowBlockScalars && readBlockScalar(state, flowIndent, props)) ||
+-             readSingleQuotedScalar(state, flowIndent, props) ||
+-             readDoubleQuotedScalar(state, flowIndent, props) ||
+-             readAlias(state, props) ||
+-             readPlainScalar(state, flowIndent, nodeContext, props))) {
+-          hasContent = true
++        if (!hasContent) {
++          const c = state.input.charCodeAt(state.position)
++
++          if (((c === 0x7C/* | */ || c === 0x3E/* > */) && allowBlockScalars && readBlockScalar(state, flowIndent, props)) ||
++              (c === 0x27/* ' */ && readSingleQuotedScalar(state, flowIndent, props)) ||
++              (c === 0x22/* " */ && readDoubleQuotedScalar(state, flowIndent, props)) ||
++              (c === 0x2A/* * */ && readAlias(state, props)) ||
++              readPlainScalar(state, flowIndent, nodeContext, props)) {
++            hasContent = true
++          }
+         }
+       }
+     } else if (indentStatus === 0) {
+-      hasContent = allowBlockCollections && readBlockSequence(state, blockIndent, props)
++      hasContent = allowBlockCollections && state.input.charCodeAt(state.position) === 0x2D/* - */ &&
++        readBlockSequence(state, blockIndent, props)
+     }
+   }
+ 
+diff --git a/src/schema.ts b/src/schema.ts
+index 2305172..46c3584 100644
+--- a/src/schema.ts
++++ b/src/schema.ts
+@@ -98,6 +98,8 @@ class Schema {
+    */
+   private readonly implicitScalarByFirstChar: ReadonlyMap<string, readonly ScalarTagDefinition[]>
+   private readonly implicitScalarAnyFirstChar: readonly ScalarTagDefinition[]
++  /** The same dispatch for ASCII first characters, indexed by char code. */
++  private readonly implicitScalarByAscii: readonly (readonly ScalarTagDefinition[])[]
+ 
+   /**
+    * The default scalar tag (`!!str`), resolved once so the composer's fallback
+@@ -174,6 +176,11 @@ class Schema {
+     this.implicitScalarTags = implicitScalarTags
+     this.implicitScalarByFirstChar = implicitScalarByFirstChar
+     this.implicitScalarAnyFirstChar = implicitScalarAnyFirstChar
++    const byAscii: (readonly ScalarTagDefinition[])[] = []
++    for (let code = 0; code < 128; code++) {
++      byAscii.push(implicitScalarByFirstChar.get(String.fromCharCode(code)) ?? implicitScalarAnyFirstChar)
++    }
++    this.implicitScalarByAscii = byAscii
+     this.defaultScalarTag = defaultScalarTag
+     this.defaultSequenceTag = exact.sequence['tag:yaml.org,2002:seq']
+     this.defaultMappingTag = exact.mapping['tag:yaml.org,2002:map']
+@@ -219,8 +226,11 @@ class Schema {
+ 
+   /** @internal */
+   resolveImplicitScalarTag (source: string): { value: unknown, tag: ScalarTagDefinition } {
+-    const candidates = this.implicitScalarByFirstChar.get(source.charAt(0)) ??
+-      this.implicitScalarAnyFirstChar
++    const code = source.charCodeAt(0)
++    // Empty source (NaN) and non-ASCII characters take the keyed lookup.
++    const candidates = code < 128
++      ? this.implicitScalarByAscii[code]
++      : this.implicitScalarByFirstChar.get(source.charAt(0)) ?? this.implicitScalarAnyFirstChar
+ 
+     for (const tag of candidates) {
+       const value = tag.resolve(source, false, tag.tagName)

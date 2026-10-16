@@ -1,0 +1,1 @@
+T2b: record nodeTags (Map.set per mapping sequence element) only when the schema defines a merge tag (resolved lazily so odd-schema errors are unchanged), since only << merge reads it; removes a Map insertion per mapping-in-sequence

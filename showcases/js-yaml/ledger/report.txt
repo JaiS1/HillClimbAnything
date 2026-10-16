@@ -1,0 +1,45 @@
+HCA report: yaml-load (branch hca/yaml-load; blocks mode; load_ms min; useful effect 5%)
+
+Headline
+  Confirmed: load_ms -15.3% (better) vs the original (cut of at least 13.3%; confirm 1, 20 blocks).
+
+Attempts
+  n     verdict           estimate  p         blocks    wall    message
+  0001  revert            -2.0%     0.00534   20 (ext)  268.6s  T1: skip checkPrintable slice+regex for plain scalars unless a non-pri
+  0002  revert            -         -         -         36.9s   T2: record nodeTags (Map.set per mapping sequence element) only when t
+  0003  invalid           -         -         -         0.3s    T2b: record nodeTags (Map.set per mapping sequence element) only when 
+  0004  revert            +0.5%     0.652     10        152.1s  T2b: record nodeTags (Map.set per mapping sequence element) only when 
+  0005  revert            +0.8%     0.722     10        152.1s  T3: avoid allocating a ParserSnapshot per parseNode call and per block
+  0006  keep (confirmed)  -2.7%     0.000241  20 (ext)  268.5s  T4 bundle of three avoid-work changes, each ~1% alone (T1/T2/T3 revert
+  0007  keep (confirmed)  -4.9%     0.000977  10        150.5s  T5: parseNode no longer allocates a NodeProperties object per node: sh
+  0008  revert            -0.7%     0.0266    20 (ext)  261.4s  T6: parseNode dispatches on the node's first character before calling 
+  0009  revert            -1.8%     0.00319   20 (ext)  262.5s  T7: cut calls per scalar node: parseNode dispatches on first char befo
+  0010  revert            +0.0%     0.615     10        148.4s  T8: T7 (first-char dispatch in parseNode + inline plain scalar event; 
+  0011  revert            -2.1%     0.00142   19 (ext)  261.6s  T9: loadDocuments fast path for the common no-options call: pass the s
+  0012  keep (confirmed)  -3.2%     0.000293  20 (ext)  258.5s  T10: combine three individually sub-floor but real wins (T7 -1.8% p=.0
+
+Validity rate: 9 of 12 tries valid (75%). Invalid = scope violation, no change, build/guard failure, crash, or an unfinished measurement.
+
+Expected false keeps so far <= 12 tries x 1% = 0.12 (an upper bound from chance alone; `hca confirm` is the check).
+
+Mechanism metrics (kept attempts, baseline -> candidate medians)
+  0006: kb 12.19 -> 12.19 (+0.0%); total_ms 183.4 -> 178.7 (-2.6%); ms_gha 34.86 -> 33.42 (-4.1%); ms_k8s 61.89 -> 58.91 (-4.8%); ms_helm 27.43 -> 27.04 (-1.4%); ms_openapi 54.72 -> 50.82 (-7.1%); ms_compose 2.191 -> 2.051 (-6.4%)
+  0007: kb 12.19 -> 12.19 (+0.0%); total_ms 175.4 -> 168.7 (-3.8%); ms_gha 33.86 -> 31.17 (-7.9%); ms_k8s 60.02 -> 54.37 (-9.4%); ms_helm 25.52 -> 24.94 (-2.3%); ms_openapi 51.36 -> 51.66 (+0.6%); ms_compose 2.042 -> 1.913 (-6.3%)
+  0012: kb 12.19 -> 12.19 (+0.0%); total_ms 167.8 -> 155.9 (-7.1%); ms_gha 31.74 -> 30.16 (-5.0%); ms_k8s 54.31 -> 49.55 (-8.8%); ms_helm 25 -> 24.2 (-3.2%); ms_openapi 51.86 -> 46.94 (-9.5%); ms_compose 1.892 -> 1.829 (-3.4%)
+
+Slices from confirm 1 (median item change per tag value, the metric's own %)
+  kind=compose: -8.1% over 1 item(s)
+  kind=gha: -16.7% over 15 item(s)
+  kind=helm: -16.9% over 6 item(s)
+  kind=k8s: -16.2% over 10 item(s)
+  kind=openapi: -12.0% over 5 item(s)
+
+Confirms used: 1 of 5.
+
+Change so far (confirmed 032cc0e35acd vs original):
+   src/load.ts               |   9 ++-
+   src/parser/constructor.ts |  10 +++-
+   src/parser/parser.ts      | 144 ++++++++++++++++++++++++++++++++++++----------
+   3 files changed, 132 insertions(+), 31 deletions(-)
+
+To take the result: git checkout harness-base && git merge hca/yaml-load

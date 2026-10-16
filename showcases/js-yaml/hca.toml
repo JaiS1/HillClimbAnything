@@ -1,0 +1,50 @@
+[task]
+name     = "yaml-load"
+brief    = "BRIEF.md"
+editable = ["src/**"]
+frozen   = ["hca/**", "test/**", "support/**", "package.json", "package-lock.json", "tsconfig.json", "eslint.config.mjs", "BRIEF.md"]
+link     = ["node_modules", "test/spec/yaml-test-suite"]
+
+[build]
+command = ["npm", "run", "build"]
+
+[objective]
+command       = ["node", "hca/bench.mjs"]
+metric        = "load_ms"
+direction     = "min"
+mode          = "blocks"
+useful_effect = "5%"
+max_tries     = 40
+
+[[guards]]
+name    = "tests"
+command = ["sh", "hca/guards/tests.sh"]
+
+[[guards]]
+name    = "equality"
+command = ["node", "hca/guards/equality.mjs"]
+
+[[guards]]
+name    = "equality-cjs"
+command = ["node", "hca/guards/equality.mjs", "--cjs"]
+
+[[guards]]
+name    = "source"
+command = ["node", "hca/guards/source.mjs"]
+
+[[guards]]
+name           = "total-time"
+metric         = "total_ms"
+max_regression = "5%"
+
+[[guards]]
+name    = "fuzz"
+command = ["node", "hca/guards/fuzz.mjs"]
+
+[mechanism]
+metrics = ["kb", "total_ms", "ms_gha", "ms_k8s", "ms_helm", "ms_openapi", "ms_compose"]
+slices  = ["kind"]
+
+[limits]
+command_seconds = 180
+try_seconds     = 1200

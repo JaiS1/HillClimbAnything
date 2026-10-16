@@ -1,0 +1,1 @@
+T2: record nodeTags (Map.set per mapping sequence element) only when the schema defines a merge tag, since only << merge reads it; removes a Map insertion per mapping-in-sequence. Effect on total_ms/slices to check in report

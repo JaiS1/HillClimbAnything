@@ -1,0 +1,1 @@
+T8: T7 (first-char dispatch in parseNode + inline plain scalar event; measured -1.8%, p=0.003, below floor) plus two more per-call/per-scalar cuts: ASCII char-code table for implicit scalar resolver dispatch (no charAt+Map.get per scalar), and load option key lists hoisted to module scope with an indexed pick loop (no Object.keys x2 per load call)

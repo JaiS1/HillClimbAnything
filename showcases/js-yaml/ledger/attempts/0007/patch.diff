@@ -1,0 +1,35 @@
+diff --git a/src/parser/parser.ts b/src/parser/parser.ts
+index 87a6f8c..ba4d1a5 100644
+--- a/src/parser/parser.ts
++++ b/src/parser/parser.ts
+@@ -226,6 +226,10 @@ function emptyProperties (): NodeProperties {
+   }
+ }
+ 
++// Shared, never-written properties of a node that has none (the common case).
++// parseNode() swaps in a fresh object before a tag/anchor property is read.
++const NO_PROPERTIES: NodeProperties = emptyProperties()
++
+ function snapshotState (state: ParserState): ParserSnapshot {
+   return {
+     position: state.position,
+@@ -1193,7 +1197,7 @@ function parseNode (
+   let atNewLine = false
+   let hasContent = false
+   let propertyStart: ParserSnapshot | null = null
+-  const props = emptyProperties()
++  let props = NO_PROPERTIES
+ 
+   let allowBlockScalars = nodeContext === CONTEXT_BLOCK_OUT || nodeContext === CONTEXT_BLOCK_IN
+   let allowBlockCollections = allowBlockScalars
+@@ -1252,6 +1256,10 @@ function parseNode (
+         break
+       }
+ 
++      // Only `!` and `&` can start a property.
++      if (ch !== 0x21/* ! */ && ch !== 0x26/* & */) break
++      if (props === NO_PROPERTIES) props = emptyProperties()
++
+       if (!readTagProperty(state, props, nodeContext === CONTEXT_FLOW_IN) && !readAnchorProperty(state, props)) {
+         break
+       }

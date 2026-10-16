@@ -1,0 +1,1 @@
+T1: skip checkPrintable slice+regex for plain scalars unless a non-printable-ASCII char was seen while scanning (saves a slice and regex exec per scalar); total_ms/slices checked in report

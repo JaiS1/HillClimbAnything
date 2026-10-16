@@ -1,0 +1,1 @@
+T6: parseNode dispatches on the node's first character before calling the block-sequence, flow-collection, block-scalar, quoted-scalar and alias readers (each began with the same char test and returned false), so a plain scalar skips ~5 failed calls per node. Local A/B ~-3.3%

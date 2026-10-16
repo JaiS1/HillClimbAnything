@@ -1,0 +1,17 @@
+{
+  "n": 3,
+  "message": "T2b: record nodeTags (Map.set per mapping sequence element) only when the schema defines a merge tag (resolved lazily so odd-schema errors are unchanged), since only << merge reads it; removes a Map insertion per mapping-in-sequence",
+  "at": "2026-10-16T05:38:03-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "invalid",
+  "valid": false,
+  "reasons": [
+    "no changes: there is nothing to measure (the working tree equals the last keep)"
+  ],
+  "seed": 63070075986572,
+  "confirm": null,
+  "again": false,
+  "wall_seconds": 0.316
+}

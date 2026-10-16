@@ -1,0 +1,3 @@
+fuzz: seed 20261016 (4000 docs) + fresh seed 1184884589 (1000 docs); 5000 documents (+ 1250 dump() comparisons), 5073 comparisons were errors in both
+  loads that succeeded / threw (same in both), by generator: {"values":{"ok":2157,"err":343},"grammar":{"ok":1017,"err":1483},"mutant-grammar":{"ok":708,"err":1792},"mutant-values":{"ok":1045,"err":1455}}
+fuzz: 11250 comparisons, 0 differences

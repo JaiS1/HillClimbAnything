@@ -1,0 +1,20 @@
+{
+  "n": 2,
+  "message": "T2: record nodeTags (Map.set per mapping sequence element) only when the schema defines a merge tag, since only << merge reads it; removes a Map insertion per mapping-in-sequence. Effect on total_ms/slices to check in report",
+  "at": "2026-10-16T05:36:54-0700",
+  "mode": "blocks",
+  "unit": "%",
+  "base": "a8ad0b8994fe846cdd3bfe0208868a4825fcc322",
+  "verdict": "revert",
+  "valid": false,
+  "reasons": [
+    "guard 'equality' failed (after one retry): exit 1",
+    "guard 'equality-cjs' failed (after one retry): exit 1"
+  ],
+  "seed": 51610638111009,
+  "confirm": null,
+  "again": false,
+  "tree": "e1a52f42d370b3dbfa3efc0fbb319f342d85e17c",
+  "snapshot": "faabd37735f27bce3e49b5ba718aa980614158f9",
+  "wall_seconds": 36.854
+}
