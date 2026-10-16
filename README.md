@@ -92,12 +92,20 @@ write hca.toml with me, climb with `hca try`, and report only what `hca confirm`
 </div>
 
 ```bash
+hca compare -- <A> -- <B>   # the 2-minute first result: is B really better than A? no git, no hca.toml
 hca quick -- <cmd>     # 2 minutes, no setup: how noisy is this number, what win can we detect?
 hca init               # freeze the evaluator, make a branch, measure the baseline noise
 hca try -m "why"       # measure your edit against the last keep → keep (commit) or revert
 hca confirm            # re-measure the total gain vs the original, on held-out data
 hca report             # every attempt, its verdict and evidence
 ```
+
+`hca compare` needs no repo and no config: it runs the two commands in randomised A/B blocks and
+reports the difference with an interval, a p-value, the noise it saw and the smallest difference it
+could have detected, so "no detectable difference" means something. Exit code 0 means B is better than A
+by a significant amount, 1 means not, 2 means a run failed or lacked the metric. The commands run without a
+shell (write `sh -c '...'` if you need one); the default metric is wall time, or pass `--metric NAME` to
+read a `METRIC NAME=value` line. When you want a guarded climb on your own code, `hca init` is the next step.
 
 A task is a brief, the paths the agent may edit, and one command that prints the number:
 

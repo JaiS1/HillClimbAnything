@@ -17,7 +17,7 @@ This is the implementation contract for the Phase 1 core. The design rationale i
 | `hca/arms.py` | materialise an arm directory for a commit (git worktree + declared links), build it once per sha |
 | `hca/gitops.py` | branch, scope check, keep (commit), revert (restore editable paths only), patch capture |
 | `hca/ledger.py` | `.hca/` layout, attempt numbering, records, the referee store, `VERDICTS.md` |
-| `hca/commands/*.py` | `quick`, `init`, `try_`, `confirm`, `report`, `status`, `doctor` |
+| `hca/commands/*.py` | `quick`, `compare`, `init`, `try_`, `confirm`, `report`, `status`, `doctor` |
 | `hca/cli.py` | argparse entry point `hca` |
 
 ## Spec (`hca.toml`)
@@ -159,6 +159,30 @@ agent's working tree; it is not a security boundary.
   - It prints `stats.noise_report` as plain sentences and ends with the next step.
   - Useful effect: `--useful 5%`.
   - It writes nothing to the repo unless `--save`.
+- **`hca compare [options] -- <command A ...> -- <command B ...>`**
+  - Needs no git, no `hca.toml` and no referee store: the zero-setup first result. Both commands run
+    without a shell, as in the runner (write `sh -c '...'` for one), A in `--cwd-a` and B in `--cwd-b`
+    (default: the cwd). The tail after the first `--` is split on its first `--`.
+  - Metric: each run's wall time (`wall_s`) by default; `--metric NAME` reads the `METRIC NAME=value` line
+    (or `HCA_RESULT_FILE`, which wins) exactly as the objective contract does. `--direction min|max`.
+  - Design: `--warmup K` discarded blocks first (default 1: one run of each, in random order), then the
+    same randomised A/B blocks as `try` (`measure.measure_blocks`, one block at a time so a failure stops it),
+    per-block direction-adjusted log ratios, and `stats.keep_decision` (exact signed-rank test, Hodges-Lehmann
+    estimate and interval). Default is the two-look rule: 10 blocks, extended once to 20 when B looks promising
+    (or, since a compare is symmetric, when A does), each look at one-sided α = 0.005. `--blocks N` (at least 7)
+    is one look at α = 0.01. The interval is two-sided at the same level (99% or 98%), the p-value is two-sided.
+  - Noise comes from the same blocks: the robust SD of the block log ratios and of A's own runs, and the
+    smallest shift detectable at 80% power at the N actually run (`stats.detectable_shift`).
+  - `--min-effect X%` adds the keep rule of `try`: significance plus an estimate of at least half the useful
+    effect (in log terms), and makes exit 0 require it. Without it, exit 0 means B is significantly better.
+  - Any run that fails, times out or lacks the metric makes the compare **invalid** (exit 2), with the
+    run's stderr tail; a comparison is never made from partial data.
+  - `--json` prints one object (`verdict` `b_better|a_better|no_difference|invalid`, `keep`, `exit`,
+    `estimate_pct`, `ci_pct`, `ci_level`, `p_value`, `noise`, `min_effect`, both commands' values, the block scores).
+  - Exit codes: 0 B is better than A by a significant amount (and passes the keep rule with `--min-effect`),
+    1 it is not, 2 invalid, 3 usage, 4 internal error. It writes nothing outside a temp directory.
+  - It is a measurement of two commands on this machine now; it does not guard output equality or generalisation
+    (that is what `init`/`try`/`confirm` add).
 - **`hca init [--heldout PATH]`**
   - Validates the spec, checks for a clean tree, then creates the branch, `.hca/state.json` and the
     frozen hashes.

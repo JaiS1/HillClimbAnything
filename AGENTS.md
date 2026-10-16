@@ -13,7 +13,7 @@ project, read [`skills/hca/SKILL.md`](skills/hca/SKILL.md) instead.
 | `hca/measure.py`, `hca/runner.py` | running commands and parsing their results; never use `Popen.wait(timeout=...)` for timing |
 | `hca/gitops.py`, `hca/arms.py`, `hca/ledger.py` | snapshot commits, arm worktrees, the `.hca/` ledger and the referee store |
 | `hca/core.py`, `hca/spec.py` | errors, JSON/hash helpers; `hca.toml` parsing and validation |
-| `hca/commands/` | `quick`, `init`, `try_`, `confirm`, `report` (also `status`), `doctor` |
+| `hca/commands/` | `quick`, `compare`, `init`, `try_`, `confirm`, `report` (also `status`), `doctor` |
 | `tests/` | unittest suite (~2 min); `test_calibration.py` runs 100 no-op tries end to end |
 | `skills/hca/` | the agent skill and its references |
 | `docs/` | design, architecture contract (with amendments), limits, README assets and translations |
@@ -27,7 +27,7 @@ uv tool install hillclimbanything   # or: pipx install hillclimbanything
 hca setup                                                        # copies the skill to ~/.claude/skills/hca and ~/.agents/skills/hca
 ```
 
-Try it first without installing: `uvx --from hillclimbanything hca quick -- <cmd>`.
+Try it first without installing: `uvx --from hillclimbanything hca quick -- <cmd>`, or A/B two commands with `uvx --from hillclimbanything hca compare -- <A> -- <B>`.
 `hca setup --uninstall` removes the skill. Claude Code plugin alternative: `/plugin marketplace add JaiS1/HillClimbAnything`
 then `/plugin install hca@hillclimbanything`. To work on this repo itself, use the checkout and `python3 -m hca`.
 

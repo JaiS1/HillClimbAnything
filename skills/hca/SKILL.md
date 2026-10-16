@@ -17,7 +17,14 @@ referee or work around it. A win it can't confirm is not a win.
    [spec reference](references/spec.md)). Have it write the result to the file named by
    `HCA_RESULT_FILE` where it can, and print the metric exactly once otherwise. If there is no such
    command, writing one is the first task.
-2. Run `hca quick -- <command>`. It reports the noise and the smallest win it can detect in about
+2. Before that, if the question is only "is B really faster/better than A?" (two commands, two
+   builds, two settings), run `hca compare -- <A> -- <B>`. It needs no git and no `hca.toml`, and it
+   reports the difference with an interval and p-value, the noise it saw, and the smallest difference it
+   could have detected. Exit 0 means B is better than A by a significant amount, 1 means not, 2 means a run
+   failed or lacked the metric, 3 usage. Commands run without a shell (`sh -c '...'` if needed); the default
+   metric is wall time, or pass `--metric NAME` for a `METRIC NAME=value` line. `--min-effect 5%` adds the
+   keep rule `hca try` uses. "No detectable difference" is only as strong as the detectable size it prints.
+   Then run `hca quick -- <command>`. It reports the noise and the smallest win it can detect in about
    2 minutes. If it says **too noisy**, fix the measurement first (more items, longer runs, fewer
    background jobs). Do not start climbing.
 3. **Premise check** (ask the user or check yourself; write the answers into `BRIEF.md`):

@@ -4,9 +4,9 @@
 
 Use it when someone wants to make a number better through repeated experiments (latency, render time, build time, frame time, cost, eval accuracy), or asks whether an improvement is real or noise.
 
-Workflow: `hca quick -- <cmd>` (noise and detectable effect, no setup) → write `hca.toml` (editable paths, frozen evaluator, objective command printing `METRIC name=value` or item JSON, direction, useful_effect) → `hca init` → edit only editable paths → `hca try -m "change and mechanism"` (exit 0 keep, 1 revert, 2 invalid/void/refused) → `hca confirm` every few keeps (only confirmed gains count) → `hca report`.
+Workflow: `hca compare -- <A> -- <B>` (zero-setup A/B of two commands: difference, interval, p-value, noise; exit 0 B significantly better, 1 not, 2 invalid, 3 usage) or `hca quick -- <cmd>` (noise and detectable effect, no setup) → write `hca.toml` (editable paths, frozen evaluator, objective command printing `METRIC name=value` or item JSON, direction, useful_effect) → `hca init` → edit only editable paths → `hca try -m "change and mechanism"` (exit 0 keep, 1 revert, 2 invalid/void/refused) → `hca confirm` every few keeps (only confirmed gains count) → `hca report`.
 
-Exit codes: `hca try` 0 keep, 1 revert, 2 invalid/void/refused, 3 usage, 4 internal error; `hca confirm` 0 pass, 1 fail (rolled back), 2 inconclusive/refused.
+Exit codes: `hca compare` 0 B better by a significant amount (and by the keep rule for `--min-effect`), 1 not, 2 invalid, 3 usage, 4 internal error; `hca try` 0 keep, 1 revert, 2 invalid/void/refused, 3 usage, 4 internal error; `hca confirm` 0 pass, 1 fail (rolled back), 2 inconclusive/refused.
 
 Do not use it when there is no repeatable command that prints the number, or for remote paid runs (the skill covers the method for those; there is no tooling yet). Tested on Linux, WSL and native Windows (Python 3.11+); macOS is untested.
 
@@ -14,7 +14,7 @@ Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; neve
 
 ## Install
 
-- Try without installing: `uvx --from hillclimbanything hca quick -- <cmd>`
+- Try without installing: `uvx --from hillclimbanything hca quick -- <cmd>` or `uvx --from hillclimbanything hca compare -- <A> -- <B>`
 - Install the CLI: `uv tool install hillclimbanything` (or `pipx install hillclimbanything`), then `hca setup` to copy the agent skill to `~/.claude/skills/hca` and `~/.agents/skills/hca` (it shows its plan first; `hca setup --uninstall` removes it)
 - Claude Code plugin instead of `hca setup`: `/plugin marketplace add JaiS1/HillClimbAnything` then `/plugin install hca@hillclimbanything` (install the CLI too)
 - Skill source: [SKILL.md](https://github.com/JaiS1/HillClimbAnything/blob/main/skills/hca/SKILL.md)
