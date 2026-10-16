@@ -165,11 +165,17 @@ agent's working tree; it is not a security boundary.
     (default: the cwd). The tail after the first `--` is split on its first `--`.
   - Metric: each run's wall time (`wall_s`) by default; `--metric NAME` reads the `METRIC NAME=value` line
     (or `HCA_RESULT_FILE`, which wins) exactly as the objective contract does. `--direction min|max`.
+  - **Windows:** commands run without a shell, so shell built-ins and `.cmd` shims (`npm`, `dir`) need `cmd /c ...`.
+    Command A may not contain `--`; `--sep TOKEN` picks another separator (`hca compare --sep :: -- <A> :: <B>`).
+    `--direction max` with the default wall-time metric is refused (exit 3): wall time is lower-is-better.
+    With `--out DIR` an invalid compare also writes `compare.json` (verdict `invalid`) and `runs.jsonl`.
+    One progress line per block goes to stderr (silenced when `--json` is given and stdout is not a terminal).
   - Design: `--warmup K` discarded blocks first (default 1: one run of each, in random order), then the
     same randomised A/B blocks as `try` (`measure.measure_blocks`, one block at a time so a failure stops it),
     per-block direction-adjusted log ratios, and `stats.keep_decision` (exact signed-rank test, Hodges-Lehmann
     estimate and interval). Default is the two-look rule: 10 blocks, extended once to 20 when B looks promising
-    (or, since a compare is symmetric, when A does), each look at one-sided α = 0.005. `--blocks N` (at least 7)
+    (or, since a compare is symmetric, when A does). The rule is `try`'s, so it usually runs all 20 blocks: it stops at 10
+    only when the first look is already decisive, each look at one-sided α = 0.005. `--blocks N` (at least 7)
     is one look at α = 0.01. `--blocks N --extend-to M` sets both looks (N at least 8, M > N, e.g. 20 and 40 for
     noisy targets); the per-look level stays α/2 = 0.005 for any N and M, because `stats.keep_decision` splits α over two looks
     whatever their sizes (more than two looks would need a smaller per-look α; there is deliberately no such option). The interval is two-sided at the same level (99% or 98%), the p-value is two-sided.
@@ -404,6 +410,8 @@ Where this amendment and the sections above disagree, this one wins.
   error. SIGINT exits 130, SIGTERM 143, SIGHUP 129 after cleaning up.
 - **Keep commits skip hooks.** The keep is `commit-tree` plus `update-ref`, so the user's pre-commit and
   commit-msg hooks (and commit signing) do not run on hca's commits: the measured tree is committed byte for byte.
+- **Re-init without `--reset`.** Since init adopts its own branch, deleting `.hca` and running `hca init` again is possible
+  for a climb with no confirms. The store logs it as a reset; the confirm cap is unaffected (a store with confirms still refuses).
 - **`init --reset`** re-baselines at the current branch tip (the last keep), not at the original commit. The old
   baseline stays in the store's reset log, and a re-init is refused outright once the store holds confirms
   (unless `HCA_ALLOW_RESET=1`), whether or not `--reset` is given.

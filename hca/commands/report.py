@@ -129,7 +129,7 @@ def render_text(state, spec, data) -> str:
         lines += ["", f"Change so far ({'confirmed' if state.get('last_confirmed') == data['tip'] else 'latest keep'} {data['tip'][:12]} vs original):",
                   *["  " + l for l in data["diffstat"].splitlines()]]
     base = state.get("base_branch")
-    lines += ["", "To take the result: " + (f"git checkout {base} && " if base else "") + f"git merge {state['branch']}"
+    lines += ["", "To take the result: " + (f"git checkout {base or '<your main branch>'} && ") + f"git merge {state['branch']}"
               + ("   (only the confirmed commit: git merge " + state["last_confirmed"][:12] + ")" if state.get("last_confirmed")
                  and state["last_confirmed"] != state["last_keep"] else "")]
     return "\n".join(lines) + "\n"
@@ -162,7 +162,7 @@ def render_markdown(state, spec, data) -> str:
     if data["diffstat"]:
         out += ["", "## Change so far", "", "```", data["diffstat"], "```"]
     base = state.get("base_branch")
-    out += ["", "## Merge", "", "```", (f"git checkout {base}\n" if base else "") + f"git merge {state['branch']}", "```"]
+    out += ["", "## Merge", "", "```", f"git checkout {base or '<your main branch>'}\n" + f"git merge {state['branch']}", "```"]
     return "\n".join(out) + "\n"
 
 

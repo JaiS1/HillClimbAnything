@@ -92,7 +92,7 @@ write hca.toml with me, climb with `hca try`, and report only what `hca confirm`
 </div>
 
 ```bash
-hca compare -- <A> -- <B>   # the 2-minute first result: is B really better than A? no git, no hca.toml
+hca compare -- <A> -- <B>   # a first result in minutes for a fast command: is B really better than A? no git, no hca.toml
 hca quick -- <cmd>     # 2 minutes, no setup: how noisy is this number, what win can we detect?
 hca init               # freeze the evaluator, make a branch, measure the baseline noise
 hca try -m "why"       # measure your edit against the last keep → keep (commit) or revert
@@ -105,7 +105,7 @@ reports the difference with an interval, a p-value, the noise it saw and the sma
 could have detected, so "no detectable difference" means something. Exit code 0 means B is better than A
 by a significant amount, 1 means not, 2 means a run failed or lacked the metric. The commands run without a
 shell (write `sh -c '...'` if you need one); the default metric is wall time, or pass `--metric NAME` to
-read a `METRIC NAME=value` line. When you want a guarded climb on your own code, `hca init` is the next step.
+read a `METRIC NAME=value` line. It usually runs all 20 blocks (it stops at 10 only when the first look is already decisive). Exit codes: 0 B better, 1 not, 2 invalid, 3 usage, 4 internal error. On native Windows, shell built-ins and `.cmd` shims such as `npm` or `dir` need `cmd /c ...`. Command A may not contain `--`; choose another separator with `--sep TOKEN`. When you want a guarded climb on your own code, `hca init` is the next step.
 
 A task is a brief, the paths the agent may edit, and one command that prints the number:
 

@@ -114,6 +114,8 @@ class InitTests(repokit.RepoTestCase):
         self.assertEqual(text.count("Adopting the existing branch hca/speedy"), 1)
         self.assertIn("Initialised task 'speedy' on branch hca/speedy", text)
         self.assertIsNone(self.state()["base_branch"])
+        _, report = self.report()                                         # we are already on the branch: say where "main" is to be chosen
+        self.assertIn("git checkout <your main branch> && git merge hca/speedy", report)
 
     def test_init_refuses_an_existing_branch_that_is_not_checked_out(self):
         self.repo.git("branch", "hca/speedy")

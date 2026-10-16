@@ -44,12 +44,13 @@ class CompareTests(unittest.TestCase):
     def bench(self, label, base, amp=0.01, mode="stdout"):
         return [sys.executable, "-S", str(self.tmp / "bench.py"), label, str(base), str(amp), mode]
 
-    def run_compare(self, a, b, cwd=None, **opts):
+    def run_compare(self, a, b, cwd=None, progress=None, **opts):
         values = dict(metric="lat", direction="min", min_effect=None, blocks=None, extend_to=None, out=None, warmup=1, cwd_a=None, cwd_b=None,
                       timeout=60.0, json=False, seed=1, command=list(a) + ["--"] + list(b))
         values.update(opts)
         lines = []
-        code = compare.run(Namespace(**values), out=lines.append, cwd=cwd or self.tmp)
+        values.setdefault("sep", "--")
+        code = compare.run(Namespace(**values), out=lines.append, cwd=cwd or self.tmp, progress=progress or (lambda line: None))
         return code, "\n".join(lines)
 
     def as_json(self, a, b, **opts):
@@ -80,13 +81,13 @@ class CompareTests(unittest.TestCase):
         code, text = self.run_compare(sleeper(0.04), sleeper(0.02), metric=None, blocks=8, warmup=1)
         self.assertEqual(code, 0, text)
         self.assertIn("wall time (wall_s)", text)
-        self.assertRegex(text, r"B is \d+\.\d% faster than A \(98% CI")
+        self.assertRegex(text, r"B is \d+\.\d% faster than A \(\d\.\d\d× the speed, 98% CI")
         self.assertIn(" s, B ", text)
 
     def test_identical_commands_show_no_detectable_difference_and_exit_1(self):
         code, text = self.run_compare(self.bench("A", 100, 0.02), self.bench("B", 100, 0.02))
         self.assertEqual(code, 1, text)
-        self.assertRegex(text, r"No detectable difference \(estimate [+-]\d\.\d%, 99% CI [+-]\d\.\d to [+-]\d\.\d%, p=0\.\d+\); this N detects about \d\.\d%\.")
+        self.assertRegex(text, r"No detectable difference \(estimate [+-]\d\.\d%, 99% CI [+-]\d\.\d to [+-]\d\.\d%, p=0\.\d+, which would need to be ≤ 0\.01\); this N detects about \d\.\d%\.")
 
     def test_a_faster_than_b_exits_1_and_says_so(self):
         code, text = self.run_compare(self.bench("A", 80), self.bench("B", 100))
@@ -182,6 +183,57 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(len(runs), 16)
         self.assertEqual(sorted(r["value"] for r in runs if r["arm"] == "baseline"), sorted(report["a"]["values"]))
         self.assertTrue(all("order" in r and "wall_seconds" in r for r in runs))
+
+    def test_wall_time_with_direction_max_is_refused(self):
+        with self.assertRaises(HcaError) as caught:
+            self.run_compare(self.bench("A", 100), self.bench("B", 80), metric=None, direction="max")
+        self.assertIn("lower-is-better", str(caught.exception))
+        self.assertIn("--metric NAME", str(caught.exception))
+        code, out, err = self.cli("compare", "--direction", "max", "--", "true", "--", "true")
+        self.assertEqual(code, 3)
+
+    def test_an_invalid_compare_still_writes_the_out_dir(self):
+        out = self.tmp / "failed"
+        crash = [sys.executable, "-S", "-c", "import sys; sys.stderr.write('kaboom\n'); sys.exit(4)"]
+        code, _ = self.run_compare(self.bench("A", 100), crash, out=str(out), warmup=0)
+        self.assertEqual(code, 2)
+        report = json.loads((out / "compare.json").read_text())
+        self.assertEqual((report["verdict"], report["command"], report["exit"]), ("invalid", "B", 2))
+        self.assertIn("kaboom", report["error_tail"])
+        self.assertIn('"ok": false', (out / "runs.jsonl").read_text())
+
+    def test_wording_ratio_zero_noise_and_the_threshold(self):
+        _, text = self.run_compare(self.bench("A", 100), self.bench("B", 80))
+        self.assertRegex(text, r"lower \(better\) than A \(")
+        sleeper = lambda s: [sys.executable, "-S", "-c", f"import time; time.sleep({s})"]
+        _, text = self.run_compare(sleeper(0.04), sleeper(0.02), metric=None, blocks=8)
+        self.assertRegex(text, r"faster than A \(\d\.\d\d× the speed, ")
+        flat = [sys.executable, "-S", "-c", "print('METRIC lat=5')"]
+        _, text = self.run_compare(flat, flat)
+        self.assertIn("Noise: no variation seen", text)
+        self.assertNotIn("detects about 0.0%", text)
+        self.assertIn("No detectable difference", text)
+        _, text = self.run_compare(self.bench("A", 100, 0.02), self.bench("B", 100, 0.02))
+        self.assertIn("which would need to be ≤ 0.01", text)
+
+    def test_progress_goes_to_the_callback_not_the_report(self):
+        seen = []
+        _, text = self.run_compare(self.bench("A", 100), self.bench("B", 70), blocks=8, progress=seen.append)
+        self.assertEqual(seen[0].split(",")[0], "warm-up 1/1")
+        self.assertEqual([s.split(",")[0] for s in seen[1:]], [f"block {i}/8" for i in range(1, 9)])
+        self.assertNotIn("elapsed", text)
+
+    def test_sep_lets_command_a_contain_double_dash(self):
+        a = self.bench("A", 100) + ["--"]
+        b = self.bench("B", 80)
+        args = Namespace(command=a + ["::"] + b, sep="::")
+        self.assertEqual(compare.split_commands(args), (a, b))
+        with self.assertRaises(HcaError) as caught:
+            compare.split_commands(Namespace(command=a, sep="::"))
+        self.assertIn("`::`", str(caught.exception))
+        with self.assertRaises(HcaError) as caught:
+            compare.split_commands(Namespace(command=["x"], sep="--"))
+        self.assertIn("may not itself contain `--`", str(caught.exception))
 
     # --- --min-effect: the keep floor is half the useful effect, plus significance --------------------
 

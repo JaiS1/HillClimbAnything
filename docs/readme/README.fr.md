@@ -12,7 +12,7 @@ Traduit de README.md au commit 59b1150. Le README anglais fait foi pour les chif
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#démarrage-rapide)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-277_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -92,7 +92,7 @@ Utilise le skill hca (HillClimbAnything) pour rendre `python bench.py` plus rapi
 </div>
 
 ```bash
-hca compare -- <A> -- <B>   # le premier résultat en 2 minutes : B est-il vraiment meilleur que A ? sans git, sans hca.toml
+hca compare -- <A> -- <B>   # premier résultat en quelques minutes pour une commande rapide : B est-il vraiment meilleur que A ? sans git, sans hca.toml
 hca quick -- <cmd>     # 2 minutes, sans configuration : quel bruit sur ce chiffre, quel gain peut-on détecter ?
 hca init               # fige l'évaluateur, crée une branche, mesure le bruit de la référence
 hca try -m "why"       # mesure votre modification face au dernier keep → keep (commit) ou revert
@@ -100,7 +100,7 @@ hca confirm            # re-mesure le gain total face à l'original, sur des don
 hca report             # chaque tentative, son verdict et ses preuves
 ```
 
-`hca compare` n'a besoin ni d'un dépôt ni d'une configuration : il exécute les deux commandes en blocs A/B randomisés et rapporte la différence avec son intervalle et sa valeur p, le bruit observé et la plus petite différence qu'il aurait pu détecter, pour que « aucune différence détectable » veuille dire quelque chose. Le code de sortie 0 signifie que B est meilleur que A de façon significative, 1 que non, 2 qu'une exécution a échoué ou n'a pas fourni la métrique. Les commandes s'exécutent sans shell (écrivez `sh -c '...'` si vous en avez besoin) ; la métrique par défaut est le temps d'exécution, ou passez `--metric NAME` pour lire une ligne `METRIC NAME=value`. Pour une ascension protégée de votre propre code, `hca init` est l'étape suivante.
+`hca compare` n'a besoin ni d'un dépôt ni d'une configuration : il exécute les deux commandes en blocs A/B randomisés et rapporte la différence avec son intervalle et sa valeur p, le bruit observé et la plus petite différence qu'il aurait pu détecter, pour que « aucune différence détectable » veuille dire quelque chose. Le code de sortie 0 signifie que B est meilleur que A de façon significative, 1 que non, 2 qu'une exécution a échoué ou n'a pas fourni la métrique. Les commandes s'exécutent sans shell (écrivez `sh -c '...'` si vous en avez besoin) ; la métrique par défaut est le temps d'exécution, ou passez `--metric NAME` pour lire une ligne `METRIC NAME=value`. Pour une ascension protégée de votre propre code, `hca init` est l'étape suivante. Il exécute généralement les 20 blocs (il s'arrête à 10 seulement quand le premier examen est déjà tranché). Codes de sortie : 0 B meilleur, 1 non, 2 invalide, 3 usage, 4 erreur interne. Sous Windows natif, les commandes internes du shell et les shims `.cmd` comme `npm` ou `dir` demandent `cmd /c ...`. La commande A ne peut pas contenir `--` ; choisissez un autre séparateur avec `--sep TOKEN`.
 
 Une tâche se compose d'un brief, des chemins que l'agent peut modifier et d'une commande qui affiche le chiffre :
 

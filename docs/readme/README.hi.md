@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-277_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,7 +88,7 @@ hca skill (HillClimbAnything) इस्तेमाल करके `python benc
 </div>
 
 ```bash
-hca compare -- <A> -- <B>   # 2 मिनट में पहला नतीजा: क्या B सच में A से बेहतर है? कोई git नहीं, कोई hca.toml नहीं
+hca compare -- <A> -- <B>   # तेज़ command पर कुछ ही मिनट में पहला नतीजा: क्या B सच में A से बेहतर है? कोई git नहीं, कोई hca.toml नहीं
 hca quick -- <cmd>     # 2 मिनट, कोई setup नहीं: यह नंबर कितना noisy है, कितनी जीत detect हो सकती है?
 hca init               # evaluator को freeze करें, branch बनाएँ, baseline noise मापें
 hca try -m "why"       # आपके edit को पिछले keep से measure करें → keep (commit) या revert
@@ -96,7 +96,7 @@ hca confirm            # original के मुक़ाबले कुल स�
 hca report             # हर attempt, उसका verdict और evidence
 ```
 
-`hca compare` को न repo चाहिए न config: यह दोनों commands को randomised A/B blocks में चलाता है और अंतर को interval और p-value के साथ बताता है, साथ में दिखा हुआ noise और वह सबसे छोटा अंतर भी जो यह detect कर सकता था, ताकि "कोई detectable अंतर नहीं" का कुछ मतलब हो। Exit code 0 का मतलब है B, A से significant रूप से बेहतर है, 1 का मतलब नहीं, 2 का मतलब कोई run fail हुआ या metric नहीं मिला। Commands बिना shell के चलते हैं (ज़रूरत हो तो `sh -c '...'` लिखें); default metric wall time है, या `--metric NAME` देकर `METRIC NAME=value` लाइन पढ़ें। अपने code पर guarded climb चाहिए तो अगला कदम `hca init` है।
+`hca compare` को न repo चाहिए न config: यह दोनों commands को randomised A/B blocks में चलाता है और अंतर को interval और p-value के साथ बताता है, साथ में दिखा हुआ noise और वह सबसे छोटा अंतर भी जो यह detect कर सकता था, ताकि "कोई detectable अंतर नहीं" का कुछ मतलब हो। Exit code 0 का मतलब है B, A से significant रूप से बेहतर है, 1 का मतलब नहीं, 2 का मतलब कोई run fail हुआ या metric नहीं मिला। Commands बिना shell के चलते हैं (ज़रूरत हो तो `sh -c '...'` लिखें); default metric wall time है, या `--metric NAME` देकर `METRIC NAME=value` लाइन पढ़ें। अपने code पर guarded climb चाहिए तो अगला कदम `hca init` है। यह आम तौर पर पूरे 20 blocks चलाता है (10 पर तभी रुकता है जब पहली जाँच में ही नतीजा साफ़ हो)। Exit codes: 0 B बेहतर, 1 नहीं, 2 invalid, 3 usage, 4 internal error। native Windows पर shell built-ins और `.cmd` shims (जैसे `npm`, `dir`) को `cmd /c ...` चाहिए। Command A में `--` नहीं हो सकता; दूसरा separator `--sep TOKEN` से चुनें।
 
 एक task में होता है: एक brief, वे paths जिन्हें agent edit कर सकता है, और एक command जो नंबर print करे:
 

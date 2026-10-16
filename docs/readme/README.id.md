@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-277_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -88,7 +88,7 @@ lebih dulu, tulis hca.toml bersama saya, mendaki dengan `hca try`, dan laporkan 
 </div>
 
 ```bash
-hca compare -- <A> -- <B>   # hasil pertama dalam 2 menit: apakah B benar-benar lebih baik dari A? tanpa git, tanpa hca.toml
+hca compare -- <A> -- <B>   # hasil pertama dalam hitungan menit untuk perintah yang cepat: apakah B benar-benar lebih baik dari A? tanpa git, tanpa hca.toml
 hca quick -- <cmd>     # 2 menit, tanpa setup: seberapa berisik angka ini, kemenangan apa yang bisa kita deteksi?
 hca init               # bekukan evaluator, buat branch, ukur noise baseline
 hca try -m "why"       # ukur editan Anda terhadap keep terakhir → keep (commit) atau revert
@@ -96,7 +96,7 @@ hca confirm            # ukur ulang total peningkatan terhadap versi asli, pada 
 hca report             # setiap percobaan, verdict, dan buktinya
 ```
 
-`hca compare` tidak butuh repo maupun konfigurasi: ia menjalankan kedua perintah dalam blok A/B teracak dan melaporkan selisihnya beserta interval dan nilai p, noise yang terlihat, dan selisih terkecil yang sebenarnya bisa ia deteksi, sehingga "tidak ada selisih yang terdeteksi" punya arti. Exit code 0 berarti B lebih baik dari A secara signifikan, 1 berarti tidak, 2 berarti ada run yang gagal atau tidak mengeluarkan metrik. Perintah dijalankan tanpa shell (tulis `sh -c '...'` jika perlu); metrik bawaannya adalah wall time, atau berikan `--metric NAME` untuk membaca baris `METRIC NAME=value`. Untuk pendakian terjaga pada kode Anda sendiri, langkah berikutnya adalah `hca init`.
+`hca compare` tidak butuh repo maupun konfigurasi: ia menjalankan kedua perintah dalam blok A/B teracak dan melaporkan selisihnya beserta interval dan nilai p, noise yang terlihat, dan selisih terkecil yang sebenarnya bisa ia deteksi, sehingga "tidak ada selisih yang terdeteksi" punya arti. Exit code 0 berarti B lebih baik dari A secara signifikan, 1 berarti tidak, 2 berarti ada run yang gagal atau tidak mengeluarkan metrik. Perintah dijalankan tanpa shell (tulis `sh -c '...'` jika perlu); metrik bawaannya adalah wall time, atau berikan `--metric NAME` untuk membaca baris `METRIC NAME=value`. Untuk pendakian terjaga pada kode Anda sendiri, langkah berikutnya adalah `hca init`. Biasanya ia menjalankan semua 20 blok (berhenti di 10 hanya bila pemeriksaan pertama sudah tegas). Exit code: 0 B lebih baik, 1 tidak, 2 tidak valid, 3 salah pakai, 4 error internal. Di Windows native, shell built-in dan shim `.cmd` seperti `npm` atau `dir` perlu `cmd /c ...`. Perintah A tidak boleh memuat `--`; pilih pemisah lain dengan `--sep TOKEN`.
 
 Sebuah task terdiri dari brief, path yang boleh diedit agent, dan satu perintah yang mencetak angkanya:
 

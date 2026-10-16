@@ -17,7 +17,9 @@ from __future__ import annotations
 import json
 import math
 import statistics
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 from .. import measure, stats
@@ -46,6 +48,8 @@ def add_arguments(parser) -> None:
     parser.add_argument("--timeout", type=float, default=300.0, help="seconds allowed per run (default 300)")
     parser.add_argument("--json", action="store_true", help="print one JSON object instead of the report")
     parser.add_argument("--out", metavar="DIR", help="also write compare.json (the report) and runs.jsonl (every run: block, order, value, wall time) here")
+    parser.add_argument("--sep", default="--", metavar="TOKEN", help="the token that separates command A from command B (default `--`; "
+                        "use e.g. `::` when command A itself contains `--`)")
     parser.add_argument("--seed", type=int, help="seed for the block order (default: random)")
     parser.add_argument("command", nargs="*", help="`-- <command A ...> -- <command B ...>`")
 
@@ -56,22 +60,32 @@ def split_commands(args) -> tuple:
         raise HcaError(f"unexpected argument(s) before `--`: {' '.join(args.stray)}. "
                        "Fix: put both commands after `--`, e.g. `hca compare -- <command A> -- <command B>`.")
     tail = list(args.command)
-    if "--" not in tail:
-        raise HcaError("hca compare needs two commands, each after its own `--`: `hca compare [options] -- <command A> -- <command B>`. "
-                       "Fix: add the second `--` between them (use `sh -c '...'` if a command needs a shell).")
-    cut = tail.index("--")
+    sep = getattr(args, "sep", None) or "--"
+    hint = ("Command A may not itself contain `--`; if it must, pick another separator: `hca compare --sep :: -- <A> :: <B>`. "
+            "Use `sh -c '...'` if a command needs a shell.")
+    if sep not in tail:
+        raise HcaError(f"hca compare needs two commands, each after its own `--`: `hca compare [options] -- <command A> {sep} <command B>`. "
+                       f"Fix: add the separator `{sep}` between them. {hint}")
+    cut = tail.index(sep)
     a, b = tail[:cut], tail[cut + 1:]
     if not a:
-        raise HcaError("command A is empty (nothing between the two `--`). Fix: `hca compare -- <command A> -- <command B>`.")
+        raise HcaError(f"command A is empty (nothing before `{sep}`). Fix: `hca compare -- <command A> {sep} <command B>`. {hint}")
     if not b:
-        raise HcaError("command B is empty (nothing after the second `--`). Fix: `hca compare -- <command A> -- <command B>`.")
+        raise HcaError(f"command B is empty (nothing after `{sep}`). Fix: `hca compare -- <command A> {sep} <command B>`. {hint}")
     return a, b
 
 
-def run(args, out=print, cwd=None) -> int:
+def run(args, out=print, cwd=None, progress=None) -> int:
+    """`progress(line)` gets one line per block (default: stderr, unless --json is given and stdout is not a terminal)."""
     a, b = split_commands(args)
     direction = args.direction
     wall = args.metric is None
+    if wall and direction == "max":
+        raise HcaError("wall time is lower-is-better, so --direction max would invert the answer. "
+                       "Fix: pass --metric NAME for a metric where higher is better, or drop --direction.")
+    if progress is None:
+        quiet = args.json and not sys.stdout.isatty()
+        progress = (lambda line: None) if quiet else (lambda line: print(line, file=sys.stderr, flush=True))
     metric = DEFAULT_METRIC if wall else args.metric
     useful = stats.parse_effect(args.min_effect, direction) if args.min_effect else 0.0
     extend_to = getattr(args, "extend_to", None)
@@ -100,6 +114,7 @@ def run(args, out=print, cwd=None) -> int:
     rng, seed = common.make_rng(args.seed)
     commands = {"baseline": a, "candidate": b}
 
+    started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="hca-compare-") as tmp:
         tmp = Path(tmp)
 
@@ -109,9 +124,10 @@ def run(args, out=print, cwd=None) -> int:
 
         scores, a_values, b_values = [], [], []
 
-        def blocks(count, first):
+        def blocks(count, start):
             """Run `count` more blocks one at a time, so a failure stops the compare at once. Returns the failure or None."""
-            for index in range(first, first + count):
+            for index in range(start, start + count):
+                progress(f"block {index + 1}/{first if index < first else second}, {time.monotonic() - started:.0f} s elapsed")
                 result = measure_one(index)
                 if result.void or result.voided_blocks or result.candidate_failures or result.candidate_invalid_blocks or not result.scores:
                     return _failure(tmp, index, result)
@@ -122,6 +138,7 @@ def run(args, out=print, cwd=None) -> int:
 
         failure = None
         for k in range(args.warmup):                      # a warm-up is a discarded block: random order, same code path, never scored
+            progress(f"warm-up {k + 1}/{args.warmup}, {time.monotonic() - started:.0f} s elapsed")
             failure = _failure_or_none(measure_one(-(k + 1)), tmp, -(k + 1))
             if failure:
                 break
@@ -139,7 +156,7 @@ def run(args, out=print, cwd=None) -> int:
         wall_seconds = _total_seconds(tmp)
         raw = (tmp / "runs.jsonl").read_text(encoding="utf-8") if getattr(args, "out", None) and (tmp / "runs.jsonl").exists() else ""
     if failure:
-        return _invalid(failure, args, out, a, b)
+        return _invalid(failure, args, out, a, b, raw)
     report = _report(scores, a_values, b_values, decision, useful, direction, metric, wall, args, extended, looks, seed, wall_seconds, a, b, first)
     if getattr(args, "out", None):
         target = Path(args.out)
@@ -202,7 +219,7 @@ def _failure(tmp, index, result) -> dict:
             "error_tail": (found.get("error_tail") or "").strip()}
 
 
-def _invalid(failure, args, out, a, b) -> int:
+def _invalid(failure, args, out, a, b, raw="") -> int:
     where = "a warm-up run" if failure["block"] < 0 else f"block {failure['block'] + 1}"
     who = f"command {failure['command']}" if failure["command"] else "a command"
     cmd = {"A": a, "B": b}.get(failure["command"])
@@ -210,10 +227,16 @@ def _invalid(failure, args, out, a, b) -> int:
     if failure["error_tail"]:
         text += f" Last stderr:\n{failure['error_tail']}"
     text += "\nA comparison is only made when every run succeeds and reports the metric. Fix the command and rerun."
+    data = {"verdict": "invalid", "better": False, "worse": False, "keep": False, "exit": common.EXIT_INVALID,
+            "command": failure["command"], "argv": cmd, "block": failure["block"], "problem": failure["problem"],
+            "error_tail": failure["error_tail"]}
+    if getattr(args, "out", None):                    # a failed compare is the one you most need the raw runs of
+        target = Path(args.out)
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "compare.json").write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        (target / "runs.jsonl").write_text(raw, encoding="utf-8")
     if args.json:
-        out(json.dumps({"verdict": "invalid", "keep": False, "exit": common.EXIT_INVALID, "command": failure["command"],
-                        "argv": cmd, "block": failure["block"], "problem": failure["problem"], "error_tail": failure["error_tail"]},
-                       indent=2, allow_nan=False))
+        out(json.dumps(data, indent=2, allow_nan=False))
     else:
         out(text)
     return common.EXIT_INVALID
@@ -252,15 +275,17 @@ def _report(scores, a_values, b_values, decision, useful, direction, metric, wal
              + (f" (extended from {first})" if extended else "") + f", order randomised, {args.warmup} warm-up run(s) of each discarded, "
              f"{wall_seconds:.0f} s of runs.",
              f"Medians: A {_med(a_values)}{unit}, B {_med(b_values)}{unit}."]
-    noise = f"Noise: ±{stats.to_percent(sd):.1f}% per block" if sd else "Noise: none seen (the values did not vary)"
+    detects = f"this N detects about {detect:.1f}%" if sd else "no variation seen, so any consistent difference shows"
+    noise = f"Noise: ±{stats.to_percent(sd):.1f}% per block" if sd else "Noise: no variation seen (the values were identical across blocks)"
     if a_sd:
         noise += f" (A's own runs spread ±{stats.to_percent(a_sd):.1f}%)"
-    lines.append(noise + f"; this N detects about {detect:.1f}%.")
+    lines.append(noise + (f"; {detects}." if sd else "."))
     ci_text = f"{ci_level:.0f}% CI " + _range(ci)
     if verdict == "no_difference":
-        lines.append(f"No detectable difference (estimate {est:+.1f}%, {ci_text}, p={p:.2g}); this N detects about {detect:.1f}%.")
+        lines.append(f"No detectable difference (estimate {est:+.1f}%, {ci_text}, p={p:.2g}, which would need to be ≤ {2 * level:g}); {detects}.")
     else:
-        lines.append(f"B is {abs(est):.1f}% {_word(est, wall, direction)} than A ({ci_text}, p={p:.2g}, {n} blocks).")
+        speed = f"{1 / (1 + est / 100):.2f}× the speed, " if wall else ""
+        lines.append(f"B is {abs(est):.1f}% {_word(est, wall, direction)} than A ({speed}{ci_text}, p={p:.2g}, {n} blocks).")
     min_line = None
     if args.min_effect:
         floor = decision["keep_floor_change_pct"]
