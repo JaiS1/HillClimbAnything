@@ -8,26 +8,42 @@ structurally identical; a keep moves the branch to that very commit, so the comm
 measured tree. Every outcome, valid or not, becomes an attempt record, because the validity rate and the
 history must not be tidied. Only the editable paths are ever restored; nothing outside them is touched.
 
-Exit codes: 0 keep, 1 revert, 2 invalid (scope, no change, replay) or void (infra, time, files changed
-during the run) or interrupted, 3 usage errors, 4 internal error (cli).
+Explore mode (docs/DESIGN-climb-engine.md §3c) adds two kinds of attempt:
+- `--explore` screens the edits against the current *parent* (an archive member, or the incumbent) in 5-8 blocks.
+  It has its own path, `_decide_screen` and `_finish_screen`, which never reaches `_apply_keep` or `write_pending`:
+  a screen ranks and archives a child, it can never move the branch. Afterwards the editable paths are set to the
+  next sampled parent.
+- `--promote M` restores the editable paths to member M's tree and runs the normal try against the incumbent, on fresh
+  blocks. Validity, lineage, taint and replay status come from the referee store and the refs, never from archive.json.
+
+Exit codes: 0 keep (or a recorded screen), 1 revert, 2 invalid (scope, no change, replay) or void (infra, time, files
+changed during the run) or interrupted or refused, 3 usage errors, 4 internal error (cli).
 """
 
 from __future__ import annotations
 
+import math
 import time
 
-from .. import arms, gitops, ledger, measure, runner, stats
-from ..core import HcaError
+from .. import arms, explore, gitops, ledger, measure, runner, stats
+from ..core import HcaError, Refusal
 from . import common
 
 NO_EVIDENCE = ("No evidence, not no effect: the interval {interval} still allows the useful effect ({useful}). "
                "More blocks or a lower-noise measurement could tell; this is not proof that the idea fails.")
+SCREEN_BOUND_LEVEL = 0.05        # the screen's one-sided display bound; printed only from 5 blocks (2^-4 > 0.05)
 
 
 def add_arguments(parser) -> None:
     parser.add_argument("-m", "--message", help="what changed and why (required)")
     parser.add_argument("--again", action="store_true",
                         help="measure an edit whose tree is identical to an earlier attempt (recorded, and it counts as a try)")
+    parser.add_argument("--idea", help="the IDEAS.md id this attempt tests (e.g. I4); its [kind] is recorded")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--explore", action="store_true",
+                       help="screen the edits against the current parent in a few blocks: ranked and archived, never kept")
+    group.add_argument("--promote", metavar="M", help="set the editable paths to archive member M and test it against the incumbent")
+    parser.add_argument("--tainted", action="store_true", help="allow promoting a member tainted by a failed confirm (recorded)")
 
 
 def run(args, out=print, cwd=None, seed=None) -> int:
@@ -37,18 +53,20 @@ def run(args, out=print, cwd=None, seed=None) -> int:
 
 
 class _Try:
-    """What the pieces of one try share."""
+    """What the pieces of one try share. `base` is the baseline commit: the last keep, or a screen's parent."""
 
-    def __init__(self, root, spec, state, adir, rec, out, started, deadline, rng):
+    def __init__(self, root, spec, state, adir, rec, out, started, deadline, rng, base=None):
         self.root, self.spec, self.state, self.adir, self.rec, self.out = root, spec, state, adir, rec, out
         self.rng = rng
         self.started, self.deadline = started, deadline
+        self.base = base or state["last_keep"]
         self.snap = None
         self.cand_dir = None
+        self.store_extra = {}
         # Before every objective run an arm is cleaned of untracked files its build did not make (NEW-3: a disk cache
         # written by the candidate must not survive from one run to the next, the warm-up included).
         self.prepare = {
-            "baseline": lambda: arms.prepare_run(root, spec, state["last_keep"], "baseline", warn=out),
+            "baseline": lambda: arms.prepare_run(root, spec, self.base, "baseline", warn=out),
             "candidate": lambda: arms.prepare_run(root, spec, self.snap["sha"], "candidate", logs=adir, warn=out)}
 
     def remaining(self) -> float:
@@ -56,7 +74,7 @@ class _Try:
 
     def refresh(self):
         """Both arm directories, verified right now (a tampered one is recreated with a warning)."""
-        base = arms.ensure_arm(self.root, self.spec, self.state["last_keep"], "baseline", warn=self.out)
+        base = arms.ensure_arm(self.root, self.spec, self.base, "baseline", warn=self.out)
         cand = arms.ensure_arm(self.root, self.spec, self.snap["sha"], "candidate", logs=self.adir, warn=self.out)
         return base, cand
 
@@ -66,22 +84,29 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     if not message:
         raise HcaError('hca try needs a message. Fix: hca try -m "what changed and why".')
     again = bool(getattr(args, "again", False))
+    kind = "screen" if getattr(args, "explore", False) else "promote" if getattr(args, "promote", None) is not None else "try"
     root, spec, state = common.open_session(cwd, out=out)
     task = state["task"]
     started = time.monotonic()
     deadline = started + spec.limits.try_seconds
     mode = spec.objective.mode
-    scope = gitops.scope_check(root, spec, state)
+    if kind != "try" and mode != "blocks":
+        raise HcaError("explore mode (--explore, --promote) is blocks mode only for now: items mode has no screen statistic yet. "
+                       "Fix: use plain `hca try`.")
+    promoted = _restore_member(root, spec, state, args) if kind == "promote" else None
+    parent, base = explore.parent_base(root, state) if kind == "screen" else (None, state["last_keep"])
+    sampling = (state.get("explore") or {}).get("sampling")
+    scope = gitops.scope_check(root, spec, state, base)
     store = ledger.load_store(task) or {}
     for problem in gitops.verify_history(root, spec, state["init_sha"], state["last_keep"], store.get("frozen_blobs") or state.get("frozen_blobs") or {}):
         scope["violations"].append({"path": "(history)", "reason": problem})
         scope["ok"] = False
     n, adir = ledger.new_attempt(root, task)
-    ledger.note_attempt(task, n, again=again)
+    ledger.note_attempt(task, n, again=again, kind=kind)
     (adir / "message.txt").write_text(message + "\n", encoding="utf-8")
     ledger.write_record(adir, "scope.json", scope)
     tries = ledger.tries_used(root, task)
-    if tries > spec.objective.max_tries:
+    if kind == "try" and tries > spec.objective.max_tries:
         out(f"warning: this is try {tries}, past max_tries ({spec.objective.max_tries}). Every extra try adds to the chance of a false keep "
             "(about 1% each); `hca confirm` is the check, and the report says how many keeps to expect from chance alone.")
     staged = gitops.staged_outside_editable(root, spec)
@@ -91,35 +116,72 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     if scope["untracked_outside_editable"]:
         out(common.untracked_warning(scope["untracked_outside_editable"]))
     rng, used_seed = common.make_rng(seed)
-    rec = {"n": n, "message": message, "at": ledger.now(), "mode": mode, "unit": "%" if mode == "blocks" else "", "base": state["last_keep"],
-           "verdict": None, "valid": False, "reasons": [], "seed": used_seed, "confirm": None, "again": again}
-    t = _Try(root, spec, state, adir, rec, out, started, deadline, rng)
+    rec = {"n": n, "message": message, "at": ledger.now(), "mode": mode, "unit": "%" if mode == "blocks" else "", "base": base,
+           "verdict": None, "valid": False, "reasons": [], "seed": used_seed, "confirm": None, "again": again, "kind": kind}
+    idea = getattr(args, "idea", None)
+    if idea:
+        rec.update(idea=idea, idea_kind=explore.idea_kind(root, idea))
+    if explore.backlog(root):
+        rec["backlog"] = explore.backlog(root)
+    if promoted:
+        rec["explore"] = promoted
+    t = _Try(root, spec, state, adir, rec, out, started, deadline, rng, base)
 
     changes = gitops.editable_changes(scope)
-    if not scope["ok"] or not changes:
+    # A screen with no edits while the working tree is at an archive member re-screens that member against its own parent,
+    # pooled with its earlier blocks (the promotion hint asks for this on noisy targets).
+    rescreen = explore.member(root, state, parent, what="parent") if kind == "screen" and scope["ok"] and not changes and parent else None
+    if rescreen and ledger.kind_of(rescreen) != "screen":
+        rescreen = None
+    if rescreen:
+        parent, t.base = rescreen.get("parent"), rescreen["base"]
+        rec["base"] = t.base
+    if not scope["ok"] or not (changes or rescreen):
         reasons = [f"{v['path']}: {v['reason']}" for v in scope["violations"]] or \
-            ["no changes: there is nothing to measure (the working tree equals the last keep)"]
-        (adir / "patch.diff").write_text(gitops.raw_patch(root, state["last_keep"]), encoding="utf-8")
-        return _finish(t, "invalid", reasons, note="scope" if not scope["ok"] else "empty")
+            [f"no changes: there is nothing to measure (the working tree equals {'the parent' if kind == 'screen' else 'the last keep'})"]
+        (adir / "patch.diff").write_text(gitops.raw_patch(root, t.base), encoding="utf-8")
+        return _end(t, "invalid", reasons, note="scope" if not scope["ok"] else "empty")
 
     try:
-        arms.ensure_arm(root, spec, state["last_keep"], "baseline", timeout=t.remaining(), warn=out)
+        arms.ensure_arm(root, spec, t.base, "baseline", timeout=t.remaining(), warn=out)
     except arms.ArmBuildError as exc:
         if exc.result is not None and exc.result.timed_out and t.remaining() <= 0:
-            return _finish(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out while building the baseline"])
+            return _end(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out while building the baseline"])
         _discard(adir, task, n)                         # a broken baseline is an environment problem, not a try
         raise
     except HcaError:
         _discard(adir, task, n)
         raise
     first_line = message.splitlines()[0]
-    t.snap = gitops.snapshot(root, spec, state["last_keep"], f"hca keep {n:04d}: {first_line}", changes)
+    if rescreen:
+        t.snap = {"sha": rescreen["sha"], "tree": rescreen["tree"], "paths": []}
+    else:
+        t.snap = gitops.snapshot(root, spec, t.base, f"hca {'screen' if kind == 'screen' else 'keep'} {n:04d}: {first_line}", changes)
     rec.update(tree=t.snap["tree"], snapshot=t.snap["sha"])
-    (adir / "patch.diff").write_text(gitops.patch_between(root, state["last_keep"], t.snap["sha"]), encoding="utf-8")
-    if t.snap["tree"] == gitops.tree_of(root, state["last_keep"]):
-        return _finish(t, "invalid", ["no changes: the editable files equal the last keep once build and cache files are ignored"], note="empty")
+    patch = gitops.patch_between(root, t.base, t.snap["sha"])
+    (adir / "patch.diff").write_text(patch, encoding="utf-8")
+    rec["review_pointers"] = t.store_extra["pointers"] = explore.pointers(patch)
+    if t.snap["tree"] == gitops.tree_of(root, t.base):
+        return _end(t, "invalid", ["no changes: the editable files equal the last keep once build and cache files are ignored"], note="empty")
+    if kind != "try":
+        # B3: what is measured must be what is on disk. The change list is computed against the base, and this assert is the
+        # second defence (a promotion must also measure exactly the member's tree).
+        if gitops.working_tree_hash(root, spec, t.base) != t.snap["tree"] or (promoted and t.snap["tree"] != promoted["tree"]):
+            return _end(t, "invalid", ["the snapshot to be measured differs from the editable files on disk; nothing was measured. "
+                                       "Fix: report this as an hca bug (base threading)"], note="scope")
+    if kind == "screen":
+        pooled = _pooled(task, t.snap["tree"], t.base)
+        ledger.note_attempt(task, n, tree=t.snap["tree"])
+        t.store_extra.update(parent=parent)
+        rec["explore"] = {"parent": parent, "sampling": sampling, "pooled_from": [p["n"] for p in pooled]}
+        try:
+            return _screen(t, [s for p in pooled for s in p.get("scores", [])])
+        except BaseException as exc:
+            _interrupted(t, exc)
+            raise
     # CONTRACT NOTE: a refused replay is recorded as an `invalid` attempt (it counts toward tries and max_tries), so
-    # hammering `hca try` on the same edit shows up in the validity rate instead of vanishing.
+    # hammering `hca try` on the same edit shows up in the validity rate instead of vanishing. Screens of the same tree
+    # are not prior tests (B1): a member can be promoted right after its screen, but not after a try of its tree.
     prior = ledger.seen_tree(task, t.snap["tree"], root)
     ledger.note_attempt(task, n, tree=t.snap["tree"], again=again, refused=bool(prior) and not again)
     if prior:
@@ -133,53 +195,87 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
         pending = ledger.get_pending(task)
         if pending and pending.get("n") == n:           # the branch may have moved: reconciliation owns this record, not us
             raise
-        if not (adir / "verdict.json").exists():
-            if isinstance(exc, KeyboardInterrupt):
-                _record(t, "interrupted", ["interrupted (Ctrl-C or a termination signal) while the try was running; your edits are untouched"])
-                out(f"attempt {n:04d}  INTERRUPTED  (no verdict; your edits are untouched)")
-            else:
-                _record(t, "void", [f"crashed: {type(exc).__name__}: {exc}"])
-            arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])
+        _interrupted(t, exc)
         raise
 
 
-def _measure_and_decide(t: _Try) -> int:
-    root, spec, state, adir, rec, out = t.root, t.spec, t.state, t.adir, t.rec, t.out
-    mode = spec.objective.mode
+def _interrupted(t: _Try, exc) -> None:
+    if not (t.adir / "verdict.json").exists():
+        if isinstance(exc, KeyboardInterrupt):
+            _record(t, "interrupted", ["interrupted (Ctrl-C or a termination signal) while the try was running; your edits are untouched"])
+            t.out(f"attempt {t.rec['n']:04d}  INTERRUPTED  (no verdict; your edits are untouched)")
+        else:
+            _record(t, "void", [f"crashed: {type(exc).__name__}: {exc}"])
+        arms.prune_unused(t.root, explore.arm_shas(t.state))
+
+
+def _end(t: _Try, verdict, reasons, note=None) -> int:
+    """An early invalid or void ends the attempt on its own kind's path (a screen never touches _finish)."""
+    return (_finish_screen if t.rec["kind"] == "screen" else _finish)(t, verdict, reasons, note=note)
+
+
+def _restore_member(root, spec, state, args) -> dict:
+    """`--promote M`: check M from the store and the refs (N3), refuse over unscreened edits, then set the editable paths to M."""
+    entry = explore.member(root, state, args.promote, allow_tainted=bool(getattr(args, "tainted", False)))
+    m = int(args.promote)
+    _, here = explore.parent_base(root, state)
+    if gitops.working_tree_hash(root, spec, here) not in (gitops.tree_of(root, here), entry["tree"]):
+        raise Refusal(f"the editable paths hold edits that were never screened or tried; --promote would overwrite them with member "
+                      f"{m:04d}. Fix: screen them (`hca try --explore`), or undo them.")
+    gitops.revert(root, spec, entry["sha"])
+    state["explore"] = {"parent": m, "sampling": {"override": "promote", "parent": m, "parent_p": None}}
+    ledger.save_state(root, state)
+    task = state["task"]
+    chain = explore.lineage(task, m)
+    by_n = explore.entries(task)
+    return {"member": m, "tree": entry["tree"], "lineage": chain, "dropped_keeps": explore.dropped_keeps(root, state, entry["sha"]),
+            "tainted": bool(entry.get("tainted")), "lineage_pointers": sorted({w for i in chain for w in by_n.get(i, {}).get("pointers", [])}),
+            "screens": sum(1 for i in chain if ledger.kind_of(by_n.get(i, {})) == "screen")}
+
+
+def _pooled(task, tree, base) -> list:
+    """Earlier valid screens of this very tree against this very parent: a re-screen pools their blocks."""
+    return [e for e in explore.entries(task).values()
+            if ledger.kind_of(e) == "screen" and e.get("valid") and e.get("tree") == tree and e.get("base") == base and e.get("scores")]
+
+
+def _build_and_guard(t: _Try):
+    """Build the candidate arm and run the command guards. Returns (guards, None), or (None, (verdict, reasons, kwargs)) to stop."""
+    root, spec, adir, out = t.root, t.spec, t.adir, t.out
     try:
         t.cand_dir = arms.ensure_arm(root, spec, t.snap["sha"], "candidate", logs=adir, timeout=t.remaining(), warn=out)
     except arms.ArmBuildError as exc:
         if t.remaining() <= 0:
-            return _finish(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out while building the candidate"])
+            return None, ("void", [f"try_seconds ({spec.limits.try_seconds}) ran out while building the candidate"], {})
         why = "timed out" if exc.result.timed_out else f"exit status {exc.result.returncode}"
-        return _finish(t, "revert", [f"candidate build failed ({why}); last stderr:\n{exc.result.error_tail}"], valid=False)
+        return None, ("revert", [f"candidate build failed ({why}); last stderr:\n{exc.result.error_tail}"], {"valid": False})
     if t.remaining() <= 0:
-        return _finish(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the build"])
+        return None, ("void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the build"], {})
 
     guards = _run_command_guards(spec, t.cand_dir, adir, t.deadline)
     ledger.write_record(adir, "guards.json", guards)
     failed = [g for g in guards if not g["passed"]]
     if failed:
         if t.remaining() <= 0:
-            return _finish(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the guard commands"], guards=guards)
-        return _finish(t, "revert",
-                       [f"guard {g['name']!r} failed (after one retry): {g['attempts'][-1]['error_tail'] or 'exit ' + str(g['attempts'][-1]['returncode'])}" for g in failed],
-                       valid=False, guards=guards)
+            return None, ("void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the guard commands"], {"guards": guards})
+        return None, ("revert",
+                      [f"guard {g['name']!r} failed (after one retry): {g['attempts'][-1]['error_tail'] or 'exit ' + str(g['attempts'][-1]['returncode'])}" for g in failed],
+                      {"valid": False, "guards": guards})
     if t.remaining() <= 0:
-        return _finish(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the guard commands"], guards=guards)
+        return None, ("void", [f"try_seconds ({spec.limits.try_seconds}) ran out during the guard commands"], {"guards": guards})
+    return guards, None
 
-    env = {"HCA_ITEMS": "dev"}
-    if mode == "items":
-        outcome = _decide_items(spec, t, env)
-    else:
-        outcome = _decide_blocks(spec, t, env)
+
+def _post_checks(t: _Try, outcome, guards) -> tuple:
+    """Arm verification and metric guards after the blocks. Returns (verdict, valid, reasons, guard rows)."""
+    root, spec, adir, rec = t.root, t.spec, t.adir, t.rec
     rec.update(outcome["fields"])
     reasons = list(outcome["reasons"])
     verdict, valid = outcome["verdict"], outcome["valid"]
 
     # Both arms must still be exactly their commits after the run: a benchmark or candidate that wrote into a
     # worktree (the baseline's included) changed what was compared.
-    for sha, label in ((state["last_keep"], "baseline"), (t.snap["sha"], "candidate")):
+    for sha, label in ((t.base, "baseline"), (t.snap["sha"], "candidate")):
         problem = arms.verify_arm(arms.arm_dir(root, sha), sha)
         if problem:
             verdict, valid = "void", False
@@ -202,6 +298,19 @@ def _measure_and_decide(t: _Try) -> int:
                     verdict = "revert"
         ledger.write_record(adir, "guards.json", guard_rows)
         rec["arm_medians"] = medians
+    return verdict, valid, reasons, guard_rows
+
+
+def _measure_and_decide(t: _Try) -> int:
+    guards, early = _build_and_guard(t)
+    if early:
+        return _finish(t, early[0], early[1], **early[2])
+    env = {"HCA_ITEMS": "dev"}
+    if t.spec.objective.mode == "items":
+        outcome = _decide_items(t.spec, t, env)
+    else:
+        outcome = _decide_blocks(t.spec, t, env)
+    verdict, valid, reasons, guard_rows = _post_checks(t, outcome, guards)
     if verdict == "keep" and not valid:
         verdict = "revert"
     return _finish(t, verdict, reasons, valid=valid, guards=guard_rows)
@@ -282,6 +391,127 @@ def _decide_items(spec, t: _Try, env) -> dict:
             "fields": fields, "arm_medians": pair.arm_medians}
 
 
+# --- screens: ranked and archived, never kept ---------------------------------------------------------
+
+def _screen(t: _Try, pooled) -> int:
+    guards, early = _build_and_guard(t)
+    if early:
+        return _finish_screen(t, early[0], early[1], **early[2])
+    outcome = _decide_screen(t.spec, t, {"HCA_ITEMS": "dev"}, pooled)
+    verdict, valid, reasons, guard_rows = _post_checks(t, outcome, guards)
+    return _finish_screen(t, verdict, reasons, valid=valid, guards=guard_rows)
+
+
+def _decide_screen(spec, t: _Try, env, pooled=()) -> dict:
+    """n_s blocks of the child against its parent: a Hodges-Lehmann estimate and its standard error, no test, no floor.
+
+    The statistic only ranks. A one-sided 95% bound is reported from 5 blocks on (below that 2^-n > 0.05, S7). Earlier
+    blocks of the same tree against the same parent are pooled (a re-screen).
+    """
+    n_s, direction = explore.screen_blocks(t.state, spec), spec.objective.direction
+    fields = {"extended": False, "blocks": 0, "blocks_run": 0}
+
+    def void(reasons):
+        return {"verdict": "void", "valid": False, "reasons": reasons, "fields": fields, "arm_medians": None}
+
+    base_dir, cand_dir = t.refresh()
+    result = measure.run_blocks(spec, base_dir, cand_dir, n_s, t.rng, env, t.adir, deadline=t.deadline, warmup=True, prepare=t.prepare)
+    fields.update(blocks_run=result.blocks_run)
+    if result.blocks_run < n_s:
+        return void([f"try_seconds ({spec.limits.try_seconds}) ran out before the screen finished"])
+    if result.void or len(result.scores) < 2:
+        return void(result.warnings or ["too few usable blocks"])
+    scores = list(pooled) + list(result.scores)
+    estimate = stats.hodges_lehmann(scores)
+    se = stats.robust_sd(scores) / math.sqrt(len(scores))
+    bound = stats.walsh_lower_bound(scores, SCREEN_BOUND_LEVEL) if len(scores) >= 5 else None
+    bound = bound if bound is not None and math.isfinite(bound) else None
+    valid = not (result.candidate_failures or result.candidate_invalid_blocks)
+    reasons = [] if valid else ["the candidate failed or reported invalid items in some blocks: not a test of the idea"]
+    fields.update(blocks=len(scores), estimate_log=estimate, estimate=stats.metric_change_pct(estimate, direction),
+                  lower=stats.metric_change_pct(bound, direction) if bound is not None else None, p=None,
+                  screen={"blocks": len(scores), "new_blocks": len(result.scores), "estimate_log": estimate, "se": se,
+                          "bound95": bound, "scores": scores})
+    return {"verdict": "screened" if valid else "invalid", "valid": valid, "reasons": reasons, "fields": fields,
+            "arm_medians": result.arm_medians}
+
+
+def _finish_screen(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> int:
+    """Record a screen, archive it, set the editable paths to the next sampled parent, print. Never keeps, never writes a
+    pending keep, never moves the branch: there is no call to `_apply_keep` or `common.write_pending` on this path (S4)."""
+    root, spec, state, rec, out = t.root, t.spec, t.state, t.rec, t.out
+    reasons = list(reasons)
+    if verdict != "screened" or not valid:
+        verdict = verdict if verdict in ("void", "interrupted") else "invalid"
+    elif gitops.working_tree_hash(root, spec, t.base) != t.snap["tree"]:
+        verdict = "void"
+        reasons.append("the editable files changed while the screen was measured; nothing was archived and your edits are untouched")
+    lines = []
+    if verdict == "screened":
+        screen = rec["screen"]
+        changed = gitops.numstat(root, spec, t.base, t.snap["sha"])
+        parent_lines = sum(gitops.numstat(root, spec, gitops.EMPTY_TREE, t.base).values()) or 1
+        vs_incumbent = sum(gitops.numstat(root, spec, state["last_keep"], t.snap["sha"]).values())
+        module = explore.module_of(changed)
+        rec["explore"].update(module=module, divergence=round(sum(changed.values()) / parent_lines, 4), lines_vs_incumbent=vs_incumbent)
+        t.store_extra.update(module=module, scores=screen["scores"], se=screen["se"], blocks=screen["blocks"])
+        rec["class"] = "SCREENED"
+        lines.append(f"  divergence {100 * rec['explore']['divergence']:.0f}% of the parent's editable lines ({vs_incumbent} lines vs the incumbent)"
+                     f" · review pointers: {', '.join(rec['review_pointers']) or 'none'}")
+    else:
+        rec["class"] = "INVALID"
+    _record(t, verdict, reasons, valid=verdict == "screened")
+    if verdict == "screened":
+        lines += _archive_and_move(t)
+    arms.prune_unused(root, explore.arm_shas(state))
+    out(_screen_headline(t, verdict))
+    for reason in reasons:
+        out("  - " + reason)
+    if verdict == "invalid":
+        out("  Nothing was archived and your edits are untouched." if note != "empty" else
+            "  Make an edit inside the editable paths (from the parent), then run `hca try --explore` again.")
+    elif verdict == "void":
+        out("  Your edits are untouched.")
+    for line in lines:
+        out(line)
+    return common.EXIT_KEEP if verdict == "screened" else common.EXIT_INVALID
+
+
+def _archive_and_move(t: _Try) -> list:
+    """Admit the screened child to the archive, draw the next parent (its own RNG stream) and restore the editable paths to it."""
+    root, spec, state, n = t.root, t.spec, t.state, t.rec["n"]
+    archive = explore.build(root, spec, state, explore.climb_seed(state))
+    node = archive["nodes"][n]
+    cell = node.get("cell", node["module"])
+    elite = archive["cells"].get(cell, {}).get("elite") == n
+    lines = [f"  archive    {'new elite of' if elite else 'not the elite of'} [{cell}] · lead vs incumbent: "
+             f"raw {100 * (node['f_raw'] - archive['f_inc']):+.1f} pp, ranked {100 * (node['f_rank'] - archive['f_inc']):+.1f} pp"]
+    sampling = explore.sample(archive, ledger.store_counts(state["task"])["screen"], archive["seed"])
+    parent = None if sampling["parent"] == archive["incumbent"] else sampling["parent"]
+    target = state["last_keep"] if parent is None else archive["nodes"][parent]["sha"]
+    gitops.revert(root, spec, target)
+    state["explore"] = {"parent": parent, "sampling": sampling}
+    ledger.save_state(root, state)
+    explore.write_cache(root, archive)
+    who = "the incumbent" if parent is None else f"{parent:04d}"
+    lines.append(f"  next       parent {who} (p = {sampling['parent_p']:.2f}); editable paths set to it")
+    return lines
+
+
+def _screen_headline(t: _Try, verdict) -> str:
+    rec, spec = t.rec, t.spec
+    if verdict != "screened":
+        return f"screen {rec['n']:04d}  {verdict.upper()}  (not archived)"
+    direction, screen = spec.objective.direction, rec["screen"]
+    parent = rec["explore"]["parent"]
+    bound = "" if screen["bound95"] is None else \
+        f"; {ledger.fmt_bound(stats.metric_change_pct(screen['bound95'], direction), 'blocks', direction)} at 95%"
+    pooled = f", {screen['blocks'] - screen['new_blocks']} pooled" if screen["blocks"] > screen["new_blocks"] else ""
+    return (f"screen {rec['n']:04d}  {spec.objective.metric} {ledger.fmt_effect(rec['estimate'], 'blocks')} vs parent "
+            f"{'the incumbent' if parent is None else format(parent, '04d')} ({screen['blocks']} blocks{pooled}, {rec['wall_seconds']:.1f} s{bound}) "
+            "· a screen, not evidence")
+
+
 # --- guards ----------------------------------------------------------------------------------------
 
 def _run_command_guards(spec, cand_dir, adir, deadline) -> list:
@@ -329,6 +559,9 @@ def _record(t: _Try, verdict, reasons, valid=False) -> None:
         except HcaError:
             pass
     t.rec.update(verdict=verdict, valid=valid, reasons=reasons, wall_seconds=round(time.monotonic() - t.started, 3))
+    # The store entry gets the outcome too: counts, members, lineage and fitness are read from here, never from verdict.json.
+    ledger.update_entry(t.state["task"], t.rec["n"], verdict=verdict, valid=valid, base=t.base, sha=t.snap["sha"] if t.snap else None,
+                        estimate_log=t.rec.get("estimate_log"), wall_seconds=t.rec["wall_seconds"], **t.store_extra)
     ledger.write_record(t.adir, "verdict.json", t.rec)
     ledger.refresh_verdicts(t.root, t.state, t.spec)
 
@@ -336,6 +569,8 @@ def _record(t: _Try, verdict, reasons, valid=False) -> None:
 def _apply_keep(t: _Try, reasons):
     """The keep itself. Returns the (possibly changed) verdict: 'keep', or 'void' if the files moved under us or git refused."""
     root, spec, state, rec = t.root, t.spec, t.state, t.rec
+    if rec.get("kind") == "screen":                     # unreachable by construction (S4); a screen must never get this far
+        raise HcaError("internal: a screen reached the keep")
     # The measured tree must still be the tree on disk. If anything editable changed during the run (a formatter,
     # the agent's parallel edits, the candidate itself), what was measured is not what would be committed: void,
     # nothing committed, edits left as they are (S5).
@@ -384,11 +619,16 @@ def _finish(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> i
         result = gitops.revert(root, spec, state["last_keep"])
         action.append(f"reverted the editable paths to {state['last_keep'][:12]}"
                       + (f" (removed {len(result['deleted'])} new file(s))" if result["deleted"] else ""))
+    if verdict in ("keep", "revert") and state.get("explore") is not None:
+        state["explore"] = {"parent": None, "sampling": None}      # the working tree is at the incumbent again
     elif verdict in ("void", "interrupted"):
         action.append("your edits are untouched")
+    if rec.get("kind") == "promote":
+        t.store_extra.update(member=rec["explore"]["member"], dropped_keeps=rec["explore"]["dropped_keeps"],
+                             tainted_member=rec["explore"]["tainted"])
     _record(t, verdict, reasons, valid=valid)
     common.clear_pending(root, state["task"])
-    arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])     # after the records, best effort
+    arms.prune_unused(root, explore.arm_shas(state))     # after the records, best effort
     wall = rec["wall_seconds"]
     useful_text = spec.objective.useful_effect
     out(_headline(rec, verdict, mode, wall, spec))
@@ -399,9 +639,19 @@ def _finish(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> i
     if verdict == "invalid":
         out("  Nothing was measured and your edits are untouched. Fix the above and run `hca try` again."
             if note in ("scope", "replay") else "  Make an edit inside the editable paths, then run `hca try` again.")
+    if rec.get("kind") == "promote":
+        out("  " + _promotion_line(rec["explore"]))
     for line in action:
         out("  " + line + ".")
     return {"keep": common.EXIT_KEEP, "revert": common.EXIT_REVERT}.get(verdict, common.EXIT_INVALID)
+
+
+def _promotion_line(info) -> str:
+    dropped = ", ".join(f"keep {k:04d}" for k in info["dropped_keeps"]) or "none"
+    return (f"promoted member {info['member']:04d} (lineage {', '.join(format(i, '04d') for i in info['lineage'])}; {info['screens']} screen(s); "
+            f"review pointers over the lineage: {', '.join(info['lineage_pointers']) or 'none'})"
+            + (" · TAINTED member, promoted with --tainted" if info["tainted"] else "")
+            + f"\n  dropped keeps: {dropped} · fresh blocks; the screens' estimates were selected and are not reused")
 
 
 def _interval_text(rec, mode) -> str:
