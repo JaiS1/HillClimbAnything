@@ -1144,8 +1144,9 @@ class ProofClimbFixTests(ExploreCase):
         self.assertIn("Do not `git stash` them", shown.getvalue())
 
     def test_a_crlf_rewrite_gets_a_churn_warning(self):
-        # Windows defaults core.autocrlf=true and text-mode writes turn \n into \r\n; either would hide the rewrite under test.
-        self.repo.git("config", "core.autocrlf", "false")
+        # Windows defaults core.autocrlf=true and text-mode writes turn \n into \r\n; either would hide the rewrite under test,
+        # so the file is written as bytes and marked -text (no line-ending conversion) for this file only.
+        (self.root / ".gitattributes").write_bytes(b"src/big.txt -text\n")
         (self.root / "src" / "big.txt").write_bytes("".join(f"line {i}\n" for i in range(120)).encode())
         self.repo.commit_all("a big file")
         self.init()
