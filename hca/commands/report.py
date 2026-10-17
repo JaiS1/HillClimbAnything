@@ -58,6 +58,26 @@ def _rows(attempts, mode) -> list:
 HEADER = ["n", "verdict", "estimate", "p", "blocks", "wall", "message"]
 
 
+def _explore_lines(tests, screens, counts) -> list:
+    """Explore mode's disclosure lines (none in a line-mode climb): screens kept out of the bound, promotions, overrides, dropped keeps."""
+    if not (counts["screen"] or counts["promote"]):
+        return []
+    promos = [a for a in tests if a.get("kind") == "promote"]
+    overrides = sum(1 for a in screens if ((a.get("explore") or {}).get("sampling") or {}).get("parent_p", 0) is None)
+    divergent = sum(1 for a in screens if ((a.get("explore") or {}).get("divergence") or 0) > 0.25)
+    lines = [f"Screens: {counts['screen']} (they rank and archive a child against its parent; they cannot keep and are not in the bound above).",
+             f"Promotions: {counts['promote']} ({sum(1 for a in promos if a.get('verdict') == 'keep')} kept); parent overrides {overrides}; "
+             f"high-divergence children (> 25% of the parent's lines) {divergent}."]
+    for a in promos:
+        info = a.get("explore") or {}
+        if info.get("dropped_keeps"):
+            lines.append(f"Promotion {a['n']:04d} dropped " + ", ".join(f"keep {k:04d}" for k in info["dropped_keeps"])
+                         + " (the member was forked before them; its whole tree was tested).")
+        if info.get("tainted"):
+            lines.append(f"Promotion {a['n']:04d} promoted a TAINTED member (--tainted): its lineage held a keep a failed confirm undid.")
+    return lines
+
+
 def _mechanism(attempts, names) -> list:
     out = []
     for a in attempts:
@@ -77,6 +97,8 @@ def _mechanism(attempts, names) -> list:
 
 def build(root, spec, state, attempts, confirms) -> dict:
     mode = state.get("mode", "blocks")
+    screens = [a for a in attempts if a.get("kind") == "screen"]
+    attempts = ledger.tests_only(attempts)               # the table, validity and headline are about referee tests (N2)
     head = ledger.headline(state, attempts)
     valid = sum(1 for a in attempts if a.get("valid"))
     total = len(attempts)
@@ -85,10 +107,12 @@ def build(root, spec, state, attempts, confirms) -> dict:
     mech = _mechanism(attempts, spec.mechanism.metrics) if spec else []
     sliced = next((c for c in reversed(confirms) if c.get("slices")), None)
     tries = ledger.tries_used(root, state["task"])
+    counts = ledger.store_counts(state["task"])
     tip = state.get("last_confirmed") or state["last_keep"]
     stat = gitops.diff_stat(root, state["init_sha"], tip) if tip != state["init_sha"] else ""
     return {"mode": mode, "headline": head, "rows": rows, "valid": valid, "total": total, "unproven": unproven,
-            "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip, "tries": max(tries, total),
+            "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip, "tries": max(tries + counts["promote"], total),
+            "explore": _explore_lines(attempts, screens, counts),
             "resets": (ledger.load_store(state["task"]) or {}).get("resets", [])}
 
 
@@ -110,7 +134,7 @@ def render_text(state, spec, data) -> str:
     pct = 100 * data["valid"] / data["total"] if data["total"] else 0
     lines += ["", f"Validity rate: {data['valid']} of {data['total']} tries valid ({pct:.0f}%). "
               "Invalid = scope violation, no change, build/guard failure, crash, or an unfinished measurement."]
-    lines += ["", expected_false_keeps(data["tries"])]
+    lines += ["", expected_false_keeps(data["tries"], bool(data["explore"]))] + data["explore"]
     if data["resets"]:
         lines += [f"The baseline was re-initialised {len(data['resets'])} time(s) (see `hca report --referee`): the original is the latest one."]
     if data["mechanism"]:
@@ -148,7 +172,8 @@ def render_markdown(state, spec, data) -> str:
     else:
         out.append("None yet.")
     pct = 100 * data["valid"] / data["total"] if data["total"] else 0
-    out += ["", f"**Validity rate:** {data['valid']} of {data['total']} tries valid ({pct:.0f}%).", "", expected_false_keeps(data["tries"])]
+    out += ["", f"**Validity rate:** {data['valid']} of {data['total']} tries valid ({pct:.0f}%).", "",
+            expected_false_keeps(data["tries"], bool(data["explore"]))] + [x for line in data["explore"] for x in ("", line)]
     if data["mechanism"]:
         out += ["", "## Mechanism metrics", ""] + [f"- {m}" for m in data["mechanism"]]
     if data["slices"]:
@@ -166,9 +191,9 @@ def render_markdown(state, spec, data) -> str:
     return "\n".join(out) + "\n"
 
 
-def expected_false_keeps(tries) -> str:
-    """The family-wise honesty line: each try is a 1% test, so chance alone allows about tries x 1% false keeps."""
-    return (f"Expected false keeps so far <= {tries} tries x 1% = {tries * 0.01:.2f} "
+def expected_false_keeps(tries, promotions=False) -> str:
+    """The family-wise honesty line: each try (and each promotion) is a 1% test, so chance alone allows about n x 1% false keeps."""
+    return (f"Expected false keeps so far <= {tries} {'tries + promotions' if promotions else 'tries'} x 1% = {tries * 0.01:.2f} "
             "(an upper bound from chance alone; `hca confirm` is the check).")
 
 
@@ -218,10 +243,12 @@ def run_status(args=None, out=print, cwd=None) -> int:
     max_tries = spec.objective.max_tries if spec else "?"
     max_confirms = spec.limits.confirms if spec else "?"
     here = gitops.current_branch(root)
+    attempts = ledger.tests_only(attempts)
     out(f"task {state['task']}  branch {state['branch']}" + ("" if here == state["branch"] else f"  (you are on {here})"))
     out(f"init {state['init_sha'][:12]}  last keep {state['last_keep'][:12]}  last confirmed "
         + (state["last_confirmed"][:12] if state.get("last_confirmed") else "none"))
     out(f"tries {max(len(attempts), ledger.tries_used(root, state['task']))} / {max_tries}  (kept {kept}, valid {sum(1 for a in attempts if a.get('valid'))})   "
         f"confirms {ledger.confirms_used(state, state['task'])} / {max_confirms}")
     out(ledger.headline(state, attempts)["text"])
+    out("(`hca status` is kept for one release; `hca next` shows this and what to do next.)")
     return 0

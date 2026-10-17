@@ -217,6 +217,11 @@ def read_attempts(root) -> list:
     return out
 
 
+def tests_only(attempts) -> list:
+    """The records that are referee tests (try, promote): what the headline, VERDICTS.md, the report table and confirm read."""
+    return [a for a in attempts if a.get("kind") != "screen"]
+
+
 def update_attempt(root, n, **fields) -> None:
     path = attempt_path(root, n) / "verdict.json"
     record = read_json(path)
@@ -341,13 +346,22 @@ def session(store) -> int:
 
 def session_attempts(task) -> list:
     store = load_store(task)
-    if store is None:
-        return []
-    return [a for a in store.get("attempts", []) if a.get("session", 0) == session(store)]
+    return [] if store is None else session_attempts_of(store)
 
 
-def note_attempt(task, n, tree=None, again=False, refused=False) -> None:
-    """Record attempt `n` (and, once known, its snapshot tree hash) in the referee store. Replays are detected from here."""
+KINDS = ("try", "promote", "screen")      # an entry without `kind` predates explore mode and is a `try`
+
+
+def kind_of(entry) -> str:
+    return entry.get("kind") or "try"
+
+
+def note_attempt(task, n, tree=None, again=False, refused=False, kind=None) -> None:
+    """Record attempt `n` (and, once known, its snapshot tree hash) in the referee store. Replays are detected from here.
+
+    `kind` (try | promote | screen) is set when the entry is created and never changed: every count and every replay
+    check reads it from here, never from the agent-writable verdict.json (B1, S3).
+    """
     store = load_store(task)
     if store is None:
         return
@@ -357,8 +371,32 @@ def note_attempt(task, n, tree=None, again=False, refused=False) -> None:
             entry.update(tree=tree or entry.get("tree"), again=again or entry.get("again", False), refused=refused or entry.get("refused", False))
             break
     else:
-        store["attempts"].append({"n": n, "session": current, "tree": tree, "again": again, "refused": refused, "at": now()})
+        store["attempts"].append({"n": n, "session": current, "kind": kind or "try", "tree": tree, "again": again, "refused": refused, "at": now()})
     save_store(task, store)
+
+
+def update_entry(task, n, **fields) -> None:
+    """Add fields to attempt `n`'s store entry (this session): the outcome, the snapshot sha, a screen's scores, taint."""
+    store = load_store(task)
+    if store is None:
+        return
+    for entry in session_attempts_of(store):
+        if entry.get("n") == n:
+            entry.update(fields)
+            save_store(task, store)
+            return
+
+
+def session_attempts_of(store) -> list:
+    return [a for a in store.get("attempts", []) if a.get("session", 0) == session(store)]
+
+
+def store_counts(task) -> dict:
+    """{try, promote, screen}: this session's attempts by kind, from the referee store only."""
+    counts = dict.fromkeys(KINDS, 0)
+    for entry in session_attempts(task):
+        counts[kind_of(entry)] += 1
+    return counts
 
 
 def forget_attempt(task, n) -> None:
@@ -374,14 +412,15 @@ def forget_attempt(task, n) -> None:
 
 
 def seen_tree(task, tree, root=None):
-    """The first earlier attempt (any session) whose snapshot tree equals `tree`, as an {n, ...} entry, or None.
+    """The first earlier test (any session) whose snapshot tree equals `tree`, as an {n, ...} entry, or None.
 
     The store is the main memory; with `root` the attempt records under `.hca/` (and archived sessions) are searched too,
-    so replay memory does not depend on the store alone.
+    so replay memory does not depend on the store alone. Screens are not tests (they cannot keep), so they are skipped:
+    promoting a member right after its screen is not a replay, but any earlier `try` or `promote` of the tree is (B1).
     """
     store = load_store(task)
     for entry in (store or {}).get("attempts", []):
-        if tree and entry.get("tree") == tree:
+        if tree and entry.get("tree") == tree and kind_of(entry) != "screen":
             return entry
     if root is not None and tree:
         for path in sorted(hca_dir(root).glob("attempts/*/verdict.json")) + sorted(hca_dir(root).glob("archive-*/attempts/*/verdict.json")):
@@ -389,7 +428,7 @@ def seen_tree(task, tree, root=None):
                 record = read_json(path)
             except (OSError, ValueError):
                 continue
-            if record.get("tree") == tree:
+            if record.get("tree") == tree and record.get("kind") != "screen":
                 return {"n": record.get("n"), "tree": tree, "source": str(path)}
     return None
 
@@ -419,10 +458,15 @@ def get_pending(task):
 
 
 def tries_used(root, task) -> int:
-    """Tries so far this session: the larger of the ledger's attempts and the store's (deleting attempt directories does not help)."""
+    """Line tries so far this session: the larger of the ledger's attempts and the store's (deleting attempt directories does not help).
+
+    Promotions and screens are counted separately (`store_counts`) and subtracted from the directories on disk, so
+    `max_tries` counts `try` only (S3); with no explore-mode attempts this is the old count exactly.
+    """
     base = attempts_dir(root)
     on_disk = sum(1 for p in base.iterdir() if p.is_dir() and p.name.isdigit()) if base.exists() else 0
-    return max(on_disk, len(session_attempts(task)))
+    counts = store_counts(task)
+    return max(on_disk - counts["promote"] - counts["screen"], counts["try"])
 
 
 def confirms_used(state, task) -> int:
@@ -580,8 +624,12 @@ def render_verdicts(state, attempts, spec=None) -> str:
 
 
 def refresh_verdicts(root, state, spec=None) -> None:
-    """Recompute the headline, append it to the history if it changed, save state, rewrite VERDICTS.md."""
-    attempts = read_attempts(root)
+    """Recompute the headline, append it to the history if it changed, save state, rewrite VERDICTS.md.
+
+    Screens are not verdicts (N2): they are left out of the headline and the list, so a screen record can never read as
+    an attempt without a verdict or move the headline.
+    """
+    attempts = tests_only(read_attempts(root))
     text = headline(state, attempts)["text"]
     history = state.setdefault("verdict_history", [])
     if not history or history[-1]["text"] != text:
