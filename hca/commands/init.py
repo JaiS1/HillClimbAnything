@@ -10,6 +10,7 @@ task is a reset, which the store refuses once it holds confirms unless a human s
 
 from __future__ import annotations
 
+import re
 import shutil
 import time
 from pathlib import Path
@@ -20,11 +21,16 @@ from ..spec import load_spec
 from . import common
 from .quick import NOISY_FIXES
 
+_NAME = re.compile(r"[a-z0-9][a-z0-9-]*\Z")
+
 
 def add_arguments(parser) -> None:
     parser.add_argument("--heldout", help="directory of held-out data (outside the repo); copied to the referee store")
     parser.add_argument("--force", action="store_true", help="finish even if the baseline is too noisy")
     parser.add_argument("--reset", action="store_true", help="drop arm worktrees, archive the old ledger and start over")
+    parser.add_argument("--name", metavar="TASK",
+                        help="run this climb as a new task named TASK instead of hca.toml's [task] name (a fresh baseline, store and "
+                             "confirm cap; hca.toml stays untouched and the rename is logged in both referee stores)")
 
 
 def run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
@@ -37,7 +43,15 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     """`aa_blocks` overrides the A/A length (tests); normally it is `extend_to`, or `blocks` without extension."""
     root = gitops.repo_root(cwd)
     spec = load_spec(root / "hca.toml")
-    task = spec.task.name
+    has_state = ledger.state_path(root).exists()
+    name = getattr(args, "name", None)
+    renamed = name.strip() or None if isinstance(name, str) else None
+    if renamed is None and has_state and args.reset:              # a reset keeps the name the session was started under
+        old = ledger.read_json(ledger.state_path(root))
+        renamed = old.get("task") if old.get("spec_task") == spec.task.name else None
+    if renamed is not None and not _NAME.match(renamed):
+        raise HcaError(f"--name {renamed!r} is not a valid task name. Fix: use lowercase letters, digits and dashes, e.g. {spec.task.name}-2.")
+    task = renamed or spec.task.name
     branch = f"hca/{task}"
     gitops.refuse_unsupported(root)
     # CONTRACT NOTE: the confirm-cap guard applies to any init of a task whose store holds confirms, not only `--reset`:
@@ -45,9 +59,9 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     if ledger.reset_blocked(task):
         raise HcaError(f"the referee store already holds confirms for {task!r}, so starting over is refused: re-baselining would let "
                        "the confirm cap and the original baseline be rewritten by whoever runs this (the agent included). "
-                       "Fix: if a human really wants a fresh start, run `HCA_ALLOW_RESET=1 hca init --reset` (the reset is logged in the "
-                       "store and the confirm count is never reset).")
-    has_state = ledger.state_path(root).exists()
+                       f"Fix: start a new task with its own fresh baseline and confirm cap, `hca init --name {task}-2` (hca.toml stays as "
+                       "it is; the new name is logged in both referee stores). Or, if a human really wants to re-baseline this task, "
+                       "`HCA_ALLOW_RESET=1 hca init --reset` (logged; the confirm count is never reset).")
     if has_state and not args.reset:
         raise HcaError(f"this repo is already initialised for {ledger.read_json(ledger.state_path(root)).get('task')!r}. "
                        "Fix: use `hca status`, or `hca init --reset` to start over.")
@@ -157,7 +171,9 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     blobs = {p: entries[p][1] for p in frozen if p in entries}
     spec_hash = digest(root / "hca.toml")
     store = ledger.init_store(task, init_sha, spec_hash, frozen, blobs)  # the referee store is the source of truth; state.json is a cache
-    state = {"version": ledger.STATE_VERSION, "task": task, "branch": branch, "init_sha": init_sha, "last_keep": init_sha,
+    if renamed is not None:
+        ledger.log_rename(spec.task.name, task, init_sha)
+    state = {"version": ledger.STATE_VERSION, "task": task, "spec_task": spec.task.name if renamed else None, "branch": branch, "init_sha": init_sha, "last_keep": init_sha,
              "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen, "frozen_blobs": blobs, "store_id": store["store_id"],
              "spec_hash": spec_hash, "base_branch": None if base_branch in (branch, "HEAD") else base_branch, "mode": mode, "metric": spec.objective.metric,
              "direction": spec.objective.direction, "useful_effect": spec.objective.useful_effect,

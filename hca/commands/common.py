@@ -50,7 +50,7 @@ def open_session(cwd=None, on_branch=True, out=print) -> tuple:
     state = ledger.load_state(root)
     gitops.ignore_notebook(state.get("explore") is not None)     # IDEAS.md is the notebook once explore mode is in use
     spec = load_spec(root / "hca.toml")
-    if spec.task.name != state["task"]:
+    if spec.task.name not in (state["task"], state.get("spec_task")):       # `init --name` runs a climb under another name
         raise HcaError(f"hca.toml says task {spec.task.name!r} but this session is {state['task']!r}. "
                        "Fix: restore hca.toml (it is frozen), or run `hca init --reset`.")
     gitops.refuse_unsupported(root)

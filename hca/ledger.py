@@ -350,6 +350,21 @@ def init_store(task, init_sha, spec_hash, frozen, blobs) -> dict:
     return store
 
 
+def log_rename(spec_name, task, init_sha) -> None:
+    """`init --name`: record in both referee stores that `task` is a fresh climb of the spec named `spec_name`, with the old
+    store's confirm count, so a renamed task is visible to a human and never hides how many confirms the old name used."""
+    old = load_store(spec_name)
+    entry = {"at": now(), "spec_name": spec_name, "task": task, "init_sha": init_sha,
+             "spec_name_confirms_used": max(int((old or {}).get("confirms_used", 0)), len(read_confirms(spec_name)))}
+    if old is not None:
+        old.setdefault("renamed_to", []).append(entry)
+        save_store(spec_name, old)
+    new = load_store(task)
+    if new is not None:
+        new.setdefault("renamed_from", []).append(entry)
+        save_store(task, new)
+
+
 def session(store) -> int:
     """Which session of the task this is: 0 until the first reset, then 1, 2, ..."""
     return len(store.get("resets", []))
