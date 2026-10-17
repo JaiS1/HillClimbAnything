@@ -124,7 +124,7 @@ def build(root, spec, state, attempts, confirms) -> dict:
     stat = gitops.diff_stat(root, state["init_sha"], tip) if tip != state["init_sha"] else ""
     return {"mode": mode, "headline": head, "rows": rows, "valid": valid, "total": total, "unproven": unproven,
             "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip, "tries": max(tries + counts["promote"], total),
-            "explore": _explore_lines(root, state, attempts, screens, counts),
+            "explore": _explore_lines(root, state, attempts, screens, counts), "chain": ledger.chain_of(state["task"]),
             "resets": (ledger.load_store(state["task"]) or {}).get("resets", [])}
 
 
@@ -138,7 +138,7 @@ def render_text(state, spec, data) -> str:
     useful = spec.objective.useful_effect if spec else state.get("useful_effect")
     renamed = f"; run with `init --name`, hca.toml says {state['spec_task']!r}" if state.get("spec_task") else ""
     lines = [f"HCA report: {state['task']} (branch {state['branch']}{renamed}; {mode} mode; {state.get('metric')} {state.get('direction')}; "
-             f"useful effect {useful})", "", "Headline", "  " + data["headline"]["text"], "", "Attempts"]
+             f"useful effect {useful})", "", "Headline", "  " + data["headline"]["text"]] + _chain_lines(data["chain"]) + ["", "Attempts"]
     if data["rows"]:
         lines.append("  " + line(HEADER))
         lines += ["  " + line(r) for r in data["rows"]]
@@ -161,7 +161,9 @@ def render_text(state, spec, data) -> str:
         ids = ", ".join(f"{a['n']:04d}" for a in data["unproven"])
         lines += ["", f"No evidence is not no effect: {len(data['unproven'])} reverted attempt(s) ({ids}) have an interval that still allows "
                   f"the useful effect ({useful}). They were not shown to fail, only not shown to work."]
-    lines += ["", f"Confirms used: {ledger.confirms_used(state, state['task'])} of {spec.limits.confirms if spec else '?'}."]
+    earlier = data["chain"]["confirms"]
+    lines += ["", f"Confirms used: {ledger.confirms_used(state, state['task']) + earlier} of {spec.limits.confirms if spec else '?'}"
+              + (f" ({earlier} under earlier names of this climb)." if earlier else ".")]
     if data["diffstat"]:
         lines += ["", f"Change so far ({'confirmed' if state.get('last_confirmed') == data['tip'] else 'latest keep'} {data['tip'][:12]} vs original):",
                   *["  " + l for l in data["diffstat"].splitlines()]]
@@ -202,6 +204,15 @@ def render_markdown(state, spec, data) -> str:
     base = state.get("base_branch")
     out += ["", "## Merge", "", "```", f"git checkout {base or '<your main branch>'}\n" + f"git merge {state['branch']}", "```"]
     return "\n".join(out) + "\n"
+
+
+def _chain_lines(chain) -> list:
+    """The headline's re-baseline line: a renamed climb (`init --name`) always says what came before it."""
+    if not chain["tasks"]:
+        return []
+    names = " -> ".join(t["task"] for t in chain["tasks"])
+    return [f"  Re-baselined from {chain['tasks'][-1]['task']!r} after {chain['confirms']} confirm(s) ({chain['fails']} FAIL) along "
+            f"the chain {names}; this headline is measured from the new baseline only."]
 
 
 def expected_false_keeps(tries, promotions=False) -> str:

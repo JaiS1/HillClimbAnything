@@ -10,13 +10,14 @@ task is a reset, which the store refuses once it holds confirms unless a human s
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import time
 from pathlib import Path
 
 from .. import arms, gitops, ledger, measure, stats
-from ..core import HcaError, digest
+from ..core import HcaError, Refusal, digest
 from ..spec import load_spec
 from . import common
 from .quick import NOISY_FIXES
@@ -44,14 +45,20 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     root = gitops.repo_root(cwd)
     spec = load_spec(root / "hca.toml")
     has_state = ledger.state_path(root).exists()
+    old = ledger.read_json(ledger.state_path(root)) if has_state else {}
     name = getattr(args, "name", None)
-    renamed = name.strip() or None if isinstance(name, str) else None
-    if renamed is None and has_state and args.reset:              # a reset keeps the name the session was started under
-        old = ledger.read_json(ledger.state_path(root))
-        renamed = old.get("task") if old.get("spec_task") == spec.task.name else None
+    renamed = name.strip() if isinstance(name, str) else None
+    if renamed == "":
+        raise HcaError(f"--name needs a task name. Fix: use lowercase letters, digits and dashes, e.g. --name {spec.task.name}-2.")
     if renamed is not None and not _NAME.match(renamed):
         raise HcaError(f"--name {renamed!r} is not a valid task name. Fix: use lowercase letters, digits and dashes, e.g. {spec.task.name}-2.")
+    if renamed is None and has_state and args.reset:              # a reset keeps the name the session was started under
+        renamed = old.get("task") if old.get("spec_task") == spec.task.name else None
+    if renamed == spec.task.name:                                 # --name equal to hca.toml's is no rename at all
+        renamed = None
     task = renamed or spec.task.name
+    previous = old.get("task") or spec.task.name                  # the task this one would follow on from
+    inherited = _check_rename(root, previous, task, args.heldout) if task != previous else None
     branch = f"hca/{task}"
     gitops.refuse_unsupported(root)
     # CONTRACT NOTE: the confirm-cap guard applies to any init of a task whose store holds confirms, not only `--reset`:
@@ -161,6 +168,9 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
         gitops.create_branch(root, branch)
     if heldout_src:
         heldout_path = ledger.install_heldout(task, heldout_src, root)
+    elif inherited is not None:                          # a renamed climb keeps the held-out set of the task it follows
+        heldout_path = ledger.install_heldout(task, inherited, root)
+        out(f"Held-out data inherited from {previous!r}.")
     elif args.reset:
         heldout_path = ledger.heldout_dir(task)          # a reset keeps the held-out set that is already in the store
     else:
@@ -171,8 +181,8 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     blobs = {p: entries[p][1] for p in frozen if p in entries}
     spec_hash = digest(root / "hca.toml")
     store = ledger.init_store(task, init_sha, spec_hash, frozen, blobs)  # the referee store is the source of truth; state.json is a cache
-    if renamed is not None:
-        ledger.log_rename(spec.task.name, task, init_sha)
+    if task != previous:
+        ledger.log_rename(previous, task, init_sha)
     state = {"version": ledger.STATE_VERSION, "task": task, "spec_task": spec.task.name if renamed else None, "branch": branch, "init_sha": init_sha, "last_keep": init_sha,
              "last_confirmed": None, "last_confirmed_result": None, "confirms_used": 0, "frozen": frozen, "frozen_blobs": blobs, "store_id": store["store_id"],
              "spec_hash": spec_hash, "base_branch": None if base_branch in (branch, "HEAD") else base_branch, "mode": mode, "metric": spec.objective.metric,
@@ -191,13 +201,54 @@ def _run(args, out=print, cwd=None, aa_blocks=None, seed=None) -> int:
     return 0
 
 
+def _check_rename(root, previous, task, heldout_src):
+    """`init --name`: refuse a rename that would launder the previous task's record; return its held-out dir to inherit (or None).
+
+    A new name is a fresh baseline, so it must start from something the previous task has shown: its original or its last
+    confirmed commit (by tree; a FAIL's restore commit has the confirmed tree). After a failed confirm only a human may
+    rename (HCA_ALLOW_RESET=1), as for a reset. A held-out set is never dropped: it is inherited, and a different
+    `--heldout` is refused. The confirms of the chain keep counting against the cap (ledger.log_rename, confirm)."""
+    store = ledger.load_store(previous)
+    if store is None:
+        return None
+    confirms = ledger.read_confirms(previous)
+    if confirms and confirms[-1].get("outcome") == "fail" and os.environ.get("HCA_ALLOW_RESET") != "1":
+        raise Refusal(f"the last confirm of {previous!r} FAILED, so starting it over as {task!r} is refused: a new name would hide the "
+                      "failure and start a fresh baseline from the same evidence. Fix: keep climbing under the current name (the "
+                      f"failed keeps are already undone), or, if a human decides to start over, `HCA_ALLOW_RESET=1 hca init --reset --name {task}` "
+                      "(logged in both referee stores).")
+    passed = [c.get("last_keep") for c in confirms if c.get("outcome") == "pass"]
+    allowed = {}
+    for label, sha in (("its original", store.get("init_sha")), ("its last confirmed commit", passed[-1] if passed else None)):
+        try:
+            allowed[gitops.tree_of(root, sha)] = f"{label} {sha[:12]}"
+        except (HcaError, TypeError):
+            continue
+    if allowed and gitops.tree_of(root, "HEAD") not in allowed:
+        raise Refusal(f"--name starts a fresh baseline at HEAD, but HEAD is neither {' nor '.join(allowed.values())} of {previous!r}: it "
+                      f"holds keeps that were never confirmed. Fix: `hca confirm` them under {previous!r} first, or check out one of "
+                      "those commits.")
+    held = ledger.heldout_dir(previous)
+    if held is None:
+        return None
+    if heldout_src:
+        if ledger.dir_digest(heldout_src) != ledger.dir_digest(held):
+            raise Refusal(f"--heldout differs from the held-out set of {previous!r}; a renamed climb must keep it. Fix: drop --heldout "
+                          "(it is inherited) or pass the same data.")
+        return None
+    return held
+
+
 def _archive_ledger(root, out) -> None:
     """Move the old state, attempts and verdicts into `.hca/archive-<time>/` (inside .hca; nothing is deleted)."""
     hca = ledger.hca_dir(root)
     old = [hca / name for name in ("state.json", "attempts", "VERDICTS.md", "noise.json", "noise") if (hca / name).exists()]
     if not old:
         return
-    target = hca / f"archive-{time.strftime('%Y%m%dT%H%M%S')}"
+    stamp = time.strftime('%Y%m%dT%H%M%S')
+    target, extra = hca / f"archive-{stamp}", 1
+    while target.exists():                               # two resets in one second must not collide
+        target, extra = hca / f"archive-{stamp}-{extra}", extra + 1
     target.mkdir()
     for path in old:
         path.rename(target / path.name)

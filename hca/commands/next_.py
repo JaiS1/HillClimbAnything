@@ -156,7 +156,8 @@ def render(root, spec, state) -> list:
     counts, floor = ctx["counts"], 0.5 * spec.objective.useful
     invalid = f" ({ctx['invalid_screens']} invalid)" if ctx["invalid_screens"] else ""
     lines = [f"climb     {ctx['task']} · {ctx['wall'] / 60:.1f} min hca wall · tries {counts['try']} · promotions {counts['promote']} · "
-             f"screens {ctx['valid_screens']}{invalid} · confirms {ledger.confirms_used(state, ctx['task'])} of {spec.limits.confirms}",
+             f"screens {ctx['valid_screens']}{invalid} · confirms {ledger.confirms_used(state, ctx['task']) + ledger.chain_of(ctx['task'])['confirms']} "
+             f"of {spec.limits.confirms}",
              f"screens   {ctx['n_s']} blocks vs parent · resolution ≈ {100 * ctx['resolution']:.1f}% · keep floor {100 * floor:.1f}%"]
     confirmed = state.get("last_confirmed_result")
     inc = archive["incumbent"]
@@ -200,7 +201,7 @@ def render(root, spec, state) -> list:
     lines += _hint_lines(archive, ctx, floor)
     pending = sum(1 for r in records.values() if r.get("kind") != "screen" and r.get("verdict") == "keep" and r.get("confirm") == "pending")
     if pending >= 2:
-        left = spec.limits.confirms - ledger.confirms_used(state, ctx["task"])
+        left = spec.limits.confirms - ledger.confirms_used(state, ctx["task"]) - ledger.chain_of(ctx["task"])["confirms"]
         lines.append(f"confirm   {pending} keeps since the last confirm  →  hca confirm ({left} of {spec.limits.confirms} left): "
                      "only a confirm is a result, and a FAIL then undoes less")
     overlap = _overlaps(root, spec, state, ctx)
@@ -361,7 +362,7 @@ def dream(root, spec, state) -> Path:
         for path in _hunks(_patch(root, n)):
             touched[path] = touched.get(path, 0) + 1
     overlap = _capped([f"- {p}: {c}" for p, c in sorted(touched.items(), key=lambda kv: (-kv[1], kv[0]))], 15)
-    used = ledger.confirms_used(state, ctx["task"])
+    used = ledger.confirms_used(state, ctx["task"]) + ledger.chain_of(ctx["task"])["confirms"]
     lines = [f"# Dream packet: {ctx['task']}", "", "Offline: nothing below was measured for this file. Screens are rankings, not "
              "evidence; kept estimates are selected (biased upward); only a confirm is a result.",
              "", "## 1. Archive map", "", *archive_map,

@@ -67,9 +67,11 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
         out(f"Already confirmed at {state['last_keep'][:12]}; nothing new to measure.")
         return 0
     used = ledger.confirms_used(state, task)
-    if used >= spec.limits.confirms:
-        raise HcaError(f"the confirm cap is reached ({used} of {spec.limits.confirms} used). Fix: raise [limits] confirms in hca.toml "
-                       "and re-init, or stop here: more confirms would turn the held-out set into a dev set.")
+    earlier = ledger.chain_of(task)["confirms"]          # confirms spent under the names this task was renamed from
+    if used + earlier >= spec.limits.confirms:
+        raise HcaError(f"the confirm cap is reached ({used + earlier} of {spec.limits.confirms} used"
+                       + (f", {earlier} of them under earlier names of this climb" if earlier else "") + "). Fix: raise [limits] confirms "
+                       "in hca.toml and re-init, or stop here: more confirms would turn the held-out set into a dev set.")
     held = ledger.heldout_dir(task)
     if state.get("heldout") and held is None:
         raise Refusal("this session was started with a held-out set but the referee store no longer has it, so a confirm would quietly "
@@ -156,7 +158,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
                 ledger.update_attempt(root, a["n"], confirm="confirmed")
         ledger.refresh_verdicts(root, state, spec)
         arms.prune_unused(root, [state["init_sha"], state["last_confirmed"], state["last_keep"]])
-        out(f"CONFIRM {number}: PASS - {text} ({used + 1} of {spec.limits.confirms} confirms used).")
+        out(f"CONFIRM {number}: PASS - {text} ({used + earlier + 1} of {spec.limits.confirms} confirms used).")
         return 0
 
     target = state.get("last_confirmed") or state["init_sha"]
@@ -180,7 +182,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
     arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])
     out(f"CONFIRM {number}: FAIL. The editable paths were reset to "
         f"{'the last confirmed commit' if state.get('last_confirmed') else 'the original'} ({target[:12]}) as commit {sha[:12]}; "
-        f"the keeps in between are marked unconfirmed ({used + 1} of {spec.limits.confirms} confirms used)."
+        f"the keeps in between are marked unconfirmed ({used + earlier + 1} of {spec.limits.confirms} confirms used)."
         + (f" Your uncommitted edits were saved to .hca/discarded-by-confirm-{number:02d}.diff." if dirty_patch.strip() else "")
         + (f" {len(tainted)} archive member(s) built on those keeps are now tainted." if tainted else "")
         + " The numbers are in the referee store, not shown here.")

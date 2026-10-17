@@ -13,6 +13,7 @@ store elsewhere). Standard library only.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -23,7 +24,7 @@ import time
 from pathlib import Path
 
 from . import gitops, stats
-from .core import HcaError, Refusal, object_hash, read_json, write_json
+from .core import HcaError, Refusal, digest, object_hash, read_json, write_json
 
 STATE_VERSION = 2          # 2: state.json carries the referee store's store_id
 
@@ -350,19 +351,41 @@ def init_store(task, init_sha, spec_hash, frozen, blobs) -> dict:
     return store
 
 
-def log_rename(spec_name, task, init_sha) -> None:
-    """`init --name`: record in both referee stores that `task` is a fresh climb of the spec named `spec_name`, with the old
-    store's confirm count, so a renamed task is visible to a human and never hides how many confirms the old name used."""
-    old = load_store(spec_name)
-    entry = {"at": now(), "spec_name": spec_name, "task": task, "init_sha": init_sha,
-             "spec_name_confirms_used": max(int((old or {}).get("confirms_used", 0)), len(read_confirms(spec_name)))}
+def log_rename(previous, task, init_sha) -> None:
+    """`init --name`: link `task` to the task it follows on from, in both referee stores, and carry the chain's evidence.
+
+    The new store's `chain` holds every earlier task with its confirms and FAILs and their totals: `confirm` counts the chain
+    total against the cap, and `report` prints it, so a run of renames never resets the cap or hides a failure."""
+    old = load_store(previous)
+    confirms = read_confirms(previous)
+    used = max(int((old or {}).get("confirms_used", 0)), len(confirms))
+    fails = sum(1 for c in confirms if c.get("outcome") == "fail")
+    entry = {"at": now(), "from": previous, "spec_name": previous, "task": task, "init_sha": init_sha, "confirms": used,
+             "fails": fails, "spec_name_confirms_used": used}
+    earlier = (old or {}).get("chain") or {"tasks": [], "confirms": 0, "fails": 0}
+    chain = {"tasks": earlier["tasks"] + [{"task": previous, "confirms": used, "fails": fails}],
+             "confirms": earlier["confirms"] + used, "fails": earlier["fails"] + fails}
     if old is not None:
         old.setdefault("renamed_to", []).append(entry)
-        save_store(spec_name, old)
+        save_store(previous, old)
     new = load_store(task)
     if new is not None:
         new.setdefault("renamed_from", []).append(entry)
+        new["chain"] = chain
         save_store(task, new)
+
+
+def chain_of(task) -> dict:
+    """{tasks, confirms, fails} of the tasks this one was renamed from (`init --name`); zeros for an ordinary task."""
+    return (load_store(task) or {}).get("chain") or {"tasks": [], "confirms": 0, "fails": 0}
+
+
+def dir_digest(path) -> str:
+    """sha256 over a directory's relative paths and file contents (to tell whether two held-out sets are the same data)."""
+    root, sha = Path(path), hashlib.sha256()
+    for item in sorted(p for p in root.rglob("*") if p.is_file()):
+        sha.update(item.relative_to(root).as_posix().encode() + b"\0" + digest(item).encode() + b"\0")
+    return sha.hexdigest()
 
 
 def session(store) -> int:
