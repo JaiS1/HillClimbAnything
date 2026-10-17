@@ -624,11 +624,22 @@ def diff_stat(root, base, tip) -> str:
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
-def numstat(root, spec, base, tip) -> dict:
-    """{editable path: lines changed} between two commits (or trees): max(added, deleted), so a modified line counts once;
-    a binary file counts as 1."""
+def file_sizes(root, sha) -> dict:
+    """{path: size in bytes} of every file in commit `sha` (ls-tree -l; submodule entries skipped)."""
     out = {}
-    for line in git(root, "diff", "--numstat", "--no-renames", base, tip).splitlines():
+    for entry in _lines(git(root, "ls-tree", "-r", "-l", "-z", sha)):
+        meta, _, path = entry.partition("\t")
+        size = meta.split()[-1]
+        if size.isdigit():
+            out[path] = int(size)
+    return out
+
+
+def numstat(root, spec, base, tip, ignore_eol=False) -> dict:
+    """{editable path: lines changed} between two commits (or trees): max(added, deleted), so a modified line counts once;
+    a binary file counts as 1. `ignore_eol` ignores CR at the end of lines (a CRLF rewrite then counts as no change)."""
+    out = {}
+    for line in git(root, "diff", "--numstat", "--no-renames", *(["--ignore-cr-at-eol"] if ignore_eol else []), base, tip).splitlines():
         added, deleted, path = line.split("\t", 2)
         if is_editable(path, spec):
             out[path] = max(int(added), int(deleted)) if added.isdigit() and deleted.isdigit() else 1
