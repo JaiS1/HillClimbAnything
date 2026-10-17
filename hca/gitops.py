@@ -183,11 +183,21 @@ def is_frozen(path: str, spec) -> bool:
     return path == SPEC_FILE or matches_any(path, spec.task.frozen)
 
 
+NOTEBOOK = "IDEAS.md"           # explore mode's notebook at the repo root
+_notebook = {"ignored": False}
+
+
+def ignore_notebook(on) -> None:
+    """Explore mode in use: treat a root IDEAS.md as noise even if the editable globs cover it. In line mode an editable
+    IDEAS.md is an ordinary edit (a non-editable one is never an edit anyway, and is not warned about)."""
+    _notebook["ignored"] = bool(on)
+
+
 def is_noise(path: str) -> bool:
     """Files hca never treats as edits: `__pycache__/` anywhere, `*.pyc`, `.DS_Store` (tools write them as a side effect of running),
-    and the agent's notebook `IDEAS.md` at the repo root (never measured, never snapshotted, never reverted)."""
+    and, in explore mode, the agent's notebook `IDEAS.md` at the repo root (never measured, snapshotted or reverted)."""
     parts = path.split("/")
-    return "__pycache__" in parts[:-1] or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store" or path == "IDEAS.md"
+    return "__pycache__" in parts[:-1] or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store" or (path == NOTEBOOK and _notebook["ignored"])
 
 
 def _in_hca(path: str) -> bool:
@@ -226,7 +236,8 @@ def dirty_state(root, spec) -> dict:
     for path in dirty_paths(root, spec.task.link):
         untracked = path in untracked_now
         if untracked and not is_frozen(path, spec) and not matches_any(path, spec.task.editable):
-            ignored.append(path)
+            if path != NOTEBOOK:
+                ignored.append(path)
         else:
             blocking.append(path)
     return {"blocking": blocking, "ignored": ignored}
@@ -390,6 +401,7 @@ def scope_check(root, spec, state, base=None) -> dict:
     # touching the evaluator or the readme is told so before anything is measured).
     outside = [p for p in untracked if not is_frozen(p, spec) and not matches_any(p, spec.task.editable)]
     untracked = [p for p in untracked if p not in outside]
+    outside = [p for p in outside if p != NOTEBOOK]
     for path in tracked + untracked:
         if is_frozen(path, spec):
             violations.append({"path": path, "reason": "frozen file changed" if path in tracked else "new file in a frozen path"})

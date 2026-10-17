@@ -16,8 +16,8 @@ Explore mode (docs/DESIGN-climb-engine.md §3c) adds two kinds of attempt:
 - `--promote M` restores the editable paths to member M's tree and runs the normal try against the incumbent, on fresh
   blocks. Validity, lineage, taint and replay status come from the referee store and the refs, never from archive.json.
 
-Exit codes: 0 keep (or a recorded screen), 1 revert, 2 invalid (scope, no change, replay) or void (infra, time, files
-changed during the run) or interrupted or refused, 3 usage errors, 4 internal error (cli).
+Exit codes: 0 keep, 1 revert, 2 invalid (scope, no change, replay) or void (infra, time, files changed during the run)
+or interrupted or refused, 3 usage errors, 4 internal error (cli), 5 a screen recorded (never 0: a screen is not a keep).
 """
 
 from __future__ import annotations
@@ -86,6 +86,8 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     again = bool(getattr(args, "again", False))
     kind = "screen" if getattr(args, "explore", False) else "promote" if getattr(args, "promote", None) is not None else "try"
     root, spec, state = common.open_session(cwd, out=out)
+    if kind != "try":
+        gitops.ignore_notebook(True)
     task = state["task"]
     started = time.monotonic()
     deadline = started + spec.limits.try_seconds
@@ -105,9 +107,12 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     ledger.note_attempt(task, n, again=again, kind=kind)
     (adir / "message.txt").write_text(message + "\n", encoding="utf-8")
     ledger.write_record(adir, "scope.json", scope)
-    tries = ledger.tries_used(root, task)
-    if kind == "try" and tries > spec.objective.max_tries:
-        out(f"warning: this is try {tries}, past max_tries ({spec.objective.max_tries}). Every extra try adds to the chance of a false keep "
+    # Each try and each promotion is a 1% test, so the warning counts both; screens cannot keep and do not count.
+    promotions = ledger.store_counts(task)["promote"]
+    tries = ledger.tries_used(root, task) + promotions
+    if kind != "screen" and tries > spec.objective.max_tries:
+        what = f"try {tries}" if not promotions else f"test {tries} (tries + promotions)"
+        out(f"warning: this is {what}, past max_tries ({spec.objective.max_tries}). Every extra try adds to the chance of a false keep "
             "(about 1% each); `hca confirm` is the check, and the report says how many keeps to expect from chance alone.")
     staged = gitops.staged_outside_editable(root, spec)
     if staged:
@@ -123,9 +128,11 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
         rec.update(idea=idea, idea_kind=explore.idea_kind(root, idea))
     if explore.backlog(root):
         rec["backlog"] = explore.backlog(root)
+    previous = promoted.pop("previous") if promoted else None
     if promoted:
         rec["explore"] = promoted
     t = _Try(root, spec, state, adir, rec, out, started, deadline, rng, base)
+    t.previous = previous
 
     changes = gitops.editable_changes(scope)
     # A screen with no edits while the working tree is at an archive member re-screens that member against its own parent,
@@ -147,9 +154,11 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     except arms.ArmBuildError as exc:
         if exc.result is not None and exc.result.timed_out and t.remaining() <= 0:
             return _end(t, "void", [f"try_seconds ({spec.limits.try_seconds}) ran out while building the baseline"])
+        _undo_promotion(t)
         _discard(adir, task, n)                         # a broken baseline is an environment problem, not a try
         raise
     except HcaError:
+        _undo_promotion(t)
         _discard(adir, task, n)
         raise
     first_line = message.splitlines()[0]
@@ -214,6 +223,17 @@ def _end(t: _Try, verdict, reasons, note=None) -> int:
     return (_finish_screen if t.rec["kind"] == "screen" else _finish)(t, verdict, reasons, note=note)
 
 
+def _undo_promotion(t: _Try) -> str | None:
+    """A promotion that measured nothing (refused, invalid, or a broken baseline) puts the editable paths and the explore parent
+    back where `--promote` found them, so no message ever claims "untouched" over files hca overwrote. None if not a promotion."""
+    if t.previous is None:
+        return None
+    gitops.revert(t.root, t.spec, t.previous["base"])
+    t.state["explore"] = t.previous["explore"]
+    ledger.save_state(t.root, t.state)
+    return "the editable paths were put back where they were before --promote"
+
+
 def _restore_member(root, spec, state, args) -> dict:
     """`--promote M`: check M from the store and the refs (N3), refuse over unscreened edits, then set the editable paths to M."""
     entry = explore.member(root, state, args.promote, allow_tainted=bool(getattr(args, "tainted", False)))
@@ -222,21 +242,25 @@ def _restore_member(root, spec, state, args) -> dict:
     if gitops.working_tree_hash(root, spec, here) not in (gitops.tree_of(root, here), entry["tree"]):
         raise Refusal(f"the editable paths hold edits that were never screened or tried; --promote would overwrite them with member "
                       f"{m:04d}. Fix: screen them (`hca try --explore`), or undo them.")
+    previous = {"base": here, "explore": state.get("explore")}       # where a promotion that measures nothing puts things back
     gitops.revert(root, spec, entry["sha"])
     state["explore"] = {"parent": m, "sampling": {"override": "promote", "parent": m, "parent_p": None}}
     ledger.save_state(root, state)
     task = state["task"]
     chain = explore.lineage(task, m)
     by_n = explore.entries(task)
-    return {"member": m, "tree": entry["tree"], "lineage": chain, "dropped_keeps": explore.dropped_keeps(root, state, entry["sha"]),
+    return {"previous": previous,
+            "member": m, "tree": entry["tree"], "lineage": chain, "dropped_keeps": explore.dropped_keeps(root, state, entry["sha"]),
             "tainted": bool(entry.get("tainted")), "lineage_pointers": sorted({w for i in chain for w in by_n.get(i, {}).get("pointers", [])}),
             "screens": sum(1 for i in chain if ledger.kind_of(by_n.get(i, {})) == "screen")}
 
 
 def _pooled(task, tree, base) -> list:
-    """Earlier valid screens of this very tree against this very parent: a re-screen pools their blocks."""
-    return [e for e in explore.entries(task).values()
+    """The latest valid screen of this very tree against this very parent (or nothing): a re-screen pools its blocks. Its scores
+    already include every earlier screen it pooled, so taking more than the latest would count blocks twice."""
+    same = [e for n, e in sorted(explore.entries(task).items())
             if ledger.kind_of(e) == "screen" and e.get("valid") and e.get("tree") == tree and e.get("base") == base and e.get("scores")]
+    return same[-1:]
 
 
 def _build_and_guard(t: _Try):
@@ -474,7 +498,7 @@ def _finish_screen(t: _Try, verdict, reasons, valid=False, guards=None, note=Non
         out("  Your edits are untouched.")
     for line in lines:
         out(line)
-    return common.EXIT_KEEP if verdict == "screened" else common.EXIT_INVALID
+    return common.EXIT_SCREEN if verdict == "screened" else common.EXIT_INVALID
 
 
 def _archive_and_move(t: _Try) -> list:
@@ -619,10 +643,13 @@ def _finish(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> i
         result = gitops.revert(root, spec, state["last_keep"])
         action.append(f"reverted the editable paths to {state['last_keep'][:12]}"
                       + (f" (removed {len(result['deleted'])} new file(s))" if result["deleted"] else ""))
+    promoted = rec.get("kind") == "promote"
     if verdict in ("keep", "revert") and state.get("explore") is not None:
         state["explore"] = {"parent": None, "sampling": None}      # the working tree is at the incumbent again
+    elif verdict == "invalid" and promoted:
+        action.append(_undo_promotion(t))
     elif verdict in ("void", "interrupted"):
-        action.append("your edits are untouched")
+        action.append(f"the editable paths are at member {rec['explore']['member']:04d}" if promoted else "your edits are untouched")
     if rec.get("kind") == "promote":
         t.store_extra.update(member=rec["explore"]["member"], dropped_keeps=rec["explore"]["dropped_keeps"],
                              tainted_member=rec["explore"]["tainted"])
@@ -636,7 +663,9 @@ def _finish(t: _Try, verdict, reasons, valid=False, guards=None, note=None) -> i
         out("  - " + reason)
     if verdict == "revert" and rec.get("valid") and rec.get("includes_useful") and rec.get("estimate") is not None:
         out("  " + NO_EVIDENCE.format(interval=_interval_text(rec, mode), useful=useful_text))
-    if verdict == "invalid":
+    if verdict == "invalid" and promoted:
+        out("  Nothing was measured. Fix the above and promote again.")
+    elif verdict == "invalid":
         out("  Nothing was measured and your edits are untouched. Fix the above and run `hca try` again."
             if note in ("scope", "replay") else "  Make an edit inside the editable paths, then run `hca try` again.")
     if rec.get("kind") == "promote":
