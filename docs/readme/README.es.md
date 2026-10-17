@@ -12,7 +12,7 @@ Traducido de README.md en el commit 59b1150. El README en inglés es la referenc
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#inicio-rápido)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-355_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -213,6 +213,7 @@ una memoria de ideas y un árbol de programas candidatos, sin bajar el listón p
   construido sobre los keeps que deshizo.
 - **`hca next`** muestra el presupuesto, el padre y su linaje, las ideas, el archivo y una sugerencia de
   promoción, en 60 líneas como máximo. Sustituye a `hca status`, que se mantiene durante una versión más.
+  Por sí solo, `hca next` también elige el padre e imprime la orden que hay que ejecutar; elegir otro padre exige `--parent M --why "..."`, y el informe cuenta esas anulaciones.
 
 Esto no está demostrado. Si una población de candidatos escala mejor que una sola línea en objetivos reales es lo
 que medirán las escaladas de prueba del [documento de diseño](../DESIGN-climb-engine.md). Hasta que se ejecuten, el modo línea es el

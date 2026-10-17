@@ -482,8 +482,17 @@ Line mode (everything above) is unchanged: a seeded line try has the same block 
   replay, scope, the base-tree assert, a baseline that cannot be built) puts the editable paths and the explore parent
   back where `--promote` found them.
 - **`--idea I`** (any try) records the idea id and its kind from `IDEAS.md` (`untagged` if unknown).
-- **`hca next [--parent M]`**: the plan for the next child in at most 60 lines (see the engine reference). `--parent M`
-  (or `incumbent`) restores the editable paths to M; with no parent decided yet in explore mode, `next` samples one.
+- **`hca next [--parent M --why "..."]`**: the plan for the next child in at most 60 lines (see the engine reference).
+  The default flow is `hca next` alone: with no parent decided yet in explore mode it samples one, sets the editable paths
+  to it and prints the ready-to-run `hca try --explore --idea I<n>` line. `--parent M` (or `incumbent`) overrides the
+  sampler and requires `--why` (a one-line reason, exit 3 without it), recorded in the sampling log of the next screen; the
+  report gives the override rate. It also prints "confirm now" once two or more keeps are unconfirmed.
+- **`hca init --name TASK`** runs the climb as task TASK instead of hca.toml's `[task] name`, without editing the frozen
+  file: a new branch `hca/TASK`, a new referee store, a fresh baseline at HEAD and its own confirm cap. `state.json`
+  records `task` and `spec_task`, and every later command accepts that pair. Both stores log the rename with the confirms
+  the hca.toml name had used (`report` and `report --referee` show it). It cannot re-baseline a name whose store holds
+  confirms: `--name` equal to that name is still refused, so the cap of a task is never reset; the refusal now names
+  `--name` as the way to start a new task.
   Refused (exit 2) over unscreened edits or a tainted or invalid M; an M that is not an attempt id or `incumbent` is a
   usage error (exit 3). Exit 0 otherwise.
 - **`hca report --dream`** writes `.hca/DREAM.md` from the store, the attempt records and the archive, with no benchmark
@@ -526,6 +535,33 @@ is `invalid` with nothing measured. Arm pruning keeps the parent's arm and at mo
   headline, `VERDICTS.md`, the report table and confirm's pending sweep ignore screens.
 
 ### A3.5 Implementation notes
+
+- **The hint (v2, after the proof climbs).** lead = f_raw - f_inc over the open steps, A = SE_chain * sqrt(2 ln M) with M
+  the number of valid screens. `promote` when lead - A >= F; `rescreen` only when that fails but lead + 1.645 SE >= F (the
+  result is ambiguous) and the member has not been re-screened, because a re-screen (n_s blocks) is cheaper than a
+  promotion (10 to 20). A big lead is never sent back for a re-screen. A chain of two or more open screened steps that each
+  improved on their parent is named as a stacked chain. Replayed on the two proof ledgers: on yaml it now fires for the
+  -3.8% screen 0015 that kept at -3.5% and asks for a re-screen of 0023, which reverted; on PM it promotes the +36 pp
+  screen 0007 instead of asking for a re-screen.
+- **Retired members.** A promotion's member and its ancestors on the parent chain are `retired` while that promotion keep is
+  contained in the incumbent: kept in the archive history, never sampled, inspired from or hinted. Open ranking (d, SE)
+  counts only steps not yet in the incumbent.
+- **Dropped keeps follow promoted members.** A keep is contained in a tree that descends from it, or from the member a
+  promotion keep promoted, or that has the keep's content on every path it changed; never if a changed path is back at the
+  keep's parent's content. `report` and `next` recompute it from the store and the refs (`dropped_at`), so older ledgers
+  read correctly too.
+- **Stepping stones** are screens that read worse than their own parent. Elites trailing the incumbent are shown apart as
+  "behind the incumbent". `report` prints the stone-keep metric: kept promotions whose member lineage holds a stone.
+- **Cells** are files when the editable set has at most 25 files, else two-component modules (screens record both). The
+  dream's empty cells are the `hot:` files listed in IDEAS.md if any, else files with code weight: not metadata
+  (`__meta__.py` and the like), not small `__init__.py`/`__main__.py` re-exports, not test helpers, not tiny files.
+- **Invalid attempts** stay recorded and counted wherever the bound counts them; `next` and `report` show valid and invalid
+  screens apart, and the selection allowance, warnings and budget hints count valid screens.
+- **Refusals** print `REFUSED (exit 2): ...` on stdout as well as on stderr. Refused `next --parent` over unscreened edits
+  lists the paths and the exact `git checkout <parent sha> -- <paths>` that drops them, and warns that `git stash` puts the
+  files back to the last keep, not to the recorded parent.
+- **Churn.** A snapshot whose changed lines are at least 50 and five times what remains once line endings are ignored
+  prints a warning (a CRLF rewrite) and records `churn` on the attempt; the measurement is unaffected.
 
 - **Review pointers** are a fixed regex in `explore.py`, not an `hca.toml` key, so the agent whose patches are scanned
   cannot switch it off.

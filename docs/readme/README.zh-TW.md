@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#快速開始)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-355_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -189,7 +189,7 @@ flowchart LR
 - **篩選（screen）。** `hca try --explore` 用 5–8 個 block 把子代與它的*父代*對比量測，父代不必是上一次 keep。篩選只為子代排名並存入檔案庫，它永遠不能 keep 任何東西，也不是證據。
 - **檔案庫。** 每個被改動的模組保留一個菁英，這樣一開始看起來更差的墊腳石也能存活到它變好。每次篩選後，HCA 抽樣選出下一個父代（至少 40% 的機率是上一次 keep），並把可編輯路徑設定為它。
 - **晉升。** `hca try --promote M` 把成員 M 當作一次普通 try，在全新的 block 上與上一次 keep 對比測試，所以無論 M 是怎麼選出來的，每次檢定 1% 的誤 keep 率都成立。`hca confirm` 照舊運作；confirm 失敗時，建立在被撤銷的 keep 之上的每個成員都會被標記為 tainted。
-- **`hca next`** 在最多 60 行內顯示預算、父代及其譜系、想法、檔案庫和晉升提示。它取代 `hca status`，後者再保留一個版本。
+- **`hca next`** 在最多 60 行內顯示預算、父代及其譜系、想法、檔案庫和晉升提示。它取代 `hca status`，後者再保留一個版本。 單獨執行時，`hca next` 也會選好父代並印出可直接執行的指令；要選別的父代需要 `--parent M --why "..."`，報告會統計這類覆寫。
 
 這還沒有被證明。在真實目標上，候選族群是否比單條線爬得更好，要由[設計文件](../DESIGN-climb-engine.md)中的驗證性爬升來量測。在它們執行之前，單線模式仍是預設，上面兩個 showcase 也都是用單線模式爬出來的。探索模式只支援 `blocks` 模式。記錄成功的篩選以 5 結束，絕不會是 0，以免被誤認為 keep；無效的以 2 結束。
 

@@ -43,7 +43,11 @@ Kinds: `avoid-work`, `algorithm`, `data-structure`, `allocation`, `dispatch`, `i
    an overlap warning when your working diff touches the same lines as an earlier revert or screen, warnings, and the
    backlog in a fixed order (ideas naming this parent; `NO EVIDENCE` ideas; ideas for a module with no member; the
    rest; kinds with two `NULL`s last).
-2. Optionally `hca next --parent M` (an attempt id, or `incumbent`). Refused if the editable paths hold unscreened edits.
+2. `hca next` alone is the normal path: it samples the parent, sets the editable paths to it and prints the
+   `hca try --explore --idea I<n>` line to run. To choose another parent, `hca next --parent M --why "..."` (an attempt id,
+   or `incumbent`; the reason is recorded and the report gives the override rate). Refused if the editable paths hold
+   unscreened edits; the message gives the exact `git checkout` that drops them. Do not `git stash` them: that puts the
+   files back to the last keep, not to the parent hca recorded.
 3. Edit from the parent, then `hca try --explore --idea I<n> -m "..."`.
    - The child is measured against the parent in `n_s = clamp(ceil((3 sigma / F)^2), 5, 8)` blocks (sigma from the A/A
      at init, F half the useful effect). The estimate is a Hodges-Lehmann shift; a one-sided 95% bound is shown from 5
@@ -77,9 +81,16 @@ Kinds: `avoid-work`, `algorithm`, `data-structure`, `allocation`, `dispatch`, `i
   elites more than 2F behind the last keep are never drawn. The sampler has its own seed (from the referee store) and
   never touches the block-order randomness of any try. Every child logs the sampler, the candidates, their weights and
   the chosen parent's probability (`null` for an override).
-- The promotion hint fires when a member's ranked lead over the last keep is at least F + SE_chain * sqrt(2 ln M), with M
-  the number of screens so far. On
-  noisy targets (SE > F/3) it asks for a re-screen first.
+- The promotion hint says **promote** when lead - SE_chain * sqrt(2 ln M) >= F (M = valid screens so far), however noisy
+  the screen: the promotion is itself a fresh test. It says **re-screen** only when the result is ambiguous (that fails,
+  but lead + 1.645 SE still reaches F) and the member was not re-screened yet. It names a **stacked chain** when two or
+  more open screened steps each improved on their parent: promote the tip.
+- A promotion's member and its ancestors are **retired** once the promotion is in the incumbent: kept in the history,
+  never sampled, inspired from or hinted again.
+- A **stepping stone** is a screen that read worse than its own parent; "behind the incumbent" is a separate count. The
+  report gives the stone-keep metric (kept promotions whose lineage holds a stone).
+- Cells are files when the editable set has at most 25 files, else modules. Put a `hot: a.py, b.py` line in IDEAS.md
+  (from a profile) to say which files carry the time; the dream then suggests only those for empty cells.
 - `.hca/archive.json` is a derived view. Promotion re-derives everything from the referee store and the refs.
 
 ## Exit codes and files
@@ -97,10 +108,18 @@ has `explore.parent`, `explore.sampling`, `explore.module`, `explore.divergence`
 bound). A promotion's has `explore.member`, `lineage`, `dropped_keeps`, `tainted`. `state.json` has
 `explore.parent` (null at the last keep).
 
+## Starting a renamed climb
+
+If `hca init` refuses because the referee store already holds confirms for the task's name, start a new task without
+editing the frozen `hca.toml`: `hca init --name <task>-2`. It is a fresh baseline with its own confirm cap; both stores log
+the rename. Running the old name again is still refused.
+
 ## Rules
 
 - A screen is a ranking, not a result. Never report a screen estimate or a chained lead as a gain.
 - The report's false-keep bound counts tries and promotions; screens are listed separately because they cannot keep.
-- After 10 screens without a promotion attempt, or 20 without a confirm, `next` warns: screens tune against dev data.
+- After 10 valid screens without a promotion attempt, or 20 without a confirm, `next` warns: screens tune against dev
+  data. After two unconfirmed keeps it says "confirm now".
+- A refusal prints `REFUSED (exit 2): ...` on stdout too. A churn warning (a CRLF rewrite) means: normalise line endings.
 - Overriding the sampler every time is allowed and logged; the report counts overrides and children that rewrote more
   than 25% of their parent.

@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-355_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -189,7 +189,7 @@ flowchart LR
 - **Screens।** `hca try --explore` किसी child को उसके *parent* के मुक़ाबले 5–8 blocks में मापता है; parent का last keep होना ज़रूरी नहीं। Screen child को rank करके archive करता है। वह कभी कुछ keep नहीं कर सकता, और वह evidence नहीं है।
 - **Archive।** हर छुए गए module का एक elite, ताकि जो stepping stone पहले ख़राब दिखे वह सुधरने तक बचा रहे। हर screen के बाद HCA अगला parent sample करता है (कम से कम 40% बार last keep) और editable paths को उस पर सेट कर देता है।
 - **Promotion।** `hca try --promote M` member M को last keep के मुक़ाबले एक सामान्य try की तरह, नए blocks पर test करता है, इसलिए M चाहे जैसे भी चुना गया हो, हर test पर 1% false-keep rate बनी रहती है। `hca confirm` पहले जैसा ही काम करता है; fail हुआ confirm उन keeps पर बने हर member को tainted मार्क कर देता है जिन्हें उसने undo किया।
-- **`hca next`** budget, parent और उसकी lineage, ideas, archive और promotion hint को ज़्यादा से ज़्यादा 60 lines में दिखाता है। यह `hca status` की जगह लेता है, जो एक release तक बना रहेगा।
+- **`hca next`** budget, parent और उसकी lineage, ideas, archive और promotion hint को ज़्यादा से ज़्यादा 60 lines में दिखाता है। यह `hca status` की जगह लेता है, जो एक release तक बना रहेगा। अकेले चलाने पर `hca next` parent भी चुन लेता है और चलाने लायक़ command छाप देता है; कोई दूसरा parent चुनने के लिए `--parent M --why "..."` चाहिए, और report ऐसे overrides गिनती है।
 
 यह अभी साबित नहीं है। असली targets पर candidates की population एक अकेली line से बेहतर climb करती है या नहीं, यह [design document](../DESIGN-climb-engine.md) के proof climbs मापेंगे। तब तक line mode ही default है, और ऊपर के दोनों showcases line mode में climb किए गए थे। Explore mode सिर्फ़ `blocks` mode में काम करता है। दर्ज हुआ screen 5 पर exit करता है, कभी 0 पर नहीं, ताकि उसे keep न समझा जाए; invalid screen 2 पर।
 

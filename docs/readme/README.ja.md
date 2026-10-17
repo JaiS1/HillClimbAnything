@@ -12,7 +12,7 @@ README.md（commit 59b1150）からの翻訳です。数値は英語版 README �
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#クイックスタート)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-355_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -189,7 +189,7 @@ flowchart LR
 - **スクリーン。** `hca try --explore` は子を*親*に対して 5〜8 ブロックで計測します。親は直前の keep でなくても構いません。スクリーンは子を順位付けしてアーカイブするだけで、何かを keep することは決してなく、根拠にもなりません。
 - **アーカイブ。** 変更されたモジュールごとにエリートを 1 つ保持するので、最初は悪く見える足がかりも、改善されるまで生き残れます。スクリーンのたびに HCA は次の親をサンプリングし（少なくとも 40% は直前の keep）、編集可能なパスをその親に合わせます。
 - **昇格。** `hca try --promote M` はメンバー M を通常の try として、新しいブロックで直前の keep と比較します。そのため M がどう選ばれたかに関係なく、検定ごとの偽 keep 率 1% が保たれます。`hca confirm` はこれまでどおり動作し、confirm が失敗すると、取り消された keep の上に築かれたメンバーはすべて tainted になります。
-- **`hca next`** は予算、親とその系譜、アイデア、アーカイブ、昇格のヒントを最大 60 行で表示します。`hca status` を置き換えるコマンドで、`hca status` は 1 リリースの間だけ残ります。
+- **`hca next`** は予算、親とその系譜、アイデア、アーカイブ、昇格のヒントを最大 60 行で表示します。`hca status` を置き換えるコマンドで、`hca status` は 1 リリースの間だけ残ります。 単独で実行すると、`hca next` は親も選び、次に実行するコマンドを表示します。別の親を選ぶには `--parent M --why "..."` が必要で、こうした上書きはレポートで数えられます。
 
 これはまだ実証されていません。実際のターゲットで候補の集団が単一のラインよりうまく山を登れるかどうかは、[設計ドキュメント](../DESIGN-climb-engine.md)にある実証用の climb で計測します。それが実行されるまではラインモードが既定で、上の 2 つのショーケースもラインモードで登ったものです。探索モードは `blocks` モードでのみ動作します。記録されたスクリーンは終了コード 5 で終了し、keep と取り違えられないよう 0 にはなりません。無効なスクリーンは 2 で終了します。
 

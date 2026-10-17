@@ -46,6 +46,7 @@ referee or work around it. A win it can't confirm is not a win.
    Then run `hca init`. If you already committed the harness (`hca.toml`, the benchmark) on a
    `hca/<task>` branch, stay on it: init adopts that branch as it is and prints one line saying so.
    An existing `hca/<task>` branch that is not checked out is refused; check it out, or delete it if stale.
+   If the referee store already holds confirms for the task name, start a new task with `hca init --name <task>-2`.
 
 ## 2. The climb (Tier 0: local, cheap, reversible)
 
@@ -88,8 +89,9 @@ Use it only when the user asks for it; line mode stays the default. Details: [en
 
 - Keep your hypotheses in `IDEAS.md` at the repo root: `## I<n> [<kind>] <title>`, then optional `parent: NNNN`,
   `where:` and `why:` lines. HCA reads it and never edits, measures or reverts it.
-- Start every child with `hca next`. It says which parent the editable paths are at, its lineage, the archive, the
-  promotion hint and the backlog. `hca next --parent M` moves you to member M (refused over unscreened edits).
+- Start every child with `hca next`: it picks the parent, sets the editable paths to it and prints the command to run,
+  with the lineage, the archive, the promotion hint and the backlog. Override only with a reason:
+  `hca next --parent M --why "..."`. Never `git stash` editable files in explore mode; screen them or drop them as told.
 - Edit, then `hca try --explore --idea I<n> -m "..."`. A screen measures the child against its parent in 5–8 blocks,
   archives it, and moves the editable paths to the next sampled parent; it exits 5. **A screen is not evidence and never keeps.**
 - To test a member, `hca try --promote M -m "..."`: a normal referee try of M's whole tree against the last keep, on

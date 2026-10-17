@@ -10,7 +10,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](tests)
+[![Tests](https://img.shields.io/badge/tests-355_passing-1baf7a?style=flat-square)](tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](LICENSE)
 
@@ -225,6 +225,7 @@ a memory of ideas and a tree of candidate programs, without lowering the bar for
   before; a failed confirm taints every member built on the keeps it undid.
 - **`hca next`** shows the budget, the parent and its lineage, the ideas, the archive and a
   promotion hint, in at most 60 lines. It replaces `hca status`, which stays for one release.
+  On its own it also picks the parent and prints the command to run; choosing another parent takes `--parent M --why "..."`, and the report counts overrides.
 
 This is unproven. Whether a population of candidates climbs better than a single line on real
 targets is what the proof climbs in the [design document](docs/DESIGN-climb-engine.md) will measure.
