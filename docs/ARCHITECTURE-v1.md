@@ -519,5 +519,7 @@ is `invalid` with nothing measured. Arm pruning keeps the parent's arm and at mo
 - **Budget** is reported as the hca wall time used (the sum of attempts' `wall_seconds` in the store); there is no
   configured cap yet.
 - **`IDEAS.md` at the repo root** is ignored like `__pycache__` by scope, snapshots, reverts and init's clean check.
-- **`report --dream` moved to Phase 1.5**, by the design's own §5.2 rule: with it the Phase 1 core diff was about 990
-  lines, above the ~950 trigger.
+- **`report --dream` is Phase 1.5**, by the design's own §5.2 rule: with it the Phase 1 core diff was about 990 lines,
+  above the ~950 trigger. `hca report --dream` writes `.hca/DREAM.md` (at most 150 lines) from the store, the attempt
+  records and the archive, with no benchmark run, and exits 0. Like `next` and `archive.json`, it carries no held-out
+  ids and no confirm detail beyond PASS/FAIL and the passed estimate.

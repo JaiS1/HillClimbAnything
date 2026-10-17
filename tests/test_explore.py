@@ -1,4 +1,4 @@
-"""Explore mode (docs/DESIGN-climb-engine.md v0.5): screens, the archive, the sampler, promotions, taint, `next`.
+"""Explore mode (docs/DESIGN-climb-engine.md v0.5): screens, the archive, the sampler, promotions, taint, `next`, the dream.
 
 Each review class from §9 has its own tests (B1 replay, B2 taint, B3 base threading, S1 dropped keeps, S3/N2 store counts and
 screen filtering, S4 the separate screen path, S5 arm pruning, S7 screen size), plus the statistical invariants: selection
@@ -573,7 +573,7 @@ class ExactAlphaTests(ExploreCase):
         self.assertLessEqual(keeps, 40)
 
 
-# --- next, promotion hint, leakage --------------------------------------------------------------
+# --- next, dream, promotion hint, leakage --------------------------------------------------------------
 
 class NextTests(ExploreCase):
     def test_next_shows_budget_parent_archive_and_a_promotion_hint(self):
@@ -623,7 +623,25 @@ class NextTests(ExploreCase):
             self.assertEqual(cli.main(["next"]), 0)
         self.assertIn("climb     speedy", shown.getvalue())
 
-    def test_next_and_the_archive_never_show_heldout_or_failed_confirm_numbers(self):
+    def test_dream_writes_a_bounded_packet_with_all_sections(self):
+        self.init()
+        for speed in ("28", "27"):
+            self.set_speed(speed)
+            self.screen(f"s{speed}")
+            self.next_(parent="incumbent")
+        self.set_speed("29.9")
+        self.try_("tiny")
+        with mock.patch.object(report, "_context", return_value=(self.root, repokit_spec(self.root), self.state())):
+            code, text = self.hca(report, args={"md": None, "dream": True})
+        self.assertEqual(code, 0)
+        self.assertIn("Wrote .hca/DREAM.md", text)
+        dream = (self.root / ".hca" / "DREAM.md").read_text()
+        self.assertLessEqual(len(dream.splitlines()), 150)
+        for heading in ("## 1. Archive map", "## 2. Lineages", "## 3. Open evidence", "## 4. Overlap map", "## 5. Resolution", "## 6."):
+            self.assertIn(heading, dream)
+        self.assertIn("stepping stone you expect to read worse first", dream)
+
+    def test_next_archive_and_dream_never_show_heldout_or_failed_confirm_numbers(self):
         held = self.tmp / "held"
         held.mkdir()
         (held / "scale.txt").write_text("1.0\n")
@@ -636,7 +654,9 @@ class NextTests(ExploreCase):
         self.assertEqual(self.confirm()[0], 1)
         failed = ledger.read_confirms("speedy")[-1]
         _, text = self.next_()
-        blob = text + (self.root / ".hca" / "archive.json").read_text()
+        from hca.commands import next_
+        next_.dream(self.root, repokit_spec(self.root), self.state())
+        blob = text + (self.root / ".hca" / "archive.json").read_text() + (self.root / ".hca" / "DREAM.md").read_text()
         self.assertNotIn(str(held), blob)
         self.assertNotIn("heldout", blob.lower())
         self.assertNotIn(ledger.fmt_effect(failed["estimate"], "blocks"), blob)

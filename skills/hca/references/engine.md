@@ -58,6 +58,12 @@ Kinds: `avoid-work`, `algorithm`, `data-structure`, `allocation`, `dispatch`, `i
    printed as dropped keeps.
 5. `hca confirm` every few keeps. On FAIL, every member built on the undone keeps is tainted: never sampled, never
    hinted, and promotable only with `--tainted`.
+6. Between sessions, `hca report --dream` writes `.hca/DREAM.md` (at most 150 lines, no benchmark run): the archive map
+   with empty and tainted modules, lineages and stepping stones with their trend, open evidence (`NO EVIDENCE` and
+   `SMALL` with intervals, `NULL`s by kind), the files tried and how often, the screen resolution and the budget left.
+   It ends with the instruction: write 5–10 ideas into `IDEAS.md`, each naming a parent member, at least one for an
+   empty module if any is meaningful and at least one stepping stone you expect to read worse first, and say which
+   evidence each answers.
 
 ## Archive, fitness and sampling
 

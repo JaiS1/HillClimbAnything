@@ -1,4 +1,4 @@
-"""`hca next [--parent M]`: what to do next.
+"""`hca next [--parent M]` and `hca report --dream`: what to do next, and an offline packet to think with.
 
 `next` replaces `status` (which stays as the old short view for one release). It prints one screen of at most
 60 lines however long the climb: the budget (counted from the referee store), the parent the working tree is at and
@@ -6,19 +6,23 @@ its lineage, siblings, two inspirations from other modules, the ideas in IDEAS.m
 archive, the promotion hint, warnings, and a backlog in a fixed mechanical order. With `--parent M` it sets the
 editable paths to member M first (refused over unscreened edits).
 
-It never shows confirm detail beyond PASS/FAIL and the passed estimate, or anything held out. Kept estimates are marked as selected (biased upward); only the confirm line is a result.
+`report --dream` writes `.hca/DREAM.md` from the same records with no benchmark running: the agent reads it between
+sessions and writes new ideas. Neither ever shows confirm detail beyond PASS/FAIL and the passed estimate, or
+anything held out. Kept estimates are marked as selected (biased upward); only the confirm line is a result.
 """
 
 from __future__ import annotations
 
 import math
 import re
+from pathlib import Path
 
 from .. import explore, gitops, ledger, stats
 from ..core import Refusal
 from . import common
 
 MAX_LINES = 60
+DREAM_LINES = 150
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 
 
@@ -259,3 +263,57 @@ def _backlog(ctx, parent) -> list:
         return 3
     todo = [i for i in ctx["ideas"] if latest.get(i["id"], {}).get("class") not in ("KEPT", "NULL", "HARMFUL")]
     return [f"{i['id']} [{i['kind']}]" for i in sorted(todo, key=rank)]
+
+
+# --- hca report --dream ------------------------------------------------------------------------------
+
+DREAM_INSTRUCTION = ("Write 5-10 ideas into IDEAS.md (`## I<n> [<kind>] <title>`, a `parent: NNNN` line, `where:` and `why:`). "
+                     "Each names a parent member. At least one targets an empty module, if any is meaningful. At least one is a "
+                     "stepping stone you expect to read worse first. Say which evidence above each one answers.")
+
+
+def dream(root, spec, state) -> Path:
+    """Write `.hca/DREAM.md` (at most 150 lines) from the store, the attempt records and the archive. No benchmark runs."""
+    ctx = _context(root, spec, state)
+    archive, records, nodes, direction = ctx["archive"], ctx["records"], ctx["archive"]["nodes"], ctx["direction"]
+    lines = [f"# Dream packet: {ctx['task']}", "", "Offline: nothing below was measured for this file. Screens are rankings, not "
+             "evidence; kept estimates are selected (biased upward); only a confirm is a result.", "", "## 1. Archive map", ""]
+    for cell, info in archive["cells"].items():
+        lines.append(f"- [{cell}] elite {info['elite']:04d}, ranked lead {100 * (info['f_rank'] - archive['f_inc']):+.1f} pp, "
+                     f"{info['children']} child(ren)")
+    editable = sorted({"/".join(p.split("/")[:2]) for p in gitops.tree_entries(root, state["last_keep"]) if gitops.is_editable(p, spec)})
+    empty = [m for m in editable if m not in archive["cells"]]
+    lines.append(f"- empty modules: {', '.join(empty[:12]) or 'none'}" + (f" (+{len(empty) - 12} more)" if len(empty) > 12 else ""))
+    lines.append(f"- tainted members: {', '.join(format(n, '04d') for n in archive['tainted']) or 'none'}")
+    lines += ["", "## 2. Lineages and stepping stones", ""]
+    for n in archive["elites"]:
+        steps = [f"{i:04d} {_pct(records[i]['estimate_log'], direction)}" for i in nodes[n]["lineage"]
+                 if records.get(i, {}).get("estimate_log") is not None]
+        lines.append(f"- {' → '.join(steps)}" + (" (stepping stone: behind the incumbent)" if n in archive["stepping_stones"] else ""))
+    lines += ["", "## 3. Open evidence", ""]
+    nulls = {}
+    for n, r in sorted(records.items()):
+        if r["class"] in ("NO EVIDENCE", "SMALL") and r.get("kind") != "screen":
+            ends = sorted(e for e in (r.get("lower"), r.get("upper")) if e is not None)
+            interval = f" [{ledger.fmt_effect(ends[0], 'blocks')}, {ledger.fmt_effect(ends[-1], 'blocks')}]" if len(ends) == 2 else ""
+            lines.append(f"- {n:04d} {r.get('idea') or ''} {r['class']} {ledger.fmt_effect(r.get('estimate'), 'blocks')}{interval}: "
+                         f"{(r.get('message') or '').splitlines()[0][:70] if r.get('message') else ''}")
+        elif r["class"] == "NULL":
+            nulls.setdefault(r.get("idea_kind") or "untagged", []).append(f"{n:04d}")
+    lines += [f"- NULL ({kind}): {', '.join(ids)}" for kind, ids in sorted(nulls.items())]
+    if lines[-1] == "":
+        lines.append("- none: no reverted test left the useful effect open, and nothing tested came back NULL")
+    lines += ["", "## 4. Overlap map (files tried, how often)", ""]
+    touched = {}
+    for n in records:
+        for path in _hunks(_patch(root, n)):
+            touched[path] = touched.get(path, 0) + 1
+    lines += [f"- {p}: {c}" for p, c in sorted(touched.items(), key=lambda kv: (-kv[1], kv[0]))[:15]]
+    used = ledger.confirms_used(state, ctx["task"])
+    lines += ["", "## 5. Resolution and budget", "",
+              f"- a screen is {ctx['n_s']} blocks and resolves about {100 * ctx['resolution']:.1f}%; the keep floor is "
+              f"{50 * spec.objective.useful:.1f}%", f"- hca wall so far {ctx['wall'] / 60:.1f} min; confirms left {max(0, spec.limits.confirms - used)}",
+              "", "## 6. What to do with this", "", DREAM_INSTRUCTION]
+    path = ledger.hca_dir(root) / "DREAM.md"
+    path.write_text("\n".join(lines[:DREAM_LINES]) + "\n", encoding="utf-8")
+    return path

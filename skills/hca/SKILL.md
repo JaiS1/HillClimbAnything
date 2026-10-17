@@ -96,6 +96,7 @@ Use it only when the user asks for it; line mode stays the default. Details: [en
   fresh blocks. It needs `--again` if that tree was already tried. Use `--tainted` only if the user agrees to retest a
   member that a failed confirm tainted.
 - Confirm as usual. Report dropped keeps and how many screens were run; never quote a screen estimate as a result.
+- Between sessions, `hca report --dream` writes `.hca/DREAM.md` (no benchmark runs). Read it and write 5–10 new ideas.
 
 ## 3. Expensive runs (Tier 2: paid GPU, remote jobs, scarce verifiers)
 

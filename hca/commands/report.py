@@ -21,6 +21,8 @@ def add_report_arguments(parser) -> None:
     parser.add_argument("--md", help="also write the report as markdown to this path")
     parser.add_argument("--referee", action="store_true",
                         help="show the referee store's detail (confirm numbers, reset log). For the human, not the agent")
+    parser.add_argument("--dream", action="store_true",
+                        help="write .hca/DREAM.md: an offline packet of the archive, lineages and open evidence to write new ideas from")
 
 
 def add_status_arguments(parser) -> None:
@@ -224,6 +226,13 @@ def run(args, out=print, cwd=None) -> int:
     root, spec, state = _context(cwd)
     if getattr(args, "referee", False):
         out(render_referee(state["task"], root).rstrip("\n"))
+        return 0
+    if getattr(args, "dream", False):
+        from .next_ import dream
+        if spec is None:
+            raise HcaError("report --dream needs a valid hca.toml. Fix: restore it (it is frozen).")
+        path = dream(root, spec, state)
+        out(f"Wrote {path.relative_to(root).as_posix()}: read it, then write new ideas into IDEAS.md. No benchmark was run.")
         return 0
     attempts = ledger.read_attempts(root)
     data = build(root, spec, state, attempts, ledger.read_confirms(state["task"]))

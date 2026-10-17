@@ -43,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     try_.add_arguments(sub.add_parser("try", help="measure the current edits against the last keep; keep or revert (--explore: screen vs the parent)"))
     confirm.add_arguments(sub.add_parser("confirm", help="re-measure the cumulative change against the original (held-out if any)"))
     next_.add_arguments(sub.add_parser("next", help="what to do next: budget, parent, lineage, ideas, archive, promotion hint"))
-    report.add_report_arguments(sub.add_parser("report", help="print the execution report"))
+    report.add_report_arguments(sub.add_parser("report", help="print the execution report (--dream: write the offline idea packet)"))
     report.add_status_arguments(sub.add_parser("status", help="the old short state (kept for one release; use `hca next`)"))
     return parser
 
