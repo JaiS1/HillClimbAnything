@@ -51,14 +51,18 @@ Kinds: `avoid-work`, `algorithm`, `data-structure`, `allocation`, `dispatch`, `i
    - Afterwards HCA admits the child to the archive (one elite per module), samples the next parent and sets the
      editable paths to it. Your edits are committed nowhere; the child lives at `refs/hca/attempts/NNNN`.
    - With no edits while you are at a screened member, `try --explore` re-screens that member against its own parent
-     and pools the blocks.
+     and pools the blocks (each block counted once).
+   - A recorded screen exits **5**, never 0: a screen is not a keep, so `hca try --explore && ...` must not treat it as one.
 4. `hca try --promote M -m "..."` sets the editable paths to M's tree and runs the normal try against the last keep. It
    needs `--again` if that tree had an earlier `try` or `promote` (screens do not count), and `--tainted` for a member a
-   failed confirm tainted. A member forked before a later keep is tested as its whole tree; the keeps it lacks are
-   printed as dropped keeps.
+   failed confirm tainted. A member forked before a later keep, or one that put a keep's file back by hand, is tested as
+   its whole tree; the keeps it lacks are printed as dropped keeps. If the promotion measures nothing (a refused replay,
+   a scope problem), the editable paths go back to where they were.
 5. `hca confirm` every few keeps. On FAIL, every member built on the undone keeps is tainted: never sampled, never
-   hinted, and promotable only with `--tainted`.
-6. Between sessions, `hca report --dream` writes `.hca/DREAM.md` (at most 150 lines, no benchmark run): the archive map
+   hinted, and promotable only with `--tainted`. "Built on" includes the member an undone promotion promoted and every
+   child of it, not only git descendants.
+6. Between sessions, `hca report --dream` writes `.hca/DREAM.md` (under 150 lines, each list capped at 25, no benchmark
+   run): the archive map
    with empty and tainted modules, lineages and stepping stones with their trend, open evidence (`NO EVIDENCE` and
    `SMALL` with intervals, `NULL`s by kind), the files tried and how often, the screen resolution and the budget left.
    It ends with the instruction: write 5–10 ideas into `IDEAS.md`, each naming a parent member, at least one for an
@@ -73,19 +77,22 @@ Kinds: `avoid-work`, `algorithm`, `data-structure`, `allocation`, `dispatch`, `i
   elites more than 2F behind the last keep are never drawn. The sampler has its own seed (from the referee store) and
   never touches the block-order randomness of any try. Every child logs the sampler, the candidates, their weights and
   the chosen parent's probability (`null` for an override).
-- The promotion hint fires when a member's ranked lead over the last keep is at least F + SE_chain * sqrt(2 ln M). On
+- The promotion hint fires when a member's ranked lead over the last keep is at least F + SE_chain * sqrt(2 ln M), with M
+  the number of screens so far. On
   noisy targets (SE > F/3) it asks for a re-screen first.
 - `.hca/archive.json` is a derived view. Promotion re-derives everything from the referee store and the refs.
 
 ## Exit codes and files
 
-| Command | 0 | 1 | 2 |
-|---|---|---|---|
-| `hca try --explore` | screen recorded | (never) | invalid, void, interrupted or refused |
-| `hca try --promote M` | keep | revert | invalid, void, refused |
-| `hca next` | printed | (never) | refused (unscreened edits, a bad parent) |
+| Command | 0 | 1 | 2 | 3 | 5 |
+|---|---|---|---|---|---|
+| `hca try --explore` | (never) | (never) | invalid, void, interrupted or refused | usage | screen recorded |
+| `hca try --promote M` | keep | revert | invalid, void, refused | usage | (never) |
+| `hca next` | printed | (never) | refused (unscreened edits, a tainted or invalid parent) | not an attempt id | (never) |
 
-Records: `kind` (`try`, `promote`, `screen`) on every referee-store entry and every `verdict.json`. A screen's record
+Records: `kind` (`try`, `promote`, `screen`) on every referee-store entry and every `verdict.json` (the store's wins).
+`IDEAS.md` is your notebook once explore mode is in use, even if the editable globs cover it; in a line-only climb an
+editable `IDEAS.md` is an ordinary edit. A screen's record
 has `explore.parent`, `explore.sampling`, `explore.module`, `explore.divergence` and `screen` (blocks, estimate, SE,
 bound). A promotion's has `explore.member`, `lineage`, `dropped_keeps`, `tainted`. `state.json` has
 `explore.parent` (null at the last keep).

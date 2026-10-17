@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#быстрый-старт)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-328_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -218,7 +218,7 @@ flowchart LR
 Это не доказано. Лучше ли популяция кандидатов поднимается на реальных целях, чем одна линия, измерят
 проверочные восхождения из [проектного документа](../DESIGN-climb-engine.md). Пока они не проведены, линейный режим остаётся режимом
 по умолчанию, и оба кейса выше пройдены в линейном режиме. Режим исследования работает только в режиме `blocks`.
-Записанный отсев завершается с кодом 0, недействительный — с кодом 2.
+Записанный отсев завершается с кодом 5, никогда не 0, чтобы его нельзя было принять за keep; недействительный — с кодом 2.
 
 ## Что можно оптимизировать
 

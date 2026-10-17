@@ -469,21 +469,33 @@ Line mode (everything above) is unchanged: a seeded line try has the same block 
   floor. A screen has its own path (`_decide_screen`, `_finish_screen`) with no call to `_apply_keep` or
   `write_pending`: it never moves the branch. A valid screen is admitted to the archive; HCA then samples the next
   parent and restores the editable paths to it. With no edits while at a screened member, it re-screens that member
-  against the member's own parent, pooling the blocks. Exit codes: **0 screen recorded**, 2 invalid / void /
-  interrupted / refused, 3 usage.
+  against the member's own parent, pooling the blocks of the latest screen of that tree and parent (whose scores already
+  hold every earlier one). Exit codes: **5 screen recorded** (never 0, so `hca try --explore && ...` cannot read a
+  screen as a keep), 2 invalid / void / interrupted / refused, 3 usage.
 - **`hca try --promote M [--again] [--tainted] -m "..."`: a promotion.** M is checked from the referee store and the
   refs only (a measured, valid attempt of this session whose `refs/hca/attempts/NNNN` and tree match the store; not
   tainted unless `--tainted`); never from `archive.json` or `verdict.json`. It refuses (exit 2) if the editable paths
   hold unscreened edits. It restores the editable paths to M's tree, then runs the normal try against the last keep on
   fresh blocks; exit codes are a try's. The record carries `member`, `lineage`, `dropped_keeps` (keeps on the branch
-  that M does not contain) and `tainted`; the KEEP line prints the dropped keeps and the review pointers over M's lineage.
+  that M does not descend from, or whose changed files M has put back to the keep's parent's content) and `tainted`; the
+  KEEP line prints the dropped keeps and the review pointers over M's lineage. A promotion that measures nothing (refused
+  replay, scope, the base-tree assert, a baseline that cannot be built) puts the editable paths and the explore parent
+  back where `--promote` found them.
 - **`--idea I`** (any try) records the idea id and its kind from `IDEAS.md` (`untagged` if unknown).
 - **`hca next [--parent M]`**: the plan for the next child in at most 60 lines (see the engine reference). `--parent M`
   (or `incumbent`) restores the editable paths to M; with no parent decided yet in explore mode, `next` samples one.
-  Refused (exit 2) over unscreened edits or a tainted or invalid M. Exit 0 otherwise.
+  Refused (exit 2) over unscreened edits or a tainted or invalid M; an M that is not an attempt id or `incumbent` is a
+  usage error (exit 3). Exit 0 otherwise.
+- **`hca report --dream`** writes `.hca/DREAM.md` from the store, the attempt records and the archive, with no benchmark
+  run, under the repo lock. Six sections, each list capped at 25 entries plus a "(+N more)" line, so the file stays under
+  150 lines and always ends with the fixed instruction. Exit 0.
 - **`hca status`** keeps its old output for one release, with a line pointing to `hca next`.
-- **`hca confirm`** on FAIL also marks the undone keeps `unconfirmed` in the store, taints every measured attempt whose
-  snapshot descends from one of them, and resets `state.explore.parent` to the new last keep.
+- **`hca confirm`** on FAIL also marks the undone keeps `unconfirmed` in the store and taints every measured attempt
+  built on one of them: its snapshot descends from an undone keep, or it or an ancestor on its store `parent` chain has an
+  undone keep's tree or is the member an undone promotion promoted (a promotion's keep is a fresh commit on the last keep,
+  so ancestry alone misses its member and the member's children). The undone keeps themselves are `unconfirmed`, not
+  tainted. It resets `state.explore.parent` to the new last keep. The pending `restore` entry records the `target`, so if
+  the confirm is killed after moving the branch, the reconciliation in the next command makes the same marks.
 
 ### A3.3 Base threading
 
@@ -499,7 +511,8 @@ is `invalid` with nothing measured. Arm pruning keeps the parent's arm and at mo
   the end of each attempt `verdict`, `valid`, `base`, `sha`, `estimate_log`, `wall_seconds`, `pointers`; screens also
   `parent`, `module`, `scores`, `se`, `blocks`; promotions `member`, `dropped_keeps`, `tainted_member`. A confirm FAIL
   adds `unconfirmed` (keeps) and `tainted` (members). Every count (`tries_used`, `store_counts`), replay check, member
-  check, lineage and fitness reads the store.
+  check, lineage and fitness reads the store, and `ledger.read_attempts` overlays each record's `kind` from its store
+  entry, so relabelling a keep as a screen in `verdict.json` changes nothing.
 - **Replays (B1).** `seen_tree` ignores screens: a member can be promoted right after its screen. A tree with any
   earlier `try` or `promote` entry needs `--again`, so a line revert re-screened and promoted is still a counted retry.
   A refused replay is an `invalid` attempt of its own kind and counts.
@@ -507,7 +520,8 @@ is `invalid` with nothing measured. Arm pruning keeps the parent's arm and at mo
   `class`, `screen` and `explore` (`parent`, `sampling`, `pooled_from`, `module`, `divergence`, `lines_vs_incumbent`).
 - **`state.json`** gains `explore: {parent, sampling}` once explore mode is used (absent in a line-only climb).
 - **`.hca/archive.json`** is derived and regenerable byte for byte; nothing reads it back.
-- **`max_tries`** counts line tries only. The report's bound is `(tries + promotions) x 1%`; screens are listed on their
+- **`max_tries`** is compared with tries plus promotions for the warning (each is a 1% test); screens never count.
+  `tries_used` stays line tries only. The report's bound is `(tries + promotions) x 1%`; screens are listed on their
   own line with promotions, parent overrides, high-divergence children, dropped keeps and tainted promotions. The
   headline, `VERDICTS.md`, the report table and confirm's pending sweep ignore screens.
 
@@ -518,8 +532,11 @@ is `invalid` with nothing measured. Arm pruning keeps the parent's arm and at mo
 - **An idea's `parent:` line** orders the backlog in `next`; it does not move the working tree. Use `next --parent M`.
 - **Budget** is reported as the hca wall time used (the sum of attempts' `wall_seconds` in the store); there is no
   configured cap yet.
-- **`IDEAS.md` at the repo root** is ignored like `__pycache__` by scope, snapshots, reverts and init's clean check.
-- **`report --dream` is Phase 1.5**, by the design's own §5.2 rule: with it the Phase 1 core diff was about 990 lines,
-  above the ~950 trigger. `hca report --dream` writes `.hca/DREAM.md` (at most 150 lines) from the store, the attempt
-  records and the archive, with no benchmark run, and exits 0. Like `next` and `archive.json`, it carries no held-out
-  ids and no confirm detail beyond PASS/FAIL and the passed estimate.
+- **`IDEAS.md` at the repo root** is never warned about when it is outside the editable globs. When the globs cover it,
+  it is an ordinary edit in a line-only climb, and the notebook (ignored by scope, snapshots and reverts) once explore
+  mode is in use (`state.explore` exists, or the command is `try --explore`, `try --promote` or `next`).
+- **The promotion hint's allowance** uses M = the number of screens so far: every screened child was a candidate in the
+  selection that ranks one member first.
+- **`report --dream` is in Phase 1** although the core diff then passes the design's ~950-line trigger (about 1,100
+  net lines with the review fixes): the offline hypothesis dream was an explicit decision. Like `next` and `archive.json`,
+  it carries no held-out ids and no confirm detail beyond PASS/FAIL and the passed estimate.

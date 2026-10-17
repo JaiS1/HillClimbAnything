@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#schnellstart)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-328_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -220,7 +220,7 @@ ergänzt ein Gedächtnis für Ideen und einen Baum von Kandidatenprogrammen, ohn
 Das ist unbewiesen. Ob eine Population von Kandidaten auf echten Zielen besser klettert als eine einzelne Linie,
 sollen die Beweis-Climbs aus dem [Designdokument](../DESIGN-climb-engine.md) messen. Bis sie gelaufen sind, bleibt der
 Linienmodus der Standard, und beide Fallstudien oben wurden im Linienmodus erklommen. Der Explore-Modus
-funktioniert nur im Modus `blocks`. Ein aufgezeichneter Screen endet mit Exit-Code 0, ein ungültiger mit 2.
+funktioniert nur im Modus `blocks`. Ein aufgezeichneter Screen endet mit Exit-Code 5, nie 0, damit er nicht mit einem keep verwechselt werden kann; ein ungültiger mit 2.
 
 ## Was du optimieren kannst
 

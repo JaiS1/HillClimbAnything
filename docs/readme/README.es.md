@@ -12,7 +12,7 @@ Traducido de README.md en el commit 59b1150. El README en inglés es la referenc
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#inicio-rápido)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-328_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -217,7 +217,7 @@ una memoria de ideas y un árbol de programas candidatos, sin bajar el listón p
 Esto no está demostrado. Si una población de candidatos escala mejor que una sola línea en objetivos reales es lo
 que medirán las escaladas de prueba del [documento de diseño](../DESIGN-climb-engine.md). Hasta que se ejecuten, el modo línea es el
 predeterminado, y los dos casos de estudio de arriba se escalaron en modo línea. El modo exploración solo funciona
-en modo `blocks`. Una criba registrada sale con 0 y una inválida con 2.
+en modo `blocks`. Una criba registrada sale con 5, nunca con 0, para que no se confunda con un keep; una inválida sale con 2.
 
 ## Qué puedes escalar
 

@@ -91,7 +91,7 @@ Use it only when the user asks for it; line mode stays the default. Details: [en
 - Start every child with `hca next`. It says which parent the editable paths are at, its lineage, the archive, the
   promotion hint and the backlog. `hca next --parent M` moves you to member M (refused over unscreened edits).
 - Edit, then `hca try --explore --idea I<n> -m "..."`. A screen measures the child against its parent in 5–8 blocks,
-  archives it, and moves the editable paths to the next sampled parent. **A screen is not evidence and never keeps.**
+  archives it, and moves the editable paths to the next sampled parent; it exits 5. **A screen is not evidence and never keeps.**
 - To test a member, `hca try --promote M -m "..."`: a normal referee try of M's whole tree against the last keep, on
   fresh blocks. It needs `--again` if that tree was already tried. Use `--tainted` only if the user agrees to retest a
   member that a failed confirm tainted.

@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-328_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-343_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -191,7 +191,7 @@ Yukarıdaki her şey *çizgi modu*dur: her aday son keep'e karşı test edilir. 
 - **Terfi.** `hca try --promote M`, M üyesini taze bloklarda, normal bir deneme olarak son keep'e karşı test eder; bu yüzden M nasıl seçilmiş olursa olsun test başına %1 yanlış keep oranı korunur. `hca confirm` eskisi gibi çalışır; başarısız bir confirm, geri aldığı keep'lerin üzerine kurulmuş her üyeyi tainted olarak işaretler.
 - **`hca next`** bütçeyi, ebeveyni ve soy çizgisini, fikirleri, arşivi ve bir terfi ipucunu en fazla 60 satırda gösterir. Bir sürüm boyunca daha kalacak olan `hca status` komutunun yerini alır.
 
-Bu henüz kanıtlanmadı. Gerçek hedeflerde bir aday popülasyonunun tek bir çizgiden daha iyi tırmanıp tırmanmadığını [tasarım belgesindeki](../DESIGN-climb-engine.md) kanıt tırmanışları ölçecek. Onlar çalışana kadar varsayılan çizgi modudur ve yukarıdaki iki showcase de çizgi modunda tırmanıldı. Keşif modu yalnızca `blocks` modunda çalışır. Kaydedilen bir eleme 0 ile, geçersiz bir eleme 2 ile çıkar.
+Bu henüz kanıtlanmadı. Gerçek hedeflerde bir aday popülasyonunun tek bir çizgiden daha iyi tırmanıp tırmanmadığını [tasarım belgesindeki](../DESIGN-climb-engine.md) kanıt tırmanışları ölçecek. Onlar çalışana kadar varsayılan çizgi modudur ve yukarıdaki iki showcase de çizgi modunda tırmanıldı. Keşif modu yalnızca `blocks` modunda çalışır. Kaydedilen bir eleme, bir keep ile karıştırılmasın diye hiçbir zaman 0 ile değil 5 ile çıkar; geçersiz bir eleme 2 ile çıkar.
 
 ## Neyi tırmanabilirsiniz
 
