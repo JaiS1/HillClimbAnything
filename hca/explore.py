@@ -126,7 +126,17 @@ def read_hot(root) -> list:
         text = (Path(root) / IDEAS_FILE).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    return [h.strip() for line in text.splitlines() if line.lower().startswith("hot:") for h in line[4:].split(",") if h.strip()]
+    hot = []
+    for line in text.splitlines():
+        line = line.strip().lstrip("-*+").strip()                 # `hot:`, `- hot:` and `* hot:` all count
+        if line.lower().startswith("hot:"):
+            for item in line[4:].split(","):
+                item = item.strip().strip("`").replace("\\", "/")
+                while item.startswith("./"):
+                    item = item[2:]
+                if item:
+                    hot.append(item)
+    return hot
 
 
 def weighty(path, size) -> bool:
@@ -212,19 +222,21 @@ def build(root, spec, state, seed=None) -> dict:
     f_keep, incumbent = keep_fitness(root, state, by_n)
     per_file = len([p for p in gitops.file_sizes(root, state["last_keep"]) if gitops.is_editable(p, spec)]) <= PER_FILE_CELLS
     nodes, latest = {}, {}
+    f_inc, retired = f_keep.get(state["last_keep"], 0.0), retired_members(root, state, by_n)
     for n in sorted(by_n):
         e = by_n[n]
         if not e.get("sha") or not e.get("valid") or e.get("estimate_log") is None:
             continue
         up, screened = nodes.get(e.get("parent")), ledger.kind_of(e) == "screen"
-        start = up["f_raw"] if up else f_keep.get(e.get("base"), 0.0)
+        # A retired parent is already in the incumbent: its child starts from the incumbent's own fitness, so the lead is the
+        # sum of the open steps only (never the screens' chained estimate of what a promotion has since re-measured).
+        start = f_inc if up and up["n"] in retired else up["f_raw"] if up else f_keep.get(e.get("base"), 0.0)
         nodes[n] = {"n": n, "sha": e["sha"], "parent": e.get("parent"), "screened": screened, "step": e["estimate_log"],
                     "module": (e.get("file") if per_file else None) or e.get("module") or "other", "se": e.get("se") or 0.0,
                     "f_raw": f_keep.get(e["sha"], start + e["estimate_log"]) if e.get("verdict") == "keep" else start + e["estimate_log"],
                     "tainted": bool(e.get("tainted")), "blocks": e.get("blocks", 0), "lineage": (up["lineage"] if up else []) + [n]}
         if screened:
             latest[(e.get("tree"), e.get("base"))] = n
-    retired = retired_members(root, state, by_n)
     for node in nodes.values():
         open_steps = [i for i in node["lineage"] if nodes[i]["screened"] and i not in retired]
         node.update(retired=node["n"] in retired, d=len(open_steps), var=sum(nodes[i]["se"] ** 2 for i in open_steps))
@@ -240,7 +252,6 @@ def build(root, spec, state, seed=None) -> dict:
         elite = cells.get(node["cell"])
         if not node["tainted"] and not node["retired"] and (elite is None or node["f_rank"] > nodes[elite]["f_rank"]):
             cells[node["cell"]] = node["n"]
-    f_inc = f_keep.get(state["last_keep"], 0.0)
     children = {}
     for e in by_n.values():
         if ledger.kind_of(e) == "screen" and e.get("parent") is not None:
@@ -251,6 +262,7 @@ def build(root, spec, state, seed=None) -> dict:
             "stepping_stones": sorted(n for n in set(latest.values()) if nodes[n]["step"] < 0),
             "behind": [n for n in elites if nodes[n]["f_rank"] < f_inc], "retired": sorted(retired & set(nodes)),
             "tainted": sorted(n for n, node in nodes.items() if node["tainted"]), "floor": 0.5 * spec.objective.useful,
+            "reverted": sorted({e.get("member") for e in by_n.values() if ledger.kind_of(e) == "promote" and e.get("verdict") == "revert"} - {None}),
             "per_file": per_file, "screens": sum(1 for e in by_n.values() if ledger.kind_of(e) == "screen" and e.get("valid"))}
 
 
@@ -302,11 +314,13 @@ def hint(archive, n_s) -> dict | None:
     - `rescreen` when it does not, but lead + 1.645 SE still reaches F (ambiguous) and the member has not been re-screened:
       a re-screen costs n_s blocks against a promotion's 10 to 20.
     `stacked` lists the open screened steps that each improved on their parent when there are two or more (a chain to promote
-    as one tree).
+    as one tree). A member whose promotion already reverted is never hinted again (re-promoting it needs --again).
     """
     nodes, floor, f_inc = archive["nodes"], archive["floor"], archive["f_inc"]
     m, best = max(1, archive.get("screens", 1)), None
     for n in archive["elites"]:
+        if n in archive.get("reverted", ()):
+            continue
         node = nodes[n]
         se = math.sqrt(node["var"])
         allowance = se * math.sqrt(2 * math.log(m))
