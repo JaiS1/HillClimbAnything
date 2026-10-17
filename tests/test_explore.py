@@ -1175,7 +1175,7 @@ class ProofClimbFixTests(ExploreCase):
         self.repo.write("src/boost.txt", "1\n")
         self.screen("child")                                              # 2
         self.assertEqual(self.attempt(2)["explore"]["sampling"]["why"], "P's table makes the next idea one line")
-        self.assertIn("parent overrides 1 (50% of 2 screens)", self.report()[1])
+        self.assertIn("parent overrides 1 of 1 screen(s) with sampler data (100%); 1 screen(s) without it (the sampler was not used)", self.report()[1])
 
     def test_next_says_confirm_now_after_two_keeps(self):
         self.init()
@@ -1218,3 +1218,207 @@ class CellTests(ExploreCase):
         self.repo.write("IDEAS.md", "hot: src/speed.txt\n")
         dream = next_.dream(self.root, repokit_spec(self.root), self.state()).read_text()
         self.assertIn("- empty cells (the hot: list in IDEAS.md): src/speed.txt\n", dream)
+
+    def test_hot_lines_accept_bullets_dot_slash_and_backslashes(self):
+        self.repo.write("IDEAS.md", "- hot: ./src/a.py, src\\parser\\b.ts\n* hot: `src/c.py`\n## I1 [micro] x\nnot hot: src/d.py\n")
+        self.assertEqual(explore.read_hot(self.root), ["src/a.py", "src/parser/b.ts", "src/c.py"])
+
+    def test_a_ledger_without_file_cells_does_not_list_files_under_a_filled_module_as_empty(self):
+        from hca.commands import next_
+        self.repo.write("src/parser/a.ts", "x" * 900)
+        self.repo.write("src/parser/b.ts", "y" * 900)
+        self.repo.commit_all("parser files")
+        self.init()
+        self.repo.write("src/parser/a.ts", "x" * 899 + "!")
+        self.screen("a")
+        self.next_(parent="incumbent")
+        store = ledger.load_store("speedy")
+        for e in store["attempts"]:
+            e.pop("file", None)                                           # as an older hca wrote it
+        ledger.save_store("speedy", store)
+        archive = explore.build(self.root, repokit_spec(self.root), self.state())
+        self.assertEqual(list(archive["cells"]), ["src/parser"])
+        self.assertNotIn("src/parser/b.ts", next_._empty_cells(self.root, repokit_spec(self.root), self.state(), archive)[0])
+
+    def test_numstat_keeps_non_ascii_paths_as_they_are(self):
+        self.repo.write("src/ünï.txt", "a\n")
+        first = self.repo.commit_all("a non-ASCII name")
+        self.repo.write("src/ünï.txt", "b\n")
+        second = self.repo.commit_all("changed")
+        self.assertEqual(gitops.numstat(self.root, repokit_spec(self.root), first, second), {"src/ünï.txt": 1})
+
+
+# --- the second adversarial review: renames, retired children, --why, reverted promotions -------------------------------
+
+class RenameChainTests(HeldoutCase):
+    def rn(self, name, reset=True, heldout=None):
+        from hca.commands import init
+        return self.hca(init, args={"heldout": heldout, "force": False, "reset": reset, "name": name}, aa_blocks=8, seed=1)
+
+    def failed(self):
+        self.init(heldout=self.held)
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.assertEqual(self.try_("dev-only win")[0], 0)
+        self.assertEqual(self.confirm()[0], 1)
+
+    def test_t1_init_name_cannot_launder_a_failed_confirm(self):
+        self.failed()
+        with self.assertRaises(Refusal) as caught:
+            self.rn("speedy-2")
+        self.assertIn("FAILED", str(caught.exception))
+        self.assertIsNone(ledger.load_store("speedy-2"))
+        self.assertEqual(self.state()["task"], "speedy")
+
+    def test_a_human_rename_after_a_fail_keeps_the_heldout_set_and_the_chain(self):
+        self.failed()
+        with env(HCA_ALLOW_RESET="1"):
+            code, text = self.rn("speedy-2")
+        self.assertEqual(code, 0, text)
+        self.assertIn("Held-out data inherited from 'speedy'", text)
+        self.assertTrue(self.state()["heldout"])
+        self.assertIsNotNone(ledger.heldout_dir("speedy-2"))
+        self.assertEqual(ledger.chain_of("speedy-2"), {"tasks": [{"task": "speedy", "confirms": 1, "fails": 1}], "confirms": 1, "fails": 1})
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.assertEqual(self.try_("the same hack again", again=True)[0], 0)
+        self.assertEqual(self.confirm()[0], 1)                            # the inherited held-out set still catches it
+        report = self.report()[1]
+        self.assertIn("Re-baselined from 'speedy' after 1 confirm(s) (1 FAIL) along the chain speedy", report)
+        self.assertIn("Confirms used: 2 of 3 (1 under earlier names of this climb).", report)
+        with env(HCA_ALLOW_RESET="1"):
+            self.assertEqual(self.rn("speedy-3")[0], 0)
+        self.assertEqual(ledger.load_store("speedy-2")["renamed_to"][0]["task"], "speedy-3")
+        self.assertEqual(ledger.load_store("speedy-3")["renamed_from"][0]["from"], "speedy-2")
+        self.assertEqual(ledger.chain_of("speedy-3")["confirms"], 2)
+        self.assertEqual(ledger.chain_of("speedy-3")["fails"], 2)
+
+    def test_a_rename_starts_only_from_a_confirmed_or_original_tree(self):
+        self.init(heldout=self.held)
+        self.set_speed(27)
+        self.assertEqual(self.try_("an unconfirmed keep")[0], 0)
+        with self.assertRaises(Refusal) as caught:
+            self.rn("speedy-2")
+        self.assertIn("never confirmed", str(caught.exception))
+        self.assertEqual(self.confirm()[0], 0)
+        self.assertEqual(self.rn("speedy-2")[0], 0)                       # HEAD is now the last confirmed commit
+
+    def test_a_rename_with_a_different_heldout_set_is_refused(self):
+        self.init(heldout=self.held)
+        other = self.tmp / "other-held"
+        other.mkdir()
+        (other / "scale.txt").write_text("2.0\n")
+        with self.assertRaises(Refusal) as caught:
+            self.rn("speedy-2", heldout=str(other))
+        self.assertIn("--heldout differs", str(caught.exception))
+        self.assertEqual(self.rn("speedy-2", heldout=self.held)[0], 0)     # the same data is fine
+
+    def test_the_chain_counts_against_the_confirm_cap(self):
+        self.init(heldout=self.held)
+        for i, (speed, name) in enumerate(((27, "speedy-2"), (24, "speedy-3"), (21, None))):
+            self.set_speed(speed)
+            self.assertEqual(self.try_(f"keep {i}")[0], 0)
+            self.assertEqual(self.confirm()[0], 0)
+            if name:
+                self.assertEqual(self.rn(name)[0], 0)
+        self.set_speed(19)
+        self.assertEqual(self.try_("one more")[0], 0)
+        with self.assertRaises(HcaError) as caught:
+            self.confirm()
+        self.assertIn("the confirm cap is reached (3 of 3 used, 2 of them under earlier names of this climb)", str(caught.exception))
+
+    def test_an_empty_name_is_a_usage_error_and_the_hca_toml_name_is_no_rename(self):
+        with self.assertRaises(HcaError) as caught:
+            self.rn("", reset=False)
+        self.assertIn("--name needs a task name", str(caught.exception))
+        self.assertEqual(self.rn("speedy", reset=False)[0], 0)
+        self.assertIsNone(self.state()["spec_task"])
+        self.assertNotIn("renamed_from", ledger.load_store("speedy"))
+        self.assertNotIn("renamed_to", ledger.load_store("speedy"))
+
+
+class SecondReviewTests(ProofClimbFixTests):
+    def test_t2_a_child_of_a_retired_member_leads_by_its_own_step(self):
+        self.promoted_lineage()                                           # A promoted (keep 2, A retired), B screened on A
+        def lead():
+            a = explore.build(self.root, repokit_spec(self.root), self.state(), 9)
+            return a["nodes"][3]["f_raw"] - a["f_inc"], a["nodes"][3]["step"], a["nodes"][3]["var"], a["nodes"][3]["se"]
+        honest, step, var, se = lead()
+        self.assertAlmostEqual(honest, step)
+        self.assertAlmostEqual(var, se * se)                              # one open step: B's own
+        ledger.update_entry("speedy", 2, estimate_log=self.entry(2)["estimate_log"] - 0.08)    # the referee read A weaker
+        self.assertAlmostEqual(lead()[0], step)                           # B's lead does not inherit the screens' view of A
+
+    def test_t3_why_is_one_short_line_stored_in_the_referee_store(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("P")
+        why = "line1\nline2 \"quoted\" \\ back  \x1b[31mred\n" + "x" * 300000
+        _, text = self.next_(parent=1, why=why)
+        self.assertLess(len(text), 5000)
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("child")
+        stored = self.entry(2)
+        self.assertTrue(stored["override"])
+        self.assertTrue(stored["why"].startswith('line1 line2 "quoted" \\ back [31mred xxx'))
+        self.assertLessEqual(len(stored["why"]), 203)
+        self.assertLess((ledger.attempt_path(self.root, 2) / "verdict.json").stat().st_size, 20000)
+        before = [line for line in self.report()[1].splitlines() if line.startswith("Promotions")]
+        record = ledger.attempt_path(self.root, 2) / "verdict.json"
+        tampered = json.loads(record.read_text())
+        tampered["explore"]["sampling"]["parent_p"] = 0.5
+        record.write_text(json.dumps(tampered))
+        self.assertEqual([line for line in self.report()[1].splitlines() if line.startswith("Promotions")], before)
+        self.assertIn("parent overrides 1 of 1 screen(s) with sampler data", before[0])
+
+    def test_the_first_screen_after_a_promotion_is_not_an_override(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("P")
+        self.next_(parent="incumbent")
+        self.assertEqual(self.promote(1)[0], 0)
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("right after the promotion")                          # 3
+        self.assertIsNone(self.entry(3)["override"])
+
+    def test_the_hint_never_suggests_a_member_whose_promotion_reverted(self):
+        nodes = {1: {"f_raw": 0.05, "var": 0.0, "se": 0.0, "blocks": 5, "lineage": [1], "screened": True, "retired": False, "step": 0.05}}
+        archive = {"elites": [1], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 2}
+        self.assertEqual(explore.hint(archive, 5)["n"], 1)
+        archive["reverted"] = [1]
+        self.assertIsNone(explore.hint(archive, 5))
+
+    def test_a_reverted_promotion_is_recorded_in_the_archive(self):
+        self.init()
+        self.set_speed("29.9")
+        self.screen("tiny")                                               # 1
+        self.next_(parent="incumbent")
+        self.assertEqual(self.promote(1)[0], 1)                           # 2: reverts
+        self.assertEqual(explore.build(self.root, repokit_spec(self.root), self.state())["reverted"], [1])
+
+    def test_t4_a_tainted_promotion_never_brings_its_lineage_back_into_the_hint(self):
+        held = self.tmp / "held-t4"
+        held.mkdir()
+        (held / "scale.txt").write_text("1.0\n")
+        self.init(heldout=str(held))
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.screen("A (dev hack)")                                       # 1
+        self.next_(parent="incumbent")
+        self.assertEqual(self.promote(1)[0], 0)                           # 2
+        self.next_(parent=1, why="build on A")
+        self.repo.write("src/boost.txt", "1\n")
+        self.set_speed(26)
+        self.screen("B child of A")                                       # 3
+        self.next_(parent="incumbent")
+        self.assertEqual(self.confirm()[0], 1)
+        archive = explore.build(self.root, repokit_spec(self.root), self.state(), 7)
+        self.assertEqual((archive["tainted"], archive["elites"], explore.hint(archive, 8)), ([1, 3], [], None))
+        self.assertEqual(self.promote(3, tainted=True)[0], 0)              # 4: a human-approved retest
+        archive = explore.build(self.root, repokit_spec(self.root), self.state(), 7)
+        self.assertEqual((archive["retired"], archive["elites"], explore.hint(archive, 8)), ([1, 3], [], None))
+
+    def test_a_refusal_prints_once_on_a_shared_terminal(self):
+        self.init()
+        with contextlib.chdir(self.root), mock.patch.object(cli, "_same_terminal", return_value=True), \
+                contextlib.redirect_stdout(io.StringIO()) as shown, contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(cli.main(["try", "--promote", "7", "-m", "x"]), 2)
+        self.assertIn("REFUSED (exit 2)", shown.getvalue())
+        self.assertEqual(err.getvalue(), "")
