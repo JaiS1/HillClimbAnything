@@ -18,11 +18,10 @@ import re
 from pathlib import Path
 
 from .. import explore, gitops, ledger, stats
-from ..core import Refusal
+from ..core import HcaError, Refusal
 from . import common
 
 MAX_LINES = 60
-DREAM_LINES = 150
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 
 
@@ -34,6 +33,7 @@ def run(args=None, out=print, cwd=None) -> int:
     root = gitops.repo_root(cwd)
     with ledger.lock(root, "next", out):
         root, spec, state = common.open_session(cwd, out=out)
+        gitops.ignore_notebook(True)
         _choose_parent(root, spec, state, getattr(args, "parent", None))
         for line in render(root, spec, state)[:MAX_LINES]:
             out(line)
@@ -42,6 +42,10 @@ def run(args=None, out=print, cwd=None) -> int:
 
 def _choose_parent(root, spec, state, wanted) -> None:
     """`--parent M` (an override, logged with parent_p null), or a fresh draw when explore mode has no parent decided yet."""
+    if wanted is not None:
+        wanted = str(wanted).strip()
+        if wanted != "incumbent" and not wanted.isdigit():
+            raise HcaError(f"--parent takes an attempt id (such as 0024) or `incumbent`, not {wanted!r}. Fix: see `hca next` for the members.")
     _, here = explore.parent_base(root, state)
     clean = gitops.working_tree_hash(root, spec, here) == gitops.tree_of(root, here)
     if wanted is None and (state.get("explore") is None or state["explore"].get("sampling") is not None or not clean):
@@ -54,7 +58,7 @@ def _choose_parent(root, spec, state, wanted) -> None:
         sampling = explore.sample(archive, ledger.store_counts(state["task"])["screen"], archive["seed"])
         parent = None if sampling["parent"] == archive["incumbent"] else sampling["parent"]
     else:
-        parent = None if str(wanted) in ("incumbent", "0", str(archive["incumbent"])) else int(wanted)
+        parent = None if wanted == "incumbent" or int(wanted) in (0, archive["incumbent"]) else int(wanted)
         sampling = {"sampler": explore.SAMPLER, "override": "next --parent", "parent": parent, "parent_p": None}
     target = state["last_keep"] if parent is None else explore.member(root, state, parent, what="parent")["sha"]
     gitops.revert(root, spec, target)
@@ -272,48 +276,59 @@ DREAM_INSTRUCTION = ("Write 5-10 ideas into IDEAS.md (`## I<n> [<kind>] <title>`
                      "stepping stone you expect to read worse first. Say which evidence above each one answers.")
 
 
+SECTION_ITEMS = 25          # each list in DREAM.md is capped, so the packet stays bounded and the instruction always survives
+
+
+def _capped(items, limit=SECTION_ITEMS) -> list:
+    return items[:limit] + ([f"- (+{len(items) - limit} more)"] if len(items) > limit else [])
+
+
 def dream(root, spec, state) -> Path:
-    """Write `.hca/DREAM.md` (at most 150 lines) from the store, the attempt records and the archive. No benchmark runs."""
+    """Write `.hca/DREAM.md` from the store, the attempt records and the archive. No benchmark runs.
+
+    Six sections; every list is capped at 25 entries plus a "(+N more)" line, so the file stays under 150 lines however
+    long the climb, and the fixed instruction at the end is always there."""
     ctx = _context(root, spec, state)
     archive, records, nodes, direction = ctx["archive"], ctx["records"], ctx["archive"]["nodes"], ctx["direction"]
-    lines = [f"# Dream packet: {ctx['task']}", "", "Offline: nothing below was measured for this file. Screens are rankings, not "
-             "evidence; kept estimates are selected (biased upward); only a confirm is a result.", "", "## 1. Archive map", ""]
-    for cell, info in archive["cells"].items():
-        lines.append(f"- [{cell}] elite {info['elite']:04d}, ranked lead {100 * (info['f_rank'] - archive['f_inc']):+.1f} pp, "
-                     f"{info['children']} child(ren)")
+    cells = [f"- [{cell}] elite {info['elite']:04d}, ranked lead {100 * (info['f_rank'] - archive['f_inc']):+.1f} pp, "
+             f"{info['children']} child(ren)" for cell, info in archive["cells"].items()]
     editable = sorted({"/".join(p.split("/")[:2]) for p in gitops.tree_entries(root, state["last_keep"]) if gitops.is_editable(p, spec)})
     empty = [m for m in editable if m not in archive["cells"]]
-    lines.append(f"- empty modules: {', '.join(empty[:12]) or 'none'}" + (f" (+{len(empty) - 12} more)" if len(empty) > 12 else ""))
-    lines.append(f"- tainted members: {', '.join(format(n, '04d') for n in archive['tainted']) or 'none'}")
-    lines += ["", "## 2. Lineages and stepping stones", ""]
+    archive_map = _capped(cells) + [
+        f"- empty modules: {', '.join(empty[:12]) or 'none'}" + (f" (+{len(empty) - 12} more)" if len(empty) > 12 else ""),
+        f"- tainted members: {', '.join(format(n, '04d') for n in archive['tainted'][:20]) or 'none'}"]
+    lineages = []
     for n in archive["elites"]:
         steps = [f"{i:04d} {_pct(records[i]['estimate_log'], direction)}" for i in nodes[n]["lineage"]
                  if records.get(i, {}).get("estimate_log") is not None]
-        lines.append(f"- {' → '.join(steps)}" + (" (stepping stone: behind the incumbent)" if n in archive["stepping_stones"] else ""))
-    lines += ["", "## 3. Open evidence", ""]
-    nulls = {}
+        lineages.append(f"- {' → '.join(steps)}" + (" (stepping stone: behind the incumbent)" if n in archive["stepping_stones"] else ""))
+    evidence, nulls = [], {}
     for n, r in sorted(records.items()):
         if r["class"] in ("NO EVIDENCE", "SMALL") and r.get("kind") != "screen":
             ends = sorted(e for e in (r.get("lower"), r.get("upper")) if e is not None)
             interval = f" [{ledger.fmt_effect(ends[0], 'blocks')}, {ledger.fmt_effect(ends[-1], 'blocks')}]" if len(ends) == 2 else ""
-            lines.append(f"- {n:04d} {r.get('idea') or ''} {r['class']} {ledger.fmt_effect(r.get('estimate'), 'blocks')}{interval}: "
-                         f"{(r.get('message') or '').splitlines()[0][:70] if r.get('message') else ''}")
+            evidence.append(f"- {n:04d} {r.get('idea') or ''} {r['class']} {ledger.fmt_effect(r.get('estimate'), 'blocks')}{interval}: "
+                            f"{(r.get('message') or '').splitlines()[0][:70] if r.get('message') else ''}")
         elif r["class"] == "NULL":
             nulls.setdefault(r.get("idea_kind") or "untagged", []).append(f"{n:04d}")
-    lines += [f"- NULL ({kind}): {', '.join(ids)}" for kind, ids in sorted(nulls.items())]
-    if lines[-1] == "":
-        lines.append("- none: no reverted test left the useful effect open, and nothing tested came back NULL")
-    lines += ["", "## 4. Overlap map (files tried, how often)", ""]
+    evidence = _capped(evidence) + [f"- NULL ({kind}): {', '.join(ids[:20])}" for kind, ids in sorted(nulls.items())][:10]
     touched = {}
     for n in records:
         for path in _hunks(_patch(root, n)):
             touched[path] = touched.get(path, 0) + 1
-    lines += [f"- {p}: {c}" for p, c in sorted(touched.items(), key=lambda kv: (-kv[1], kv[0]))[:15]]
+    overlap = _capped([f"- {p}: {c}" for p, c in sorted(touched.items(), key=lambda kv: (-kv[1], kv[0]))], 15)
     used = ledger.confirms_used(state, ctx["task"])
-    lines += ["", "## 5. Resolution and budget", "",
-              f"- a screen is {ctx['n_s']} blocks and resolves about {100 * ctx['resolution']:.1f}%; the keep floor is "
-              f"{50 * spec.objective.useful:.1f}%", f"- hca wall so far {ctx['wall'] / 60:.1f} min; confirms left {max(0, spec.limits.confirms - used)}",
-              "", "## 6. What to do with this", "", DREAM_INSTRUCTION]
+    lines = [f"# Dream packet: {ctx['task']}", "", "Offline: nothing below was measured for this file. Screens are rankings, not "
+             "evidence; kept estimates are selected (biased upward); only a confirm is a result.",
+             "", "## 1. Archive map", "", *archive_map,
+             "", "## 2. Lineages and stepping stones", "", *(_capped(lineages) or ["- none yet"]),
+             "", "## 3. Open evidence", "",
+             *(evidence or ["- none: no reverted test left the useful effect open, and nothing tested came back NULL"]),
+             "", "## 4. Overlap map (files tried, how often)", "", *(overlap or ["- none yet"]),
+             "", "## 5. Resolution and budget", "",
+             f"- a screen is {ctx['n_s']} blocks and resolves about {100 * ctx['resolution']:.1f}%; the keep floor is "
+             f"{50 * spec.objective.useful:.1f}%", f"- hca wall so far {ctx['wall'] / 60:.1f} min; confirms left {max(0, spec.limits.confirms - used)}",
+             "", "## 6. What to do with this", "", DREAM_INSTRUCTION]
     path = ledger.hca_dir(root) / "DREAM.md"
-    path.write_text("\n".join(lines[:DREAM_LINES]) + "\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path

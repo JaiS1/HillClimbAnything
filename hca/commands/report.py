@@ -231,7 +231,8 @@ def run(args, out=print, cwd=None) -> int:
         from .next_ import dream
         if spec is None:
             raise HcaError("report --dream needs a valid hca.toml. Fix: restore it (it is frozen).")
-        path = dream(root, spec, state)
+        with ledger.lock(root, "report --dream", out):  # it rewrites .hca/archive.json and DREAM.md: never beside a running try
+            path = dream(root, spec, state)
         out(f"Wrote {path.relative_to(root).as_posix()}: read it, then write new ideas into IDEAS.md. No benchmark was run.")
         return 0
     attempts = ledger.read_attempts(root)
