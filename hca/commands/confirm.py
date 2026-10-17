@@ -23,7 +23,7 @@ from __future__ import annotations
 import shutil
 import time
 
-from .. import arms, gitops, ledger, measure, stats
+from .. import arms, explore, gitops, ledger, measure, stats
 from ..core import HcaError, Refusal
 from . import common
 
@@ -143,7 +143,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
             f"It counts against the {spec.limits.confirms} confirms.")
         return common.EXIT_INVALID
     direction = spec.objective.direction
-    attempts = ledger.read_attempts(root)
+    attempts = ledger.tests_only(ledger.read_attempts(root))    # screens never carry a keep (N2)
     if outcome == "pass":
         text = (f"estimate {ledger.fmt_change(detail['estimate'], mode, direction, spec.objective.metric)} vs the original, "
                 f"{ledger.fmt_bound(detail['lower'], mode, direction, kept=True)}")
@@ -173,6 +173,8 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
     for a in attempts:
         if a.get("confirm") == "pending":
             ledger.update_attempt(root, a["n"], confirm="unconfirmed")
+    # B2: archive members built on the undone keeps must not be promoted straight back; the explore parent resets too.
+    tainted = explore.taint_after_fail(root, state, made["here"], target)
     ledger.refresh_verdicts(root, state, spec)
     common.clear_pending(root, task)
     arms.prune_unused(root, [state["init_sha"], state.get("last_confirmed"), state["last_keep"]])
@@ -180,5 +182,6 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
         f"{'the last confirmed commit' if state.get('last_confirmed') else 'the original'} ({target[:12]}) as commit {sha[:12]}; "
         f"the keeps in between are marked unconfirmed ({used + 1} of {spec.limits.confirms} confirms used)."
         + (f" Your uncommitted edits were saved to .hca/discarded-by-confirm-{number:02d}.diff." if dirty_patch.strip() else "")
+        + (f" {len(tainted)} archive member(s) built on those keeps are now tainted." if tainted else "")
         + " The numbers are in the referee store, not shown here.")
     return common.EXIT_REVERT
