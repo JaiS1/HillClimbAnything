@@ -638,8 +638,8 @@ def file_sizes(root, sha) -> dict:
 def numstat(root, spec, base, tip, ignore_eol=False) -> dict:
     """{editable path: lines changed} between two commits (or trees): max(added, deleted), so a modified line counts once;
     a binary file counts as 1. `ignore_eol` ignores CR at the end of lines (a CRLF rewrite then counts as no change)."""
-    out = {}
-    for line in git(root, "diff", "--numstat", "--no-renames", *(["--ignore-cr-at-eol"] if ignore_eol else []), base, tip).splitlines():
+    out = {}                    # -z: paths come raw, never quoted or escaped (non-ASCII names stay as they are)
+    for line in _lines(git(root, "diff", "--numstat", "-z", "--no-renames", *(["--ignore-cr-at-eol"] if ignore_eol else []), base, tip)):
         added, deleted, path = line.split("\t", 2)
         if is_editable(path, spec):
             out[path] = max(int(added), int(deleted)) if added.isdigit() and deleted.isdigit() else 1

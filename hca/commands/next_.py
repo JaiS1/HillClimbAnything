@@ -328,7 +328,8 @@ def _empty_cells(root, spec, state, archive) -> tuple:
     else:
         files, why = [p for p, n in sizes.items() if explore.weighty(p, n)], "files with code weight"
     keys = sorted({p if archive["per_file"] else "/".join(p.split("/")[:2]) for p in files})
-    return [k for k in keys if k not in archive["cells"]], why
+    # A ledger from before per-file cells recorded only modules: a file under a filled module cell is not empty.
+    return [k for k in keys if k not in archive["cells"] and "/".join(k.split("/")[:2]) not in archive["cells"]], why
 
 
 SECTION_ITEMS = 25          # each list in DREAM.md is capped, so the packet stays bounded and the instruction always survives

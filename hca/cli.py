@@ -75,7 +75,8 @@ def main(argv=None) -> int:
     except Refusal as exc:
         # On stdout too: an agent that reads only stdout must not mistake a refusal (exit 2) for silence or success.
         print(f"REFUSED (exit {EXIT_REFUSED}): {exc}")
-        print(f"hca: refused: {exc}", file=sys.stderr)
+        if not _same_terminal():                               # a terminal showing both streams would print it twice
+            print(f"hca: refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     except HcaError as exc:
         print(f"hca: {exc}", file=sys.stderr)
@@ -125,6 +126,16 @@ def _dispatch(args, parser) -> int:
         return report.run_status(args)
     parser.print_help()
     return EXIT_USAGE
+
+
+def _same_terminal() -> bool:
+    """Are stdout and stderr the same terminal (so one line reaches the reader once)?"""
+    try:
+        if not (sys.stdout.isatty() and sys.stderr.isatty()):
+            return False
+        return os.path.samefile(os.ttyname(sys.stdout.fileno()), os.ttyname(sys.stderr.fileno()))
+    except (AttributeError, OSError, ValueError):
+        return False
 
 
 class _Terminated(KeyboardInterrupt):
