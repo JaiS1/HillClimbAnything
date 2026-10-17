@@ -184,9 +184,10 @@ def is_frozen(path: str, spec) -> bool:
 
 
 def is_noise(path: str) -> bool:
-    """Files hca never treats as edits: `__pycache__/` anywhere, `*.pyc`, `.DS_Store` (tools write them as a side effect of running)."""
+    """Files hca never treats as edits: `__pycache__/` anywhere, `*.pyc`, `.DS_Store` (tools write them as a side effect of running),
+    and the agent's notebook `IDEAS.md` at the repo root (never measured, never snapshotted, never reverted)."""
     parts = path.split("/")
-    return "__pycache__" in parts[:-1] or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store"
+    return "__pycache__" in parts[:-1] or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store" or path == "IDEAS.md"
 
 
 def _in_hca(path: str) -> bool:
@@ -358,7 +359,7 @@ def frozen_blobs(root, spec, sha) -> dict:
     return {p: oid for p, (_, oid) in tree_entries(root, sha).items() if is_frozen(p, spec)}
 
 
-def scope_check(root, spec, state) -> dict:
+def scope_check(root, spec, state, base=None) -> dict:
     """Is every change inside the editable scope? Returns {ok, base, changed, untracked, untracked_outside_editable, violations}.
 
     Violations name the path and the reason. The check covers: HEAD still being the last keep (the agent
@@ -366,11 +367,15 @@ def scope_check(root, spec, state) -> dict:
     every frozen file (tracked, untracked or ignored) still having the sha256 recorded at init. The change
     list is computed against the last keep's tree in a private index, so staged-only changes in the user's
     index cannot hide anything: they are not part of the candidate at all.
+
+    `base` (explore mode: the sampled parent's snapshot) replaces the last keep as what the change list is computed
+    against; HEAD is still checked against the last keep, because the branch only ever moves on a keep (B3).
     """
-    base = state["last_keep"]
+    keep = state["last_keep"]
+    base = base or keep
     violations = []
-    if head(root) != base:
-        violations.append({"path": "(HEAD)", "reason": f"HEAD is {head(root)[:12]} but the last keep is {base[:12]}: "
+    if head(root) != keep:
+        violations.append({"path": "(HEAD)", "reason": f"HEAD is {head(root)[:12]} but the last keep is {keep[:12]}: "
                            "do not commit or switch commits; hca owns this branch. If a previous `hca try` was killed in the "
                            "middle of a keep, run any hca command again: it finishes or discards the pending keep"})
     with private_index(root) as env:
@@ -602,3 +607,33 @@ def restore_to(root, spec, target, message) -> str:
 
 def diff_stat(root, base, tip) -> str:
     return git(root, "diff", "--stat", "--no-renames", base, tip).rstrip()
+
+
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
+def numstat(root, spec, base, tip) -> dict:
+    """{editable path: lines changed} between two commits (or trees): max(added, deleted), so a modified line counts once;
+    a binary file counts as 1."""
+    out = {}
+    for line in git(root, "diff", "--numstat", "--no-renames", base, tip).splitlines():
+        added, deleted, path = line.split("\t", 2)
+        if is_editable(path, spec):
+            out[path] = max(int(added), int(deleted)) if added.isdigit() and deleted.isdigit() else 1
+    return out
+
+
+def is_ancestor(root, older, newer) -> bool:
+    return _run(["git", "merge-base", "--is-ancestor", older, newer], root).returncode == 0
+
+
+def keep_commits(root, init_sha, tip) -> list:
+    """[(sha, attempt n)] of the `hca keep NNNN` commits in init_sha..tip, oldest first; restore commits as (sha, None)."""
+    out = []
+    for line in git(root, "log", "--reverse", "--format=%H%x1f%s", f"{init_sha}..{tip}").splitlines():
+        sha, subject = (line.split("\x1f") + [""])[:2]
+        if KEEP_SUBJECT.match(subject):
+            out.append((sha, int(subject[9:13])))
+        elif subject == RESTORE_SUBJECT:
+            out.append((sha, None))
+    return out
