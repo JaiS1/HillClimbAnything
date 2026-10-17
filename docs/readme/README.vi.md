@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -180,6 +180,18 @@ flowchart LR
 - **Hai nhánh giống hệt.** Cả hai nhánh đều là git worktree sạch của các commit chính xác. Commit được giữ chính là cây thư mục đã được đo.
 - **Phải confirm, nếu không coi như chưa có.** `hca confirm` kiểm tra lịch sử, rồi đo lại tổng mức cải thiện so với bản gốc. Agent chỉ thấy PASS hoặc FAIL.
 - **Mọi thứ nằm trên đĩa.** Patch, các lần chạy thô, kết luận và lý do của từng lần thử đều nằm trong `.hca/`.
+
+## Chế độ khám phá (thử nghiệm, tùy chọn)
+
+Mọi thứ ở trên là *chế độ đường thẳng*: mỗi candidate được kiểm tra so với lần keep gần nhất. Chế độ khám phá bổ sung một bộ nhớ ý tưởng và một cây các chương trình candidate, mà không hạ thấp tiêu chuẩn cho một lần keep.
+
+- **Ý tưởng.** Agent ghi các giả thuyết vào `IDEAS.md` (`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4` ghi lại lần thử đã kiểm tra ý tưởng nào, và `hca next` liệt kê kết quả của từng ý tưởng.
+- **Sàng lọc (screen).** `hca try --explore` đo một con so với *cha* của nó, vốn không nhất thiết là lần keep gần nhất, trong 5–8 block. Một lần sàng lọc chỉ xếp hạng con và lưu nó vào kho. Nó không bao giờ keep được gì, và không phải là bằng chứng.
+- **Kho lưu trữ.** Mỗi module được chạm tới có một elite, để một bước đệm lúc đầu trông tệ hơn vẫn sống sót đủ lâu để cải thiện. Sau mỗi lần sàng lọc, HCA lấy mẫu cha tiếp theo (ít nhất 40% số lần là lần keep gần nhất) và đặt các đường dẫn có thể sửa về cha đó.
+- **Thăng hạng.** `hca try --promote M` kiểm tra thành viên M so với lần keep gần nhất như một lần try bình thường, trên các block mới, nên tỷ lệ keep sai 1% cho mỗi phép kiểm tra vẫn giữ nguyên dù M được chọn theo cách nào. `hca confirm` hoạt động như trước; một lần confirm thất bại sẽ đánh dấu tainted mọi thành viên được xây trên các lần keep mà nó hoàn tác.
+- **`hca next`** hiển thị ngân sách, cha và dòng dõi của nó, các ý tưởng, kho lưu trữ và một gợi ý thăng hạng, trong tối đa 60 dòng. Lệnh này thay cho `hca status`, vốn còn được giữ thêm một bản phát hành.
+
+Điều này chưa được chứng minh. Một quần thể candidate có leo tốt hơn một đường thẳng duy nhất trên các mục tiêu thực hay không là điều mà các lần leo kiểm chứng trong [tài liệu thiết kế](../DESIGN-climb-engine.md) sẽ đo. Cho đến khi chúng được chạy, chế độ đường thẳng vẫn là mặc định, và cả hai showcase ở trên đều được leo bằng chế độ đường thẳng. Chế độ khám phá chỉ hoạt động ở chế độ `blocks`. Một lần sàng lọc được ghi lại thoát với mã 0, và một lần không hợp lệ thoát với mã 2.
 
 ## Bạn có thể leo gì
 

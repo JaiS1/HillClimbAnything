@@ -12,7 +12,7 @@ README.md(commit 59b1150)를 번역한 문서입니다. 수치는 영어 README�
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#빠른-시작)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -180,6 +180,18 @@ flowchart LR
 - **동일한 두 팔.** 두 팔 모두 정확한 커밋의 깨끗한 git worktree입니다. keep되는 커밋은 측정된 트리 그대로입니다.
 - **confirm하지 못하면 없던 일.** `hca confirm`은 기록을 확인한 뒤, 원본 대비 전체 개선을 다시 측정합니다. 에이전트에게는 PASS 또는 FAIL만 보입니다.
 - **모든 것을 디스크에.** 각 시도의 패치, 원시 실행 결과, 판정과 이유가 `.hca/`에 남습니다.
+
+## 탐색 모드 (실험적, 옵트인)
+
+위의 모든 내용은 *라인 모드*입니다. 각 후보는 마지막 keep과 비교해 검증됩니다. 탐색 모드는 keep의 기준을 낮추지 않으면서 아이디어의 기억과 후보 프로그램의 트리를 더합니다.
+
+- **아이디어.** 에이전트는 가설을 `IDEAS.md`에 적습니다(`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4`는 시도가 어떤 아이디어를 검증했는지 기록하고, `hca next`는 각 아이디어의 결과를 보여 줍니다.
+- **스크린.** `hca try --explore`는 자식을 *부모*와 비교해 5~8 블록으로 측정합니다. 부모가 마지막 keep일 필요는 없습니다. 스크린은 자식의 순위를 매기고 보관할 뿐, 무언가를 keep할 수 없으며 근거도 아닙니다.
+- **아카이브.** 수정된 모듈마다 엘리트를 하나씩 두므로, 처음에는 나빠 보이는 디딤돌도 개선될 때까지 살아남습니다. 스크린이 끝날 때마다 HCA는 다음 부모를 샘플링하고(적어도 40%는 마지막 keep) 편집 가능한 경로를 그 부모로 맞춥니다.
+- **승격.** `hca try --promote M`은 멤버 M을 일반 try처럼 새 블록에서 마지막 keep과 비교합니다. 그래서 M이 어떻게 선택되었든 검정당 1% 거짓 keep 비율이 유지됩니다. `hca confirm`은 전과 같이 동작하며, confirm이 실패하면 되돌린 keep 위에 만들어진 모든 멤버가 tainted로 표시됩니다.
+- **`hca next`**는 예산, 부모와 그 계보, 아이디어, 아카이브, 승격 힌트를 최대 60줄로 보여 줍니다. `hca status`를 대체하며, `hca status`는 한 릴리스 동안 유지됩니다.
+
+이것은 아직 입증되지 않았습니다. 실제 대상에서 후보 집단이 단일 라인보다 더 잘 오르는지는 [설계 문서](../DESIGN-climb-engine.md)의 검증용 climb이 측정할 것입니다. 그 전까지는 라인 모드가 기본이며, 위의 두 쇼케이스도 라인 모드로 진행했습니다. 탐색 모드는 `blocks` 모드에서만 동작합니다. 기록된 스크린은 종료 코드 0, 무효한 스크린은 2로 끝납니다.
 
 ## 무엇을 개선할 수 있나
 

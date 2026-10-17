@@ -12,7 +12,7 @@ Traduzido de README.md no commit 59b1150. O README em inglês é a referência p
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#início-rápido)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -193,6 +193,30 @@ flowchart LR
 - **Confirmar, ou não conta.** O `hca confirm` verifica o histórico e depois remede o ganho total contra
   o original. O agente só vê PASS ou FAIL.
 - **Tudo em disco.** O patch de cada tentativa, as execuções brutas, o veredito e os motivos ficam em `.hca/`.
+
+## Modo exploração (experimental, opcional)
+
+Tudo acima é o *modo linha*: cada candidato é testado contra o último keep. O modo exploração acrescenta uma
+memória de ideias e uma árvore de programas candidatos, sem baixar a régua para um keep.
+
+- **Ideias.** O agente guarda suas hipóteses em `IDEAS.md` (`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4` registra qual
+  ideia uma tentativa testou, e `hca next` lista o resultado de cada ideia.
+- **Triagens (screens).** `hca try --explore` mede um filho contra o seu *pai*, que não precisa ser o último keep,
+  em 5–8 blocos. Uma triagem classifica o filho e o arquiva. Ela nunca pode manter nada e não é evidência.
+- **Arquivo.** Uma elite por módulo alterado, para que um passo intermediário que de início parece pior sobreviva
+  tempo suficiente para melhorar. Depois de cada triagem, o HCA sorteia o próximo pai (o último keep em pelo menos
+  40% das vezes) e coloca os caminhos editáveis nele.
+- **Promoção.** `hca try --promote M` testa o membro M contra o último keep como uma tentativa normal, com blocos
+  novos, então a taxa de keeps falsos de 1% por teste vale não importa como M foi escolhido. O `hca confirm`
+  funciona como antes; um confirm que falha marca como contaminado (tainted) todo membro construído sobre os keeps
+  que ele desfez.
+- **`hca next`** mostra o orçamento, o pai e sua linhagem, as ideias, o arquivo e uma sugestão de promoção, em no
+  máximo 60 linhas. Ele substitui o `hca status`, que fica por mais uma versão.
+
+Isso não está comprovado. Se uma população de candidatos escala melhor do que uma única linha em alvos reais é o
+que as escaladas de prova do [documento de design](../DESIGN-climb-engine.md) vão medir. Até elas rodarem, o modo linha é o padrão, e
+os dois estudos de caso acima foram escalados em modo linha. O modo exploração só funciona no modo `blocks`. Uma
+triagem registrada sai com 0 e uma inválida com 2.
 
 ## O que dá para escalar
 

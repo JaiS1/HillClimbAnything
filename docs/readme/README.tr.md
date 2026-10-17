@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -180,6 +180,18 @@ flowchart LR
 - **Özdeş kollar.** Her iki kol da tam commit'lerin temiz git worktree'leridir. Tutulan commit, ölçülen ağacın aynısıdır.
 - **Confirm yoksa olmamıştır.** `hca confirm` geçmişi kontrol eder, ardından toplam kazancı orijinale karşı yeniden ölçer. Ajan yalnızca PASS veya FAIL görür.
 - **Her şey diskte.** Her denemenin patch'i, ham çalıştırmaları, kararı ve gerekçeleri `.hca/` içindedir.
+
+## Keşif modu (deneysel, isteğe bağlı)
+
+Yukarıdaki her şey *çizgi modu*dur: her aday son keep'e karşı test edilir. Keşif modu, keep çıtasını düşürmeden fikirler için bir bellek ve aday programlardan oluşan bir ağaç ekler.
+
+- **Fikirler.** Ajan hipotezlerini `IDEAS.md` içinde tutar (`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4` bir denemenin hangi fikri test ettiğini kaydeder, `hca next` de her fikrin sonucunu listeler.
+- **Eleme (screen).** `hca try --explore` bir çocuğu, son keep olması gerekmeyen *ebeveynine* karşı 5–8 blokta ölçer. Eleme çocuğu sıralar ve arşivler. Hiçbir zaman bir şeyi keep edemez ve kanıt değildir.
+- **Arşiv.** Dokunulan her modül için bir elit tutulur; böylece başta daha kötü görünen bir basamak taşı, iyileşecek kadar uzun hayatta kalır. Her elemeden sonra HCA bir sonraki ebeveyni örnekler (en az %40 oranında son keep) ve düzenlenebilir yolları ona ayarlar.
+- **Terfi.** `hca try --promote M`, M üyesini taze bloklarda, normal bir deneme olarak son keep'e karşı test eder; bu yüzden M nasıl seçilmiş olursa olsun test başına %1 yanlış keep oranı korunur. `hca confirm` eskisi gibi çalışır; başarısız bir confirm, geri aldığı keep'lerin üzerine kurulmuş her üyeyi tainted olarak işaretler.
+- **`hca next`** bütçeyi, ebeveyni ve soy çizgisini, fikirleri, arşivi ve bir terfi ipucunu en fazla 60 satırda gösterir. Bir sürüm boyunca daha kalacak olan `hca status` komutunun yerini alır.
+
+Bu henüz kanıtlanmadı. Gerçek hedeflerde bir aday popülasyonunun tek bir çizgiden daha iyi tırmanıp tırmanmadığını [tasarım belgesindeki](../DESIGN-climb-engine.md) kanıt tırmanışları ölçecek. Onlar çalışana kadar varsayılan çizgi modudur ve yukarıdaki iki showcase de çizgi modunda tırmanıldı. Keşif modu yalnızca `blocks` modunda çalışır. Kaydedilen bir eleme 0 ile, geçersiz bir eleme 2 ile çıkar.
 
 ## Neyi tırmanabilirsiniz
 

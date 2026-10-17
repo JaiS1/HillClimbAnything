@@ -12,7 +12,7 @@ Translated from README.md at commit 59b1150. The English README is authoritative
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](../../README.md#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -180,6 +180,18 @@ flowchart LR
 - **Lengan yang identik.** Kedua lengan adalah git worktree bersih dari commit yang persis. Commit yang di-keep adalah tree yang persis sama dengan yang diukur.
 - **Confirm, atau dianggap tidak terjadi.** `hca confirm` memeriksa riwayat, lalu mengukur ulang total peningkatan terhadap versi asli. Agent hanya melihat PASS atau FAIL.
 - **Semuanya di disk.** Patch, run mentah, verdict, dan alasan setiap percobaan ada di `.hca/`.
+
+## Mode eksplorasi (eksperimental, opsional)
+
+Semua yang di atas adalah *mode garis*: setiap kandidat diuji terhadap keep terakhir. Mode eksplorasi menambahkan memori ide dan pohon program kandidat, tanpa menurunkan syarat untuk sebuah keep.
+
+- **Ide.** Agent menyimpan hipotesisnya di `IDEAS.md` (`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4` mencatat ide mana yang diuji sebuah percobaan, dan `hca next` menampilkan hasil setiap ide.
+- **Screen.** `hca try --explore` mengukur sebuah anak terhadap *induk*-nya, yang tidak harus keep terakhir, dalam 5–8 blok. Screen memberi peringkat pada anak dan mengarsipkannya. Screen tidak pernah bisa melakukan keep, dan bukan bukti.
+- **Arsip.** Satu elite per modul yang disentuh, sehingga batu loncatan yang awalnya terlihat lebih buruk bertahan cukup lama untuk membaik. Setelah setiap screen, HCA mengambil sampel induk berikutnya (keep terakhir setidaknya 40% dari waktu) dan mengatur path yang bisa diedit ke induk itu.
+- **Promosi.** `hca try --promote M` menguji anggota M terhadap keep terakhir sebagai percobaan biasa, dengan blok baru, sehingga tingkat keep palsu 1% per uji tetap berlaku bagaimanapun M dipilih. `hca confirm` bekerja seperti sebelumnya; confirm yang gagal menandai setiap anggota yang dibangun di atas keep yang dibatalkannya sebagai tainted.
+- **`hca next`** menampilkan anggaran, induk dan garis keturunannya, ide, arsip, dan petunjuk promosi, paling banyak dalam 60 baris. Perintah ini menggantikan `hca status`, yang masih dipertahankan selama satu rilis.
+
+Ini belum terbukti. Apakah populasi kandidat mendaki lebih baik daripada satu garis pada target nyata, itulah yang akan diukur oleh pendakian pembuktian di [dokumen desain](../DESIGN-climb-engine.md). Sampai itu dijalankan, mode garis tetap menjadi default, dan kedua showcase di atas didaki dalam mode garis. Mode eksplorasi hanya bekerja dalam mode `blocks`. Screen yang tercatat keluar dengan kode 0, dan yang tidak valid dengan 2.
 
 ## Apa yang bisa didaki
 

@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#schnellstart)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -196,6 +196,31 @@ flowchart LR
 - **Bestätigen, sonst zählt es nicht.** `hca confirm` prüft die Historie und misst dann den
   Gesamtgewinn gegen das Original neu. Der Agent sieht nur PASS oder FAIL.
 - **Alles auf der Platte.** Patch, Rohläufe, Urteil und Begründung jedes Versuchs liegen in `.hca/`.
+
+## Explore-Modus (experimentell, opt-in)
+
+Alles oben ist der *Linienmodus*: Jeder Kandidat wird gegen den letzten keep getestet. Der Explore-Modus
+ergänzt ein Gedächtnis für Ideen und einen Baum von Kandidatenprogrammen, ohne die Hürde für einen keep zu senken.
+
+- **Ideen.** Der Agent führt seine Hypothesen in `IDEAS.md` (`## I4 [avoid-work] Skip absent patterns`). `hca try --idea I4` hält fest,
+  welche Idee ein Versuch getestet hat, und `hca next` listet das Ergebnis jeder Idee.
+- **Screens.** `hca try --explore` misst ein Kind in 5–8 Blöcken gegen seinen *Elternteil*, der nicht der
+  letzte keep sein muss. Ein Screen ordnet das Kind ein und archiviert es. Er kann nie etwas behalten und ist
+  keine Evidenz.
+- **Archiv.** Eine Elite pro berührtem Modul, damit ein Zwischenschritt, der zunächst schlechter aussieht, lange
+  genug überlebt, um besser zu werden. Nach jedem Screen zieht HCA den nächsten Elternteil (mindestens 40% der
+  Zeit den letzten keep) und setzt die editierbaren Pfade darauf.
+- **Beförderung.** `hca try --promote M` testet Mitglied M als normalen Versuch gegen den letzten keep, auf
+  frischen Blöcken, sodass die Rate falscher keeps von 1% pro Test gilt, egal wie M gewählt wurde. `hca confirm`
+  funktioniert wie bisher; ein gescheitertes confirm markiert jedes Mitglied, das auf den rückgängig gemachten
+  keeps aufbaut, als belastet (tainted).
+- **`hca next`** zeigt Budget, Elternteil und Abstammung, die Ideen, das Archiv und einen Hinweis zur
+  Beförderung, in höchstens 60 Zeilen. Es ersetzt `hca status`, das noch ein Release lang bleibt.
+
+Das ist unbewiesen. Ob eine Population von Kandidaten auf echten Zielen besser klettert als eine einzelne Linie,
+sollen die Beweis-Climbs aus dem [Designdokument](../DESIGN-climb-engine.md) messen. Bis sie gelaufen sind, bleibt der
+Linienmodus der Standard, und beide Fallstudien oben wurden im Linienmodus erklommen. Der Explore-Modus
+funktioniert nur im Modus `blocks`. Ein aufgezeichneter Screen endet mit Exit-Code 0, ein ungültiger mit 2.
 
 ## Was du optimieren kannst
 

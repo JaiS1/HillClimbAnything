@@ -8,6 +8,8 @@ Workflow: `hca compare -- <A> -- <B>` (zero-setup A/B of two commands: differenc
 
 Exit codes: `hca compare` 0 B better by a significant amount (and by the keep rule for `--min-effect`), 1 not, 2 invalid, 3 usage, 4 internal error; `hca try` 0 keep, 1 revert, 2 invalid/void/refused, 3 usage, 4 internal error; `hca confirm` 0 pass, 1 fail (rolled back), 2 inconclusive/refused.
 
+Explore mode (opt-in, experimental, unproven, `blocks` mode only): the agent keeps hypotheses in `IDEAS.md` (`## I4 [avoid-work] title`); `hca next` prints the budget, the current parent and its lineage, the ideas with their outcome classes, the archive and a promotion hint; `hca try --explore --idea I4 -m "..."` screens a child against its parent in 5-8 blocks (ranked and archived, never kept, not evidence; exit 0 recorded, 2 invalid/void); `hca try --promote M -m "..."` tests archive member M as a normal try against the last keep on fresh blocks (`--again` if its tree was tried before, `--tainted` for a member a failed confirm tainted). `hca status` stays one release as the old short view. Details: [engine reference](https://github.com/JaiS1/HillClimbAnything/blob/main/skills/hca/references/engine.md).
+
 Do not use it when there is no repeatable command that prints the number, or for remote paid runs (the skill covers the method for those; there is no tooling yet). Tested on Linux, WSL and native Windows (Python 3.11+); macOS is untested.
 
 Rules for agents: never edit frozen files, `.hca/`, `~/.hca` or `hca.toml`; never commit yourself (HCA commits keeps); no caches keyed on benchmark content or special-casing of inputs; report only confirmed results with their bound and the number of tries.

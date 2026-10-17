@@ -12,7 +12,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#快速开始)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](../../pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](../../tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](../../tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](../../skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](../../LICENSE)
 
@@ -180,6 +180,18 @@ flowchart LR
 - **完全相同的两组。** 两组都是确切 commit 的干净 git worktree。被保留的 commit 就是被测量过的那棵树。
 - **没有 confirm 就不算数。** `hca confirm` 会先检查历史记录，再重新测量相对原始版本的总提升。agent 看到的只有 PASS 或 FAIL。
 - **一切落盘。** 每次尝试的补丁、原始运行数据、结论和理由都在 `.hca/` 中。
+
+## 探索模式（实验性，需主动开启）
+
+上面的一切都是*单线模式*：每个候选都与上一次 keep 对比测试。探索模式增加了一份想法记忆和一棵候选程序树，同时不降低 keep 的门槛。
+
+- **想法。** agent 把假设写在 `IDEAS.md` 里（`## I4 [avoid-work] Skip absent patterns`）。`hca try --idea I4` 记录一次尝试检验的是哪个想法，`hca next` 列出每个想法的结果。
+- **筛选（screen）。** `hca try --explore` 用 5–8 个 block 把子代与它的*父代*对比测量，父代不必是上一次 keep。筛选只给子代排名并存入档案，它永远不能 keep 任何东西，也不是证据。
+- **档案。** 每个被改动的模块保留一个精英，这样一开始看起来更差的垫脚石也能存活到它变好。每次筛选后，HCA 抽样选出下一个父代（至少 40% 的概率是上一次 keep），并把可编辑路径设置为它。
+- **晋升。** `hca try --promote M` 把成员 M 当作一次普通 try，在全新的 block 上与上一次 keep 对比测试，所以无论 M 是怎么选出来的，每次检验 1% 的误 keep 率都成立。`hca confirm` 照旧工作；confirm 失败时，建立在被撤销的 keep 之上的每个成员都会被标记为 tainted。
+- **`hca next`** 在最多 60 行内显示预算、父代及其谱系、想法、档案和晋升提示。它取代 `hca status`，后者再保留一个版本。
+
+这还没有被证明。在真实目标上，候选种群是否比单条线爬得更好，要由[设计文档](../DESIGN-climb-engine.md)中的验证性爬升来测量。在它们运行之前，单线模式仍是默认，上面两个 showcase 也都是用单线模式爬出来的。探索模式只支持 `blocks` 模式。记录成功的筛选以 0 退出，无效的以 2 退出。
 
 ## 能爬什么
 

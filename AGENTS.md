@@ -13,8 +13,9 @@ project, read [`skills/hca/SKILL.md`](skills/hca/SKILL.md) instead.
 | `hca/measure.py`, `hca/runner.py` | running commands and parsing their results; never use `Popen.wait(timeout=...)` for timing |
 | `hca/gitops.py`, `hca/arms.py`, `hca/ledger.py` | snapshot commits, arm worktrees, the `.hca/` ledger and the referee store |
 | `hca/core.py`, `hca/spec.py` | errors, JSON/hash helpers; `hca.toml` parsing and validation |
-| `hca/commands/` | `quick`, `compare`, `init`, `try_`, `confirm`, `report` (also `status`), `doctor` |
-| `tests/` | unittest suite (~2 min); `test_calibration.py` runs 100 no-op tries end to end |
+| `hca/explore.py` | explore mode: `IDEAS.md`, outcome classes, the archive, the parent sampler, promotion checks, taint (all derived from the referee store) |
+| `hca/commands/` | `quick`, `compare`, `init`, `try_` (also screens and promotions), `confirm`, `next_`, `report` (also `status`), `doctor` |
+| `tests/` | unittest suite (~3.5 min); `test_calibration.py` runs 100 no-op tries end to end; `test_explore.py` covers explore mode and pins a golden line-mode try |
 | `skills/hca/` | the agent skill and its references |
 | `docs/` | design, architecture contract (with amendments), limits, README assets and translations |
 | `showcases/` | recorded climbs with their ledgers and reproduction scripts |
@@ -52,6 +53,9 @@ python3 docs/readme/check.py                      # translations: links, numbers
   the doc.
 - **Never weaken the referee to make a test pass.** The referee covers scope checks, frozen hashes,
   snapshot arms and the referee store.
+- **Explore mode never keeps from a screen.** Screens have their own path (`_decide_screen`, `_finish_screen`);
+  a promotion is an ordinary try on fresh blocks. Counts and member checks read the referee store, never
+  `verdict.json` or `.hca/archive.json`. Line mode must stay identical (the golden test in `tests/test_explore.py`).
 - **Process hygiene:** kill only processes you started (by process group or PID), never by name
   pattern. Leave nothing running. Clean up temp dirs and worktrees.
 - **README claims must match measured evidence.** Numbers come from `showcases/` and `spikes/`,

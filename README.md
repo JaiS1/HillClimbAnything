@@ -10,7 +10,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?style=flat-square&logo=python&logoColor=white)](#quick-start)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-2a78d6?style=flat-square)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-282_passing-1baf7a?style=flat-square)](tests)
+[![Tests](https://img.shields.io/badge/tests-327_passing-1baf7a?style=flat-square)](tests)
 [![Agent skill](https://img.shields.io/badge/agent_skill-SKILL.md-5c4ee5?style=flat-square)](skills/hca/SKILL.md)
 [![MIT license](https://img.shields.io/badge/license-MIT-f4c430?style=flat-square)](LICENSE)
 
@@ -206,6 +206,30 @@ flowchart LR
 - **Confirm or it didn't happen.** `hca confirm` checks the history, then re-measures the total
   gain against the original. The agent sees PASS or FAIL.
 - **Everything on disk.** Every attempt's patch, raw runs, verdict and reasons are in `.hca/`.
+
+## Explore mode (experimental, opt-in)
+
+Everything above is *line mode*: each candidate is tested against the last keep. Explore mode adds
+a memory of ideas and a tree of candidate programs, without lowering the bar for a keep.
+
+- **Ideas.** The agent keeps its hypotheses in `IDEAS.md` (`## I4 [avoid-work] Skip absent patterns`).
+  `hca try --idea I4` records which idea an attempt tested, and `hca next` lists each idea's outcome.
+- **Screens.** `hca try --explore` measures a child against its *parent*, which need not be the
+  last keep, in 5–8 blocks. A screen ranks the child and archives it. It can never keep anything,
+  and it is not evidence.
+- **Archive.** One elite per touched module, so a stepping stone that reads worse at first survives
+  long enough to improve. After each screen HCA samples the next parent (the last keep at least 40%
+  of the time) and sets the editable paths to it.
+- **Promotion.** `hca try --promote M` tests member M against the last keep as a normal try, on
+  fresh blocks, so the 1% false-keep rate per test holds however M was chosen. `hca confirm` works as
+  before; a failed confirm taints every member built on the keeps it undid.
+- **`hca next`** shows the budget, the parent and its lineage, the ideas, the archive and a
+  promotion hint, in at most 60 lines. It replaces `hca status`, which stays for one release.
+
+This is unproven. Whether a population of candidates climbs better than a single line on real
+targets is what the proof climbs in the [design document](docs/DESIGN-climb-engine.md) will measure.
+Until they run, line mode is the default, and both showcases above were climbed in line mode. Explore
+mode works in `blocks` mode only. A recorded screen exits 0 and an invalid one exits 2.
 
 ## What you can climb
 
