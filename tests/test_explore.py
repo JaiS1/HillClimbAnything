@@ -54,9 +54,9 @@ class ExploreCase(repokit.RepoTestCase):
     def promote(self, m, message="promote", seed=2, again=False, tainted=False):
         return self._try(seed, message=message, promote=str(m), again=again, tainted=tainted)
 
-    def next_(self, parent=None):
+    def next_(self, parent=None, why="test override"):
         from hca.commands import next_
-        return self.hca(next_, args={"parent": None if parent is None else str(parent)})
+        return self.hca(next_, args={"parent": None if parent is None else str(parent), "why": why})
 
     def entry(self, n):
         return explore.entries("speedy")[n]
@@ -372,7 +372,7 @@ class CountTests(ExploreCase):
         _, text = self.report()
         self.assertIn("Attempts\n  none yet", text)
         self.assertIn("Validity rate: 0 of 0", text)
-        self.assertIn("Screens: 1 (they rank and archive", text)
+        self.assertIn("Screens: 1 (1 valid, 0 invalid)", text)
         self.set_speed(21)
         self.assertEqual(self.try_("real keep")[0], 0)
         self.assertEqual(self.confirm()[0], 0)
@@ -590,8 +590,8 @@ class NextTests(ExploreCase):
         self.assertIn("resolution ≈", text)
         self.assertIn("parent    0001  [src/speed.txt]  chosen by override", text)
         self.assertIn("lineage  0001 I1", text)
-        self.assertIn("archive   2 members, 1 of 7 modules", text)
-        self.assertRegex(text, r"promote   0001 ranked lead \+\d+\.\d pp")
+        self.assertIn("archive   2 members, 1 of 7 files", text)
+        self.assertRegex(text, r"promote   0001 lead \+\d+\.\d pp")
         self.assertIn("open      I1 SCREENED", text)
         self.assertIn("backlog   I2 [io]", text)
         self.assertIn("working   editable paths are at 0001", text)
@@ -764,12 +764,12 @@ class NextPiecesTests(ExploreCase):
     def test_warnings_after_ten_screens_without_a_promotion_and_twenty_without_a_confirm(self):
         from hca.commands import next_
         with mock.patch.object(ledger, "read_confirms", return_value=[]):
-            few = next_._warnings(self.ctx({n: {"kind": "screen", "at": "x"} for n in range(1, 10)}))
+            few = next_._warnings(self.ctx({n: {"kind": "screen", "at": "x", "valid": True} for n in range(1, 10)}))
             self.assertEqual(few, [])
-            ten = next_._warnings(self.ctx({n: {"kind": "screen", "at": "x"} for n in range(1, 11)}))
+            ten = next_._warnings(self.ctx({n: {"kind": "screen", "at": "x", "valid": True} for n in range(1, 11)}))
             self.assertEqual(len(ten), 1)
             self.assertIn("10 screens since the last promotion", ten[0])
-            many = {n: {"kind": "screen", "at": "x"} for n in range(1, 22)}
+            many = {n: {"kind": "screen", "at": "x", "valid": True} for n in range(1, 22)}
             many[5] = {"kind": "promote", "at": "x"}
             self.assertIn("20 screens since the last confirm", "\n".join(next_._warnings(self.ctx(many))))
 
@@ -783,19 +783,34 @@ class NextPiecesTests(ExploreCase):
         order = next_._backlog(self.ctx({}, records, ideas), parent=4)
         self.assertEqual(order, ["I3 [micro]", "I4 [dispatch]", "I2 [allocation]", "I1 [micro]", "I7 [algorithm]", "I5 [io]"])
 
-    def test_the_hint_needs_floor_plus_allowance_and_asks_for_a_re_screen_when_screens_are_noisy(self):
-        nodes = {1: {"f_rank": 0.040, "var": 0.0001, "se": 0.002, "blocks": 5}, 2: {"f_rank": 0.012, "var": 0.0, "se": 0.0, "blocks": 5}}
-        archive = {"elites": [1, 2], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 3}
+    def test_the_hint_promotes_a_clear_lead_however_noisy_and_re_screens_only_an_ambiguous_one(self):
+        def node(f_raw, se, blocks=5, lineage=(1,), step=None):
+            return {"f_raw": f_raw, "var": se * se, "se": se, "blocks": blocks, "lineage": list(lineage), "screened": True,
+                    "retired": False, "step": f_raw if step is None else step}
+        nodes = {1: node(0.040, 0.01)}
+        archive = {"elites": [1], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 3}
         best = explore.hint(archive, 5)
-        self.assertEqual(best["n"], 1)
-        self.assertAlmostEqual(best["needed"], 0.01 + 0.01 * math.sqrt(2 * math.log(3)))
-        self.assertFalse(best["rescreen"])
-        nodes[1]["se"] = 0.004                                            # SE_s > F / 3: re-screen first
-        self.assertTrue(explore.hint(archive, 5)["rescreen"])
-        nodes[1]["blocks"] = 10                                           # ... unless it already was
-        self.assertFalse(explore.hint(archive, 5)["rescreen"])
-        nodes[1]["f_rank"] = 0.02
-        self.assertEqual(explore.hint(archive, 5)["n"], 2)                # 1 falls short of floor + its allowance
+        self.assertEqual((best["n"], best["action"]), (1, "promote"))
+        self.assertAlmostEqual(best["allowance"], 0.01 * math.sqrt(2 * math.log(3)))  # M = the number of valid screens
+        nodes[1] = node(0.36, 0.0063)                                     # PM: a +36 pp lead with SE > F/3 promotes, no re-screen
+        self.assertEqual(explore.hint(archive, 5)["action"], "promote")
+        nodes[1] = node(0.020, 0.01)                                      # below floor + allowance, but could be above the floor
+        self.assertEqual(explore.hint(archive, 5)["action"], "rescreen")
+        nodes[1] = node(0.020, 0.01, blocks=10)                           # ... already re-screened: nothing to hint
+        self.assertIsNone(explore.hint(archive, 5))
+        nodes[1] = node(-0.03, 0.01)                                      # behind: nothing to hint
+        self.assertIsNone(explore.hint(archive, 5))
+        archive["screens"] = 1                                            # one screen: no selection, no allowance
+        nodes[1] = node(0.011, 0.01)
+        self.assertEqual(explore.hint(archive, 5)["allowance"], 0.0)
+
+    def test_the_hint_names_a_stacked_chain(self):
+        nodes = {1: {"f_raw": 0.02, "var": 0.0, "se": 0.0, "blocks": 5, "lineage": [1], "screened": True, "retired": False, "step": 0.02},
+                 2: {"f_raw": 0.05, "var": 0.0, "se": 0.0, "blocks": 5, "lineage": [1, 2], "screened": True, "retired": False, "step": 0.03}}
+        best = explore.hint({"elites": [2], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 2}, 5)
+        self.assertEqual((best["n"], best["stacked"]), (2, [1, 2]))
+        nodes[1]["retired"] = True                                        # step 1 is already in the incumbent: no chain left
+        self.assertEqual(explore.hint({"elites": [2], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 2}, 5)["stacked"], [])
 
     def test_next_never_prints_more_than_60_lines(self):
         from hca.commands import next_
@@ -1042,3 +1057,164 @@ class ExactAlphaControlTests(ExploreCase):
         self.assertEqual(rec["blocks"], len(drawn))
         self.assertAlmostEqual(rec["estimate_log"], stats.hodges_lehmann(drawn))
         self.assertFalse(set(screen_scores) & set(drawn))
+
+
+# --- friction from the proof climbs (PM -50.2%, yaml -8.8%) ----------------------------------------------------------
+
+class ProofClimbFixTests(ExploreCase):
+    def promoted_lineage(self):
+        """PM's sequence: promote member A (keep 2), then screen A's child B and promote it."""
+        self.init()
+        self.set_speed(28)
+        self.screen("A")                                                  # 1
+        self.next_(parent="incumbent")
+        self.assertEqual(self.promote(1)[0], 0)                           # 2: keep, promoting member 1
+        self.next_(parent=1, why="build on the promoted member")
+        self.repo.write("src/boost.txt", "1\n")
+        self.set_speed(26)
+        self.screen("B, child of A")                                      # 3
+        self.next_(parent="incumbent")
+
+    def test_promoting_the_child_of_a_promoted_member_drops_no_keep(self):
+        self.promoted_lineage()
+        self.assertEqual(explore.dropped_keeps(self.root, self.state(), self.entry(3)["sha"]), [])
+        code, text = self.promote(3)                                      # 4
+        self.assertIn("dropped keeps: none", text)
+        self.assertEqual(explore.dropped_at(self.root, self.state(), 4), [])
+        self.assertNotIn("dropped", self.report()[1].split("Stepping stones")[1].split("\n")[1])
+        self.assertNotIn("dropped   ", self.next_()[1])
+
+    def test_a_promoted_member_and_its_ancestors_are_retired_from_sampling(self):
+        self.promoted_lineage()
+        self.assertEqual(self.promote(3)[0], 0)                           # 4: promotes B, whose parent A was promoted before
+        archive = explore.build(self.root, repokit_spec(self.root), self.state(), 9)
+        self.assertEqual(archive["retired"], [1, 3])
+        self.assertFalse(set(archive["elites"]) & {1, 3})
+        self.assertTrue(all(explore.sample(archive, k, 9)["parent"] not in (1, 3) for k in range(50)))
+        self.assertIn("2 retired (in the incumbent)", self.next_()[1])
+
+    def test_a_stepping_stone_is_a_screen_worse_than_its_parent_and_stone_keeps_are_reported(self):
+        self.init()
+        self.set_speed(31)
+        self.screen("stone: slower alone")                                # 1: worse than its parent
+        self.next_(parent=1, why="build on the stone")
+        self.set_speed(25)
+        self.screen("pays off on the stone")                              # 2
+        self.next_(parent="incumbent")
+        archive = explore.build(self.root, repokit_spec(self.root), self.state())
+        self.assertEqual(archive["stepping_stones"], [1])
+        self.promote(2)                                                   # 3: keeps; its lineage holds the stone
+        self.assertEqual(explore.stone_keeps("speedy"), [3])
+        self.assertIn("Stepping stones: 1 screen(s) read worse than their own parent; kept promotions built on one: 1.", self.report()[1])
+        self.assertIn("1 stepping stones (screened worse than their parent) · 0 behind the incumbent", self.next_()[1])
+
+    def test_init_name_runs_a_new_task_without_editing_hca_toml_and_logs_it(self):
+        from hca.commands import init
+        ledger.init_store("speedy", "0" * 40, None, {}, {})               # an earlier climb under this name used a confirm
+        ledger.append_confirm("speedy", {"n": 1, "outcome": "pass"})
+        with self.assertRaises(HcaError) as caught:
+            self.init()
+        self.assertIn("hca init --name speedy-2", str(caught.exception))
+        with self.assertRaises(HcaError):
+            self.hca(init, args={"heldout": None, "force": False, "reset": False, "name": "Bad Name"}, aa_blocks=8, seed=1)
+        with self.assertRaises(HcaError):                                 # the hca.toml name itself stays refused
+            self.hca(init, args={"heldout": None, "force": False, "reset": False, "name": "speedy"}, aa_blocks=8, seed=1)
+        code, text = self.hca(init, args={"heldout": None, "force": False, "reset": False, "name": "speedy-2"}, aa_blocks=8, seed=1)
+        self.assertEqual(code, 0, text)
+        state = self.state()
+        self.assertEqual((state["task"], state["spec_task"], state["branch"]), ("speedy-2", "speedy", "hca/speedy-2"))
+        self.assertEqual(self.repo.git("status", "--porcelain"), "")       # hca.toml untouched
+        self.set_speed(25)
+        self.assertEqual(self.try_("works under the new name")[0], 0)
+        self.assertEqual(ledger.load_store("speedy")["renamed_to"][0]["task"], "speedy-2")
+        self.assertEqual(ledger.load_store("speedy-2")["renamed_from"][0]["spec_name_confirms_used"], 1)
+        self.assertIn("hca.toml says 'speedy'", self.report()[1])
+
+    def test_a_refusal_is_on_stdout_and_says_how_to_recover_without_git_stash(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("P")
+        self.next_(parent="incumbent")
+        self.repo.write("src/boost.txt", "4\n")
+        with contextlib.chdir(self.root), contextlib.redirect_stdout(io.StringIO()) as shown, contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["next", "--parent", "1", "--why", "x"]), 2)
+        self.assertTrue(shown.getvalue().startswith("REFUSED (exit 2): the editable paths hold edits"))
+        self.assertIn("src/boost.txt", shown.getvalue())
+        self.assertIn(f"git checkout {self.state()['last_keep'][:12]} -- src/boost.txt", shown.getvalue())
+        self.assertIn("Do not `git stash` them", shown.getvalue())
+
+    def test_a_crlf_rewrite_gets_a_churn_warning(self):
+        self.repo.write("src/big.txt", "".join(f"line {i}\n" for i in range(120)))
+        self.repo.commit_all("a big file")
+        self.init()
+        (self.root / "src" / "big.txt").write_bytes("".join(f"line {i}\r\n" for i in range(120)).replace("line 7\r", "LINE 7\r").encode())
+        code, text = self.screen("one line, CRLF everywhere")
+        self.assertIn("changes 120 lines, but only 1 once line endings are ignored", text)
+        self.assertEqual(self.attempt(1)["churn"], {"lines": 120, "ignoring_line_endings": 1})
+
+    def test_invalid_screens_are_counted_apart(self):
+        self.init()
+        self.screen("no edit")                                            # 1: invalid
+        self.set_speed(27)
+        self.screen("real")                                               # 2
+        self.next_(parent="incumbent")
+        self.assertIn("screens 1 (1 invalid)", self.next_()[1])
+        self.assertIn("Screens: 2 (1 valid, 1 invalid)", self.report()[1])
+        self.assertEqual(explore.build(self.root, repokit_spec(self.root), self.state())["screens"], 1)
+
+    def test_parent_overrides_need_a_reason_that_is_recorded_and_the_rate_is_reported(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("P")                                                  # 1
+        with self.assertRaises(HcaError) as caught:
+            self.next_(parent=1, why=None)
+        self.assertIn("--why", str(caught.exception))
+        _, text = self.next_(parent=1, why="P's table makes the next idea one line")
+        self.assertIn("chosen by override (P's table makes the next idea one line)", text)
+        self.assertIn('then      edit from 0001, then:  hca try --explore --idea I<n> -m "..."', text)
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("child")                                              # 2
+        self.assertEqual(self.attempt(2)["explore"]["sampling"]["why"], "P's table makes the next idea one line")
+        self.assertIn("parent overrides 1 (50% of 2 screens)", self.report()[1])
+
+    def test_next_says_confirm_now_after_two_keeps(self):
+        self.init()
+        self.set_speed(27)
+        self.assertEqual(self.try_("one")[0], 0)
+        self.assertNotIn("confirm   ", self.next_()[1])
+        self.set_speed(24)
+        self.assertEqual(self.try_("two")[0], 0)
+        self.assertIn("confirm   2 keeps since the last confirm  →  hca confirm (5 of 5 left)", self.next_()[1])
+
+
+class CellTests(ExploreCase):
+    def test_weighty_skips_metadata_small_reexports_test_helpers_and_tiny_files(self):
+        self.assertFalse(explore.weighty("markdown/__meta__.py", 5000))
+        self.assertFalse(explore.weighty("markdown/__init__.py", 900))
+        self.assertTrue(explore.weighty("markdown/__init__.py", 9000))
+        self.assertFalse(explore.weighty("markdown/test_tools.py", 9000))
+        self.assertFalse(explore.weighty("lib/tests/helpers.js", 9000))
+        self.assertFalse(explore.weighty("src/parser/x.spec.ts", 9000))
+        self.assertFalse(explore.weighty("src/tiny.ts", 120))
+        self.assertTrue(explore.weighty("markdown/treeprocessors.py", 17000))
+
+    def test_cells_are_files_for_a_small_editable_set_and_dream_lists_only_weighty_empty_cells(self):
+        from hca.commands import next_
+        self.repo.write("src/parser/a.ts", "x" * 900)
+        self.repo.write("src/parser/b.ts", "y" * 900)
+        self.repo.write("src/__init__.py", "from .a import *\n")
+        self.repo.write("src/test_tools.py", "z" * 900)
+        self.repo.commit_all("more editable files")
+        self.init()
+        self.repo.write("src/parser/a.ts", "x" * 899 + "!")
+        self.screen("a")
+        self.next_(parent="incumbent")
+        archive = explore.build(self.root, repokit_spec(self.root), self.state())
+        self.assertTrue(archive["per_file"])
+        self.assertEqual(list(archive["cells"]), ["src/parser/a.ts"])     # not "src/parser"
+        dream = next_.dream(self.root, repokit_spec(self.root), self.state()).read_text()
+        self.assertIn("- empty cells (files with code weight): src/parser/b.ts\n", dream)
+        self.assertIn("only if that file is plausibly hot", dream)
+        self.repo.write("IDEAS.md", "hot: src/speed.txt\n")
+        dream = next_.dream(self.root, repokit_spec(self.root), self.state()).read_text()
+        self.assertIn("- empty cells (the hot: list in IDEAS.md): src/speed.txt\n", dream)
