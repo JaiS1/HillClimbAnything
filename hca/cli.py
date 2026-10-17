@@ -73,6 +73,8 @@ def main(argv=None) -> int:
     try:
         return _dispatch(args, parser)
     except Refusal as exc:
+        # On stdout too: an agent that reads only stdout must not mistake a refusal (exit 2) for silence or success.
+        print(f"REFUSED (exit {EXIT_REFUSED}): {exc}")
         print(f"hca: refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED
     except HcaError as exc:
