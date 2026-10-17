@@ -32,6 +32,7 @@ from . import common
 NO_EVIDENCE = ("No evidence, not no effect: the interval {interval} still allows the useful effect ({useful}). "
                "More blocks or a lower-noise measurement could tell; this is not proof that the idea fails.")
 SCREEN_BOUND_LEVEL = 0.05        # the screen's one-sided display bound; printed only from 5 blocks (2^-4 > 0.05)
+CHURN_LINES, CHURN_RATIO = 50, 5  # a snapshot this many changed lines, five times more than with line endings ignored, is churn
 
 
 def add_arguments(parser) -> None:
@@ -170,6 +171,7 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     patch = gitops.patch_between(root, t.base, t.snap["sha"])
     (adir / "patch.diff").write_text(patch, encoding="utf-8")
     rec["review_pointers"] = t.store_extra["pointers"] = explore.pointers(patch)
+    _churn_warning(t)
     if t.snap["tree"] == gitops.tree_of(root, t.base):
         return _end(t, "invalid", ["no changes: the editable files equal the last keep once build and cache files are ignored"], note="empty")
     if kind != "try":
@@ -216,6 +218,19 @@ def _interrupted(t: _Try, exc) -> None:
         else:
             _record(t, "void", [f"crashed: {type(exc).__name__}: {exc}"])
         arms.prune_unused(t.root, explore.arm_shas(t.state))
+
+
+def _churn_warning(t: _Try) -> None:
+    """Warn when whole-file churn dwarfs the edit (a CRLF rewrite turns a 6-line edit into hundreds of changed lines)."""
+    churn = sum(gitops.numstat(t.root, t.spec, t.base, t.snap["sha"]).values())
+    if churn < CHURN_LINES:
+        return
+    real = sum(gitops.numstat(t.root, t.spec, t.base, t.snap["sha"], ignore_eol=True).values())
+    if churn > CHURN_RATIO * max(real, 1):
+        t.rec["churn"] = {"lines": churn, "ignoring_line_endings": real}
+        t.out(f"warning: this snapshot changes {churn} lines, but only {real} once line endings are ignored: a whole-file rewrite "
+              "(CRLF?) is churning the diff. The measurement is unaffected, but patches, divergence and the overlap check read it as "
+              "a huge change. Fix: normalise line endings (your editor's setting, or `* text=auto eol=lf` in .gitattributes) and save again.")
 
 
 def _end(t: _Try, verdict, reasons, note=None) -> int:
@@ -478,7 +493,7 @@ def _finish_screen(t: _Try, verdict, reasons, valid=False, guards=None, note=Non
         vs_incumbent = sum(gitops.numstat(root, spec, state["last_keep"], t.snap["sha"]).values())
         module = explore.module_of(changed)
         rec["explore"].update(module=module, divergence=round(sum(changed.values()) / parent_lines, 4), lines_vs_incumbent=vs_incumbent)
-        t.store_extra.update(module=module, scores=screen["scores"], se=screen["se"], blocks=screen["blocks"])
+        t.store_extra.update(module=module, file=explore.file_of(changed), scores=screen["scores"], se=screen["se"], blocks=screen["blocks"])
         rec["class"] = "SCREENED"
         lines.append(f"  divergence {100 * rec['explore']['divergence']:.0f}% of the parent's editable lines ({vs_incumbent} lines vs the incumbent)"
                      f" · review pointers: {', '.join(rec['review_pointers']) or 'none'}")
