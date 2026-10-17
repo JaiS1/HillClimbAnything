@@ -487,14 +487,22 @@ Line mode (everything above) is unchanged: a seeded line try has the same block 
   to it and prints the ready-to-run `hca try --explore --idea I<n>` line. `--parent M` (or `incumbent`) overrides the
   sampler and requires `--why` (a one-line reason, exit 3 without it), recorded in the sampling log of the next screen; the
   report gives the override rate. It also prints "confirm now" once two or more keeps are unconfirmed.
-- **`hca init --name TASK`** runs the climb as task TASK instead of hca.toml's `[task] name`, without editing the frozen
-  file: a new branch `hca/TASK`, a new referee store, a fresh baseline at HEAD and its own confirm cap. `state.json`
-  records `task` and `spec_task`, and every later command accepts that pair. Both stores log the rename with the confirms
-  the hca.toml name had used (`report` and `report --referee` show it). It cannot re-baseline a name whose store holds
-  confirms: `--name` equal to that name is still refused, so the cap of a task is never reset; the refusal now names
-  `--name` as the way to start a new task.
   Refused (exit 2) over unscreened edits or a tainted or invalid M; an M that is not an attempt id or `incumbent` is a
-  usage error (exit 3). Exit 0 otherwise.
+  usage error (exit 3). Exit 0 otherwise. The reason is reduced to one printable line of at most 200 characters, and the
+  referee store's screen entry records `override` (true, false, or null when the sampler was not used: the first screen,
+  or right after a promotion) and `why`; the report's override rate is computed from the store.
+- **`hca init --name TASK`** runs the climb as task TASK instead of hca.toml's `[task] name`, without editing the frozen
+  file: a new branch `hca/TASK`, a new referee store and a fresh baseline at HEAD. `state.json` records `task` and
+  `spec_task`, and every later command accepts that pair. The task it follows on from is the session's current task (or
+  the hca.toml name). A rename is a link in a **chain**, never a way round the record:
+  - it is refused unless HEAD's tree is the previous task's original or its last confirmed commit;
+  - after a FAILed last confirm it needs `HCA_ALLOW_RESET=1` (a human), as a reset does;
+  - the previous task's held-out set is inherited (a different `--heldout` is refused); it is never dropped;
+  - both stores log the link (`renamed_to`, `renamed_from`), and the new store's `chain` carries every earlier task with
+    its confirms and FAILs; `report` prints "Re-baselined from 'X' after N confirm(s) (K FAIL)" under the headline;
+  - **the confirm cap counts the whole chain**: a confirm is refused once the confirms of this task plus those of every
+    earlier name reach `[limits] confirms`. A name whose own store holds confirms is still refused as before.
+  `--name ""` is a usage error, and `--name` equal to the hca.toml name is no rename (nothing is logged).
 - **`hca report --dream`** writes `.hca/DREAM.md` from the store, the attempt records and the archive, with no benchmark
   run, under the repo lock. Six sections, each list capped at 25 entries plus a "(+N more)" line, so the file stays under
   150 lines and always ends with the fixed instruction. Exit 0.

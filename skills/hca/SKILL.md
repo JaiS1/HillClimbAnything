@@ -46,7 +46,8 @@ referee or work around it. A win it can't confirm is not a win.
    Then run `hca init`. If you already committed the harness (`hca.toml`, the benchmark) on a
    `hca/<task>` branch, stay on it: init adopts that branch as it is and prints one line saying so.
    An existing `hca/<task>` branch that is not checked out is refused; check it out, or delete it if stale.
-   If the referee store already holds confirms for the task name, start a new task with `hca init --name <task>-2`.
+   If the referee store already holds confirms for the task name, start a new task with `hca init --name <task>-2`: it
+   inherits the held-out set and the confirm count, and after a failed confirm only the user may do it.
 
 ## 2. The climb (Tier 0: local, cheap, reversible)
 

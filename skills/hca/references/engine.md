@@ -111,8 +111,10 @@ bound). A promotion's has `explore.member`, `lineage`, `dropped_keeps`, `tainted
 ## Starting a renamed climb
 
 If `hca init` refuses because the referee store already holds confirms for the task's name, start a new task without
-editing the frozen `hca.toml`: `hca init --name <task>-2`. It is a fresh baseline with its own confirm cap; both stores log
-the rename. Running the old name again is still refused.
+editing the frozen `hca.toml`: `hca init --name <task>-2` (with `--reset` when this checkout already has a session). It is a
+fresh baseline, but a link in a chain, not a clean slate: HEAD must be the previous task's original or last confirmed
+tree, a failed last confirm needs a human (`HCA_ALLOW_RESET=1`), the held-out set is inherited, the report says what was
+re-baselined, and the confirm cap counts every confirm along the chain. Running the old name again is still refused.
 
 ## Rules
 
