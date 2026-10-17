@@ -38,12 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_arguments(sub.add_parser("doctor", help="check the environment for things that corrupt measurements"))
     setup.add_arguments(sub.add_parser("setup", help="install the hca skill so your coding agents can use it",
                                        description="Install (or --uninstall) the hca agent skill in ~/.claude/skills and ~/.agents/skills."))
-    from .commands import confirm, init, report, try_
+    from .commands import confirm, init, next_, report, try_
     init.add_arguments(sub.add_parser("init", help="validate hca.toml, create the branch, run the baseline A/A"))
-    try_.add_arguments(sub.add_parser("try", help="measure the current edits against the last keep; keep or revert"))
+    try_.add_arguments(sub.add_parser("try", help="measure the current edits against the last keep; keep or revert (--explore: screen vs the parent)"))
     confirm.add_arguments(sub.add_parser("confirm", help="re-measure the cumulative change against the original (held-out if any)"))
+    next_.add_arguments(sub.add_parser("next", help="what to do next: budget, parent, lineage, ideas, archive, promotion hint"))
     report.add_report_arguments(sub.add_parser("report", help="print the execution report"))
-    report.add_status_arguments(sub.add_parser("status", help="print the short state"))
+    report.add_status_arguments(sub.add_parser("status", help="the old short state (kept for one release; use `hca next`)"))
     return parser
 
 
@@ -114,6 +115,9 @@ def _dispatch(args, parser) -> int:
     if args.cmd == "report":
         from .commands import report
         return report.run(args)
+    if args.cmd == "next":
+        from .commands import next_
+        return next_.run(args)
     if args.cmd == "status":
         from .commands import report
         return report.run_status(args)
