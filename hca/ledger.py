@@ -203,7 +203,11 @@ def write_record(directory, name, data) -> None:
 
 
 def read_attempts(root) -> list:
-    """verdict.json of every attempt, oldest first (an attempt with no verdict yet is skipped)."""
+    """verdict.json of every attempt, oldest first (an attempt with no verdict yet is skipped).
+
+    `kind` is taken from the referee store's entry for the same attempt whenever there is one: verdict.json is agent-writable,
+    and relabelling a keep as a screen must not hide it from the headline, the report or confirm (N2).
+    """
     out = []
     base = attempts_dir(root)
     if base.exists():
@@ -214,6 +218,13 @@ def read_attempts(root) -> list:
                     out.append(read_json(record))
                 except ValueError:
                     continue
+    try:
+        kinds = {e.get("n"): kind_of(e) for e in session_attempts(read_json(state_path(root))["task"])}
+    except (OSError, ValueError, KeyError, TypeError, HcaError):
+        kinds = {}
+    for record in out:
+        if isinstance(record, dict) and record.get("n") in kinds:
+            record["kind"] = kinds[record["n"]]
     return out
 
 
