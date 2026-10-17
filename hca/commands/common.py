@@ -7,13 +7,14 @@ import random
 import statistics
 from pathlib import Path
 
-from .. import gitops, ledger, paired, stats
+from .. import explore, gitops, ledger, paired, stats
 from ..core import HcaError, Refusal, read_json, write_json
 from ..spec import load_spec
 
 ITEMS_ALPHA = 0.02          # two-sided, so the one-sided lower bound sits at 1%: the same per-try level as blocks mode
 ITEMS_MIN_UNITS = 8
 EXIT_KEEP, EXIT_REVERT, EXIT_INVALID, EXIT_USAGE = 0, 1, 2, 3
+EXIT_SCREEN = 5             # a screen was recorded: not 0, so `hca try --explore && ...` can never read a screen as a keep
 
 
 PENDING_KEEP = "pending-keep.json"
@@ -47,6 +48,7 @@ def open_session(cwd=None, on_branch=True, out=print) -> tuple:
     """
     root = gitops.repo_root(cwd)
     state = ledger.load_state(root)
+    gitops.ignore_notebook(state.get("explore") is not None)     # IDEAS.md is the notebook once explore mode is in use
     spec = load_spec(root / "hca.toml")
     if spec.task.name != state["task"]:
         raise HcaError(f"hca.toml says task {spec.task.name!r} but this session is {state['task']!r}. "
@@ -116,9 +118,11 @@ def reconcile_pending(root, spec, state, out=print) -> None:
                 write_json(adir / "verdict.json", record)
         else:
             gitops.revert(root, spec, sha)                 # the working tree's editable paths may still hold the undone content
-            for a in ledger.read_attempts(root):
+            for a in ledger.tests_only(ledger.read_attempts(root)):
                 if a.get("confirm") == "pending":
                     ledger.update_attempt(root, a["n"], confirm="unconfirmed")
+            # B2 after a crash: the store marks and the taint must not depend on the confirm process having lived to make them.
+            explore.taint_after_fail(root, state, old, entry.get("target") or state.get("last_confirmed") or state["init_sha"])
         ledger.refresh_verdicts(root, state, spec)
         clear_pending(root, task)
         out(f"warning: finished an interrupted {'keep' if kind == 'keep' else 'confirm reset'}: the branch is at {sha[:12]}.")

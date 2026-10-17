@@ -165,7 +165,7 @@ def _run(args=None, out=print, cwd=None, seed=None) -> int:
         saved = ledger.hca_dir(root) / f"discarded-by-confirm-{number:02d}.diff"
         saved.write_text(dirty_patch, encoding="utf-8")
     made = gitops.restore_commit(root, spec, target, gitops.RESTORE_SUBJECT)
-    common.write_pending(root, task, {"kind": "restore", "snapshot_sha": made["sha"], "last_keep": made["here"]})
+    common.write_pending(root, task, {"kind": "restore", "snapshot_sha": made["sha"], "last_keep": made["here"], "target": target})
     gitops.advance_branch(root, state["branch"], made["sha"], made["here"])
     gitops.revert(root, spec, made["sha"])             # sync the working tree's editable paths (this also drops uncommitted edits)
     sha = made["sha"]

@@ -177,7 +177,8 @@ def build(root, spec, state, seed=None) -> dict:
     return {"seed": seed, "incumbent": incumbent, "f_inc": f_inc, "nodes": nodes, "elites": elites, "children": children,
             "cells": {c: {"elite": n, "f_rank": round(nodes[n]["f_rank"], 6), "children": children.get(n, 0)} for c, n in sorted(cells.items())},
             "stepping_stones": [n for n in elites if nodes[n]["f_rank"] < f_inc],
-            "tainted": sorted(n for n, node in nodes.items() if node["tainted"]), "floor": 0.5 * spec.objective.useful}
+            "tainted": sorted(n for n, node in nodes.items() if node["tainted"]), "floor": 0.5 * spec.objective.useful,
+            "screens": sum(1 for e in by_n.values() if ledger.kind_of(e) == "screen")}
 
 
 def write_cache(root, archive) -> None:
@@ -217,10 +218,11 @@ def sample(archive, screens, seed) -> dict:
 
 def hint(archive, n_s) -> dict | None:
     """The best untainted elite whose ranked lead over the incumbent is >= F + A, A = SE_chain * sqrt(2 ln M) (or None).
+    M is the number of screens: every screened child was a candidate for the selection that ranks this one first.
 
     `rescreen` is set when the screen is noisier than F/3 and the member has not been re-screened yet.
     """
-    nodes, floor, m, best = archive["nodes"], archive["floor"], len(archive["elites"]) + 1, None
+    nodes, floor, m, best = archive["nodes"], archive["floor"], max(1, archive.get("screens", 1)), None
     for n in archive["elites"]:
         node = nodes[n]
         needed = floor + math.sqrt(node["var"]) * math.sqrt(2 * math.log(m))
@@ -260,22 +262,50 @@ def lineage(task, n) -> list:
 
 
 def dropped_keeps(root, state, sha) -> list:
-    """Keeps on the branch (not undone by a failed confirm) that `sha` does not contain: promoting it drops them (S1)."""
-    by_n = entries(state["task"])
-    return [n for k, n in gitops.keep_commits(root, state["init_sha"], state["last_keep"])
-            if n and not by_n.get(n, {}).get("unconfirmed") and not gitops.is_ancestor(root, k, sha)]
+    """Keeps on the branch (not undone by a failed confirm) that `sha` does not contain: promoting it drops them (S1).
+
+    A keep is dropped if `sha` does not descend from it, or if it does but a path the keep changed is back at the keep's
+    parent's content in `sha` (the member undid that file by hand)."""
+    by_n, mine, out = entries(state["task"]), gitops.tree_entries(root, sha), []
+    for k, n in gitops.keep_commits(root, state["init_sha"], state["last_keep"]):
+        if not n or by_n.get(n, {}).get("unconfirmed"):
+            continue
+        if not gitops.is_ancestor(root, k, sha):
+            out.append(n)
+            continue
+        before, after = gitops.tree_entries(root, f"{k}^"), gitops.tree_entries(root, k)
+        if any(after.get(p) != before.get(p) and mine.get(p) == before.get(p) for p in set(before) | set(after)):
+            out.append(n)
+    return out
 
 
 def taint_after_fail(root, state, failed_tip, target) -> list:
-    """Confirm FAIL hook (B2): mark the undone keeps unconfirmed, taint every measured attempt whose snapshot descends from
-    one of them, and reset the explore parent to the new incumbent. Returns the tainted ids."""
+    """Confirm FAIL hook (B2): mark the undone keeps unconfirmed, taint every measured attempt built on one of them, and reset
+    the explore parent to the new incumbent. Idempotent (crash recovery calls it again). Returns the newly tainted ids.
+
+    "Built on" is content, not only git ancestry: a promotion's keep is a fresh commit on the last keep, so the member it
+    promoted and that member's children do not descend from it. An attempt is tainted if its snapshot descends from an undone
+    keep, if its tree is an undone keep's tree, if it is the member an undone promotion promoted, or if any ancestor on its
+    store parent chain is one of those."""
     task = state["task"]
     undone = [(k, n) for k, n in gitops.keep_commits(root, target, failed_tip) if n]
     for _, n in undone:
         ledger.update_entry(task, n, unconfirmed=True)
+    by_n = entries(task)
+    keeps = {n for _, n in undone}
+    trees = {gitops.tree_of(root, k) for k, _ in undone}
+    promoted = {by_n.get(n, {}).get("member") for n in keeps} - {None}
+
+    def bad(n):
+        e = by_n.get(n, {})
+        return e.get("tree") in trees or n in promoted
+
     tainted = []
-    for n, e in sorted(entries(task).items()):
-        if e.get("sha") and not e.get("tainted") and any(gitops.is_ancestor(root, k, e["sha"]) for k, _ in undone):
+    for n, e in sorted(by_n.items()):
+        if not e.get("sha") or e.get("tainted") or n in keeps:
+            continue
+        chain = lineage(task, n)
+        if any(bad(i) for i in chain) or any(gitops.is_ancestor(root, k, e["sha"]) for k, _ in undone):
             ledger.update_entry(task, n, tainted=True)
             tainted.append(n)
     if state.get("explore") is not None:
