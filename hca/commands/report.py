@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .. import gitops, ledger
+from .. import explore, gitops, ledger
 from ..core import HcaError
 from ..spec import load_spec
 
@@ -60,22 +60,32 @@ def _rows(attempts, mode) -> list:
 HEADER = ["n", "verdict", "estimate", "p", "blocks", "wall", "message"]
 
 
-def _explore_lines(tests, screens, counts) -> list:
-    """Explore mode's disclosure lines (none in a line-mode climb): screens kept out of the bound, promotions, overrides, dropped keeps."""
+def _explore_lines(root, state, tests, screens, counts) -> list:
+    """Explore mode's disclosure lines (none in a line-mode climb): screens (valid and invalid) kept out of the bound,
+    promotions, the override rate, stepping stones, dropped keeps and tainted promotions. Counts, stones and dropped keeps
+    are derived from the referee store and the refs, so a ledger written by an older hca reads correctly too."""
     if not (counts["screen"] or counts["promote"]):
         return []
+    task = state["task"]
+    by_n = explore.entries(task)
+    valid = sum(1 for e in by_n.values() if ledger.kind_of(e) == "screen" and e.get("valid"))
     promos = [a for a in tests if a.get("kind") == "promote"]
-    overrides = sum(1 for a in screens if ((a.get("explore") or {}).get("sampling") or {}).get("parent_p", 0) is None)
+    overrides = [a for a in screens if ((a.get("explore") or {}).get("sampling") or {}).get("parent_p", 0) is None]
     divergent = sum(1 for a in screens if ((a.get("explore") or {}).get("divergence") or 0) > 0.25)
-    lines = [f"Screens: {counts['screen']} (they rank and archive a child against its parent; they cannot keep and are not in the bound above).",
-             f"Promotions: {counts['promote']} ({sum(1 for a in promos if a.get('verdict') == 'keep')} kept); parent overrides {overrides}; "
-             f"high-divergence children (> 25% of the parent's lines) {divergent}."]
+    stones = [n for n, e in by_n.items() if ledger.kind_of(e) == "screen" and e.get("valid") and (e.get("estimate_log") or 0) < 0]
+    rate = f" ({100 * len(overrides) / len(screens):.0f}% of {len(screens)} screens)" if screens else ""
+    lines = [f"Screens: {counts['screen']} ({valid} valid, {counts['screen'] - valid} invalid); they rank and archive a child against "
+             "its parent, cannot keep, and are not in the bound above.",
+             f"Promotions: {counts['promote']} ({sum(1 for a in promos if a.get('verdict') == 'keep')} kept); parent overrides "
+             f"{len(overrides)}{rate}; high-divergence children (> 25% of the parent's lines) {divergent}.",
+             f"Stepping stones: {len(stones)} screen(s) read worse than their own parent; kept promotions built on one: "
+             f"{len(explore.stone_keeps(task))}."]
     for a in promos:
-        info = a.get("explore") or {}
-        if info.get("dropped_keeps"):
-            lines.append(f"Promotion {a['n']:04d} dropped " + ", ".join(f"keep {k:04d}" for k in info["dropped_keeps"])
-                         + " (the member was forked before them; its whole tree was tested).")
-        if info.get("tainted"):
+        dropped = explore.dropped_at(root, state, a["n"])
+        if dropped:
+            lines.append(f"Promotion {a['n']:04d} dropped " + ", ".join(f"keep {k:04d}" for k in dropped)
+                         + " (the member lacks them; its whole tree was tested).")
+        if (a.get("explore") or {}).get("tainted"):
             lines.append(f"Promotion {a['n']:04d} promoted a TAINTED member (--tainted): its lineage held a keep a failed confirm undid.")
     return lines
 
@@ -114,7 +124,7 @@ def build(root, spec, state, attempts, confirms) -> dict:
     stat = gitops.diff_stat(root, state["init_sha"], tip) if tip != state["init_sha"] else ""
     return {"mode": mode, "headline": head, "rows": rows, "valid": valid, "total": total, "unproven": unproven,
             "mechanism": mech, "slices": sliced, "diffstat": stat, "tip": tip, "tries": max(tries + counts["promote"], total),
-            "explore": _explore_lines(attempts, screens, counts),
+            "explore": _explore_lines(root, state, attempts, screens, counts),
             "resets": (ledger.load_store(state["task"]) or {}).get("resets", [])}
 
 
@@ -126,7 +136,8 @@ def render_text(state, spec, data) -> str:
         return "  ".join(str(c).ljust(widths[i]) if i < len(cells) - 1 else str(c) for i, c in enumerate(cells))
 
     useful = spec.objective.useful_effect if spec else state.get("useful_effect")
-    lines = [f"HCA report: {state['task']} (branch {state['branch']}; {mode} mode; {state.get('metric')} {state.get('direction')}; "
+    renamed = f"; run with `init --name`, hca.toml says {state['spec_task']!r}" if state.get("spec_task") else ""
+    lines = [f"HCA report: {state['task']} (branch {state['branch']}{renamed}; {mode} mode; {state.get('metric')} {state.get('direction')}; "
              f"useful effect {useful})", "", "Headline", "  " + data["headline"]["text"], "", "Attempts"]
     if data["rows"]:
         lines.append("  " + line(HEADER))
@@ -210,6 +221,9 @@ def render_referee(task, root) -> str:
     for r in store.get("resets", []):
         lines.append(f"reset at {r.get('at')}: {str(r.get('previous_init_sha'))[:12]} -> {str(r.get('new_init_sha'))[:12]} "
                      f"(confirms used then: {r.get('confirms_used')}; HCA_ALLOW_RESET set: {r.get('allowed_by_env')})")
+    for r in store.get("renamed_from", []) + store.get("renamed_to", []):
+        lines.append(f"rename at {r.get('at')}: hca.toml task {r.get('spec_name')!r} climbed as {r.get('task')!r} from "
+                     f"{str(r.get('init_sha'))[:12]} (the hca.toml name had used {r.get('spec_name_confirms_used')} confirms)")
     lines += ["", "Confirms"]
     confirms = ledger.read_confirms(task)
     if not confirms:
