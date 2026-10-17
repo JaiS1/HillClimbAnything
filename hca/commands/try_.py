@@ -183,7 +183,11 @@ def _run(args, out=print, cwd=None, seed=None) -> int:
     if kind == "screen":
         pooled = _pooled(task, t.snap["tree"], t.base)
         ledger.note_attempt(task, n, tree=t.snap["tree"])
-        t.store_extra.update(parent=parent)
+        # The referee store keeps whether the sampler chose this parent: True for an override (`next --parent --why`), False
+        # for a sampled parent, None when the sampler was not used (the first screen, or right after a promotion).
+        sampled = sampling is not None and sampling.get("override") != "promote"
+        t.store_extra.update(parent=parent, override=(sampling.get("parent_p", 0) is None) if sampled else None,
+                             why=(sampling or {}).get("why"))
         rec["explore"] = {"parent": parent, "sampling": sampling, "pooled_from": [p["n"] for p in pooled]}
         try:
             return _screen(t, [s for p in pooled for s in p.get("scores", [])])

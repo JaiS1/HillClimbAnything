@@ -70,14 +70,18 @@ def _explore_lines(root, state, tests, screens, counts) -> list:
     by_n = explore.entries(task)
     valid = sum(1 for e in by_n.values() if ledger.kind_of(e) == "screen" and e.get("valid"))
     promos = [a for a in tests if a.get("kind") == "promote"]
-    overrides = [a for a in screens if ((a.get("explore") or {}).get("sampling") or {}).get("parent_p", 0) is None]
+    sampled = [e for e in by_n.values() if ledger.kind_of(e) == "screen" and e.get("override") is not None]
+    overrides = sum(1 for e in sampled if e["override"])
+    unsampled = counts["screen"] - len(sampled)
     divergent = sum(1 for a in screens if ((a.get("explore") or {}).get("divergence") or 0) > 0.25)
     stones = [n for n, e in by_n.items() if ledger.kind_of(e) == "screen" and e.get("valid") and (e.get("estimate_log") or 0) < 0]
-    rate = f" ({100 * len(overrides) / len(screens):.0f}% of {len(screens)} screens)" if screens else ""
+    rate = (f"parent overrides {overrides} of {len(sampled)} screen(s) with sampler data ({100 * overrides / len(sampled):.0f}%)"
+            if sampled else "parent overrides: no sampler data")
+    rate += f"; {unsampled} screen(s) without it (the sampler was not used)" if unsampled else ""
     lines = [f"Screens: {counts['screen']} ({valid} valid, {counts['screen'] - valid} invalid); they rank and archive a child against "
              "its parent, cannot keep, and are not in the bound above.",
-             f"Promotions: {counts['promote']} ({sum(1 for a in promos if a.get('verdict') == 'keep')} kept); parent overrides "
-             f"{len(overrides)}{rate}; high-divergence children (> 25% of the parent's lines) {divergent}.",
+             f"Promotions: {counts['promote']} ({sum(1 for a in promos if a.get('verdict') == 'keep')} kept); {rate}; "
+             f"high-divergence children (> 25% of the parent's lines) {divergent}.",
              f"Stepping stones: {len(stones)} screen(s) read worse than their own parent; kept promotions built on one: "
              f"{len(explore.stone_keeps(task))}."]
     for a in promos:

@@ -41,6 +41,15 @@ def run(args=None, out=print, cwd=None) -> int:
     return 0
 
 
+WHY_LIMIT = 200
+
+
+def _clean_why(why) -> str:
+    """One printable line of at most 200 characters: control characters dropped, whitespace (newlines too) collapsed."""
+    text = " ".join("".join(c if c.isprintable() else " " for c in str(why)).split())
+    return text[:WHY_LIMIT] + ("..." if len(text) > WHY_LIMIT else "")
+
+
 def _choose_parent(root, spec, state, wanted, why=None) -> None:
     """`--parent M --why "..."` (an override, logged with parent_p null and the reason), or a fresh draw when explore mode has
     no parent decided yet: the default flow, where `next` alone sets the parent and prints the command to run."""
@@ -48,7 +57,8 @@ def _choose_parent(root, spec, state, wanted, why=None) -> None:
         wanted = str(wanted).strip()
         if wanted != "incumbent" and not wanted.isdigit():
             raise HcaError(f"--parent takes an attempt id (such as 0024) or `incumbent`, not {wanted!r}. Fix: see `hca next` for the members.")
-        if not (why or "").strip():
+        why = _clean_why(why or "")
+        if not why:
             raise HcaError(f'--parent overrides the sampler, so it needs a one-line reason: `hca next --parent {wanted} --why "..."`. '
                            "The reason is recorded with the next screen, and the report counts overrides.")
     parent_now, here = explore.parent_base(root, state)
@@ -69,7 +79,7 @@ def _choose_parent(root, spec, state, wanted, why=None) -> None:
         parent = None if sampling["parent"] == archive["incumbent"] else sampling["parent"]
     else:
         parent = None if wanted == "incumbent" or int(wanted) in (0, archive["incumbent"]) else int(wanted)
-        sampling = {"sampler": explore.SAMPLER, "override": "next --parent", "parent": parent, "parent_p": None, "why": why.strip()}
+        sampling = {"sampler": explore.SAMPLER, "override": "next --parent", "parent": parent, "parent_p": None, "why": why}
     target = state["last_keep"] if parent is None else explore.member(root, state, parent, what="parent")["sha"]
     gitops.revert(root, spec, target)
     state["explore"] = {"parent": parent, "sampling": sampling}
