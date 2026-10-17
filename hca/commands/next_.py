@@ -26,7 +26,8 @@ _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? ")
 
 
 def add_arguments(parser) -> None:
-    parser.add_argument("--parent", help="set the editable paths to archive member M (an attempt id) and build the next child from it")
+    parser.add_argument("--parent", help="override the sampler: set the editable paths to archive member M (an attempt id) or `incumbent`")
+    parser.add_argument("--why", help="the one-line reason for --parent (required with it; recorded, and the report counts overrides)")
 
 
 def run(args=None, out=print, cwd=None) -> int:
@@ -34,32 +35,41 @@ def run(args=None, out=print, cwd=None) -> int:
     with ledger.lock(root, "next", out):
         root, spec, state = common.open_session(cwd, out=out)
         gitops.ignore_notebook(True)
-        _choose_parent(root, spec, state, getattr(args, "parent", None))
+        _choose_parent(root, spec, state, getattr(args, "parent", None), getattr(args, "why", None))
         for line in render(root, spec, state)[:MAX_LINES]:
             out(line)
     return 0
 
 
-def _choose_parent(root, spec, state, wanted) -> None:
-    """`--parent M` (an override, logged with parent_p null), or a fresh draw when explore mode has no parent decided yet."""
+def _choose_parent(root, spec, state, wanted, why=None) -> None:
+    """`--parent M --why "..."` (an override, logged with parent_p null and the reason), or a fresh draw when explore mode has
+    no parent decided yet: the default flow, where `next` alone sets the parent and prints the command to run."""
     if wanted is not None:
         wanted = str(wanted).strip()
         if wanted != "incumbent" and not wanted.isdigit():
             raise HcaError(f"--parent takes an attempt id (such as 0024) or `incumbent`, not {wanted!r}. Fix: see `hca next` for the members.")
-    _, here = explore.parent_base(root, state)
+        if not (why or "").strip():
+            raise HcaError(f'--parent overrides the sampler, so it needs a one-line reason: `hca next --parent {wanted} --why "..."`. '
+                           "The reason is recorded with the next screen, and the report counts overrides.")
+    parent_now, here = explore.parent_base(root, state)
     clean = gitops.working_tree_hash(root, spec, here) == gitops.tree_of(root, here)
     if wanted is None and (state.get("explore") is None or state["explore"].get("sampling") is not None or not clean):
         return
     if not clean:
-        raise Refusal("the editable paths hold edits that were never screened or tried; moving them to another parent would lose them. "
-                      "Fix: screen them (`hca try --explore`) or undo them first.")
+        paths = sorted(gitops.numstat(root, spec, here, gitops.working_tree_hash(root, spec, here))) or ["<the editable paths>"]
+        label = "the incumbent" if parent_now is None else f"member {parent_now:04d}"
+        raise Refusal(f"the editable paths hold edits that were never screened or tried ({', '.join(paths[:5])}"
+                      f"{' ...' if len(paths) > 5 else ''}); moving to another parent would lose them. Recover: screen them first "
+                      f'(`hca try --explore -m "..."`), or drop them with `git checkout {here[:12]} -- {" ".join(paths[:5])}` (back to '
+                      f"{label}, the parent hca recorded), then run this again. Do not `git stash` them: a stash puts the files back to "
+                      f"the branch tip (the last keep), not to {label}, so the next screen would measure undoing the parent.")
     archive = explore.build(root, spec, state, explore.climb_seed(state))
     if wanted is None:
         sampling = explore.sample(archive, ledger.store_counts(state["task"])["screen"], archive["seed"])
         parent = None if sampling["parent"] == archive["incumbent"] else sampling["parent"]
     else:
         parent = None if wanted == "incumbent" or int(wanted) in (0, archive["incumbent"]) else int(wanted)
-        sampling = {"sampler": explore.SAMPLER, "override": "next --parent", "parent": parent, "parent_p": None}
+        sampling = {"sampler": explore.SAMPLER, "override": "next --parent", "parent": parent, "parent_p": None, "why": why.strip()}
     target = state["last_keep"] if parent is None else explore.member(root, state, parent, what="parent")["sha"]
     gitops.revert(root, spec, target)
     state["explore"] = {"parent": parent, "sampling": sampling}
@@ -80,8 +90,10 @@ def _context(root, spec, state) -> dict:
         r["class"] = explore.outcome_class(r, useful, direction)
     n_s = explore.screen_blocks(state, spec)
     sigma = (state.get("noise") or {}).get("noise_sd") or 0.0
+    counts = ledger.store_counts(task)
     return {"task": task, "records": records, "entries": entries, "archive": archive, "n_s": n_s,
-            "resolution": 2 * sigma / math.sqrt(n_s), "counts": ledger.store_counts(task), "ideas": explore.read_ideas(root),
+            "resolution": 2 * sigma / math.sqrt(n_s), "counts": counts, "ideas": explore.read_ideas(root),
+            "valid_screens": archive["screens"], "invalid_screens": counts["screen"] - archive["screens"],
             "wall": sum(e.get("wall_seconds") or 0 for e in entries.values()), "direction": direction}
 
 
@@ -142,8 +154,9 @@ def render(root, spec, state) -> list:
     ctx = _context(root, spec, state)
     archive, records, nodes, direction = ctx["archive"], ctx["records"], ctx["archive"]["nodes"], ctx["direction"]
     counts, floor = ctx["counts"], 0.5 * spec.objective.useful
+    invalid = f" ({ctx['invalid_screens']} invalid)" if ctx["invalid_screens"] else ""
     lines = [f"climb     {ctx['task']} · {ctx['wall'] / 60:.1f} min hca wall · tries {counts['try']} · promotions {counts['promote']} · "
-             f"screens {counts['screen']} · confirms {ledger.confirms_used(state, ctx['task'])} of {spec.limits.confirms}",
+             f"screens {ctx['valid_screens']}{invalid} · confirms {ledger.confirms_used(state, ctx['task'])} of {spec.limits.confirms}",
              f"screens   {ctx['n_s']} blocks vs parent · resolution ≈ {100 * ctx['resolution']:.1f}% · keep floor {100 * floor:.1f}%"]
     confirmed = state.get("last_confirmed_result")
     inc = archive["incumbent"]
@@ -154,14 +167,15 @@ def render(root, spec, state) -> list:
     parent = explore_state.get("parent")
     if parent is not None and parent in nodes:
         node, sampling = nodes[parent], explore_state.get("sampling") or {}
-        how = "chosen by override" if sampling.get("parent_p") is None else \
+        how = f"chosen by override ({sampling.get('why') or sampling.get('override') or 'no reason given'})" if sampling.get("parent_p") is None else \
             f"sampled p = {sampling['parent_p']:.2f} (incumbent mass {explore.INCUMBENT_MASS:.2f}, sampler {explore.SAMPLER})"
         lines.append(f"parent    {parent:04d}  [{node.get('cell', node['module'])}]  {how}")
         for i in node["lineage"]:
             r = records.get(i, {})
             step = nodes.get(i)
             est = f"{_pct(r['estimate_log'], direction)} vs parent" if r.get("estimate_log") is not None else ""
-            stone = " (stepping stone)" if step and r.get("estimate_log", 0) < 0 else ""
+            stone = " (stepping stone: read worse than its parent)" if step and step["screened"] and step["step"] < 0 else ""
+            stone += " (in the incumbent)" if step and step["retired"] else ""
             lines.append(f"          {'lineage ' if i == node['lineage'][0] else '        '} {i:04d} {r.get('idea') or ''} "
                          f"{(r.get('message') or '').splitlines()[0][:50] if r.get('message') else ''}  {est}{stone}".rstrip())
         lines.append(f"          lead vs incumbent  raw {100 * (node['f_raw'] - archive['f_inc']):+.1f} pp · ranked "
@@ -179,19 +193,16 @@ def render(root, spec, state) -> list:
         lines.append(f"inspire   {n:04d} [{nodes[n]['cell']}] ranked lead {100 * (nodes[n]['f_rank'] - archive['f_inc']):+.1f} pp · "
                      f".hca/attempts/{n:04d}/patch.diff")
     lines += _memory_lines(ctx)
-    dropped = [f"keep {k:04d} dropped by {n:04d}" for n, e in sorted(ctx["entries"].items()) for k in e.get("dropped_keeps") or []]
+    promos = [n for n, e in sorted(ctx["entries"].items()) if ledger.kind_of(e) == "promote"][-4:]
+    dropped = [f"keep {k:04d} dropped by {n:04d}" for n in promos for k in explore.dropped_at(root, state, n)]
     if dropped:
         lines.append("dropped   " + " · ".join(dropped[-4:]))
-    best = explore.hint(archive, ctx["n_s"])
-    if best is None:
-        lead = max((nodes[n]["f_rank"] - archive["f_inc"] for n in archive["elites"]), default=None)
-        lines.append("promote   none" + ("" if lead is None else f": best ranked lead {100 * lead:+.1f} pp < the hint's {100 * floor:.1f} pp floor plus selection allowance"))
-    elif best["rescreen"]:
-        lines.append(f"promote   {best['n']:04d} ranked lead {100 * best['lead']:+.1f} pp ≥ {100 * best['needed']:.1f} pp, but screens here are noisy: "
-                     f"re-screen it first (`hca next --parent {best['n']:04d}`, then `hca try --explore -m \"re-screen\"` with no edits)")
-    else:
-        lines.append(f"promote   {best['n']:04d} ranked lead {100 * best['lead']:+.1f} pp ≥ {100 * best['needed']:.1f} pp  →  "
-                     f"hca try --promote {best['n']:04d} -m \"...\"")
+    lines += _hint_lines(archive, ctx, floor)
+    pending = sum(1 for r in records.values() if r.get("kind") != "screen" and r.get("verdict") == "keep" and r.get("confirm") == "pending")
+    if pending >= 2:
+        left = spec.limits.confirms - ledger.confirms_used(state, ctx["task"])
+        lines.append(f"confirm   {pending} keeps since the last confirm  →  hca confirm ({left} of {spec.limits.confirms} left): "
+                     "only a confirm is a result, and a FAIL then undoes less")
     overlap = _overlaps(root, spec, state, ctx)
     if overlap:
         lines.append("overlap   your working diff touches the same lines as " + ", ".join(overlap[:4]) + ": check it is a new idea")
@@ -201,8 +212,25 @@ def render(root, spec, state) -> list:
         lines.append("backlog   " + " · ".join(backlog[:8]))
     lines.append(f"working   editable paths are at {'the incumbent' if parent is None else format(parent, '04d')} "
                  f"(branch at {'keep ' + format(inc, '04d') if inc else 'the original'})")
-    lines.append("then      edit, then `hca try --explore --idea I<n> -m \"...\"` (a screen), or plain `hca try -m \"...\"` (a full test)")
+    idea = backlog[0].split()[0] if backlog else "I<n>"
+    lines.append(f"then      edit from {'the incumbent' if parent is None else format(parent, '04d')}, then:  "
+                 f"hca try --explore --idea {idea} -m \"...\"")
     return lines
+
+
+def _hint_lines(archive, ctx, floor) -> list:
+    nodes, best = archive["nodes"], explore.hint(archive, ctx["n_s"])
+    if best is None:
+        lead = max((nodes[n]["f_raw"] - archive["f_inc"] for n in archive["elites"]), default=None)
+        return ["promote   none" + ("" if lead is None else f": the best open lead is {100 * lead:+.1f} pp, short of the "
+                                     f"{100 * floor:.1f} pp floor even before the selection allowance")]
+    head = (f"promote   {best['n']:04d} lead {100 * best['lead']:+.1f} pp, {100 * (best['lead'] - best['allowance']):+.1f} pp after the "
+            f"selection allowance over {ctx['valid_screens']} screens (floor {100 * floor:.1f} pp)")
+    chain = f" · stacked chain {' → '.join(format(i, '04d') for i in best['stacked'])}: promote the tip, it carries them all" if best["stacked"] else ""
+    if best["action"] == "rescreen":
+        return [head + ": ambiguous, and a re-screen is cheaper than a promotion  →  "
+                f'hca next --parent {best["n"]:04d} --why "re-screen", then hca try --explore -m "re-screen" with no edits' + chain]
+    return [head + f'  →  hca try --promote {best["n"]:04d} -m "..."' + chain]
 
 
 def _memory_lines(ctx) -> list:
@@ -224,18 +252,20 @@ def _memory_lines(ctx) -> list:
     if kinds:
         lines.append("kinds     " + " · ".join(f"{k} {v}" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])))
     a = ctx["archive"]
-    lines.append(f"archive   {len(a['elites']) + 1} members, {len(a['cells'])} of {explore.MAX_CELLS + 1} modules · "
-                 f"{len(a['stepping_stones'])} stepping stones · {len(a['tainted'])} tainted")
+    lines.append(f"archive   {len(a['elites']) + 1} members, {len(a['cells'])} of {explore.MAX_CELLS + 1} {'files' if a['per_file'] else 'modules'} · "
+                 f"{len(a['stepping_stones'])} stepping stones (screened worse than their parent) · {len(a['behind'])} behind the incumbent · "
+                 f"{len(a['retired'])} retired (in the incumbent) · {len(a['tainted'])} tainted")
     return lines
 
 
 def _warnings(ctx) -> list:
     entries = sorted(ctx["entries"].items())
     last_promote = max((n for n, e in entries if ledger.kind_of(e) == "promote"), default=0)
-    since_promote = sum(1 for n, e in entries if ledger.kind_of(e) == "screen" and n > last_promote)
+    screen = lambda e: ledger.kind_of(e) == "screen" and e.get("valid")          # noqa: E731  invalid attempts are not screens of an idea
+    since_promote = sum(1 for n, e in entries if screen(e) and n > last_promote)
     confirms = ledger.read_confirms(ctx["task"])
     last_confirm = confirms[-1].get("at", "") if confirms else ""
-    since_confirm = sum(1 for _, e in entries if ledger.kind_of(e) == "screen" and e.get("at", "") > last_confirm)
+    since_confirm = sum(1 for _, e in entries if screen(e) and e.get("at", "") > last_confirm)
     out = []
     if since_promote >= 10:
         out.append(f"warning   {since_promote} screens since the last promotion attempt: screens are not evidence; promote or change course")
@@ -262,7 +292,7 @@ def _backlog(ctx, parent) -> list:
             return 0
         if r and r["class"] == "NO EVIDENCE":
             return 1
-        if idea["where"] and "/".join(idea["where"].split("/")[:2]) not in cells:
+        if idea["where"] and idea["where"] not in cells and "/".join(idea["where"].split("/")[:2]) not in cells:
             return 2
         return 3
     todo = [i for i in ctx["ideas"] if latest.get(i["id"], {}).get("class") not in ("KEPT", "NULL", "HARMFUL")]
@@ -272,8 +302,22 @@ def _backlog(ctx, parent) -> list:
 # --- hca report --dream ------------------------------------------------------------------------------
 
 DREAM_INSTRUCTION = ("Write 5-10 ideas into IDEAS.md (`## I<n> [<kind>] <title>`, a `parent: NNNN` line, `where:` and `why:`). "
-                     "Each names a parent member. At least one targets an empty module, if any is meaningful. At least one is a "
+                     "Each names a parent member. At least one targets an empty cell, but only if that file is plausibly hot (a profile, a "
+                     "`hot:` line in IDEAS.md, or your reading says it costs time). At least one is a "
                      "stepping stone you expect to read worse first. Say which evidence above each one answers.")
+
+
+def _empty_cells(root, spec, state, archive) -> tuple:
+    """(cells with no member that plausibly carry weight, how they were chosen): the `hot:` files from IDEAS.md if any, else
+    editable files with code weight (not metadata, small re-exports, test helpers or tiny files), as files or modules."""
+    sizes = {p: n for p, n in gitops.file_sizes(root, state["last_keep"]).items() if gitops.is_editable(p, spec)}
+    hot = explore.read_hot(root)
+    if hot:
+        files, why = [p for p in sizes if p in hot or any(p.startswith(h.rstrip("/") + "/") for h in hot)], "the hot: list in IDEAS.md"
+    else:
+        files, why = [p for p, n in sizes.items() if explore.weighty(p, n)], "files with code weight"
+    keys = sorted({p if archive["per_file"] else "/".join(p.split("/")[:2]) for p in files})
+    return [k for k in keys if k not in archive["cells"]], why
 
 
 SECTION_ITEMS = 25          # each list in DREAM.md is capped, so the packet stays bounded and the instruction always survives
@@ -292,16 +336,16 @@ def dream(root, spec, state) -> Path:
     archive, records, nodes, direction = ctx["archive"], ctx["records"], ctx["archive"]["nodes"], ctx["direction"]
     cells = [f"- [{cell}] elite {info['elite']:04d}, ranked lead {100 * (info['f_rank'] - archive['f_inc']):+.1f} pp, "
              f"{info['children']} child(ren)" for cell, info in archive["cells"].items()]
-    editable = sorted({"/".join(p.split("/")[:2]) for p in gitops.tree_entries(root, state["last_keep"]) if gitops.is_editable(p, spec)})
-    empty = [m for m in editable if m not in archive["cells"]]
+    empty, why = _empty_cells(root, spec, state, archive)
     archive_map = _capped(cells) + [
-        f"- empty modules: {', '.join(empty[:12]) or 'none'}" + (f" (+{len(empty) - 12} more)" if len(empty) > 12 else ""),
+        f"- empty cells ({why}): {', '.join(empty[:12]) or 'none'}" + (f" (+{len(empty) - 12} more)" if len(empty) > 12 else ""),
         f"- tainted members: {', '.join(format(n, '04d') for n in archive['tainted'][:20]) or 'none'}"]
     lineages = []
     for n in archive["elites"]:
         steps = [f"{i:04d} {_pct(records[i]['estimate_log'], direction)}" for i in nodes[n]["lineage"]
                  if records.get(i, {}).get("estimate_log") is not None]
-        lineages.append(f"- {' → '.join(steps)}" + (" (stepping stone: behind the incumbent)" if n in archive["stepping_stones"] else ""))
+        steps = [f"{t} (stone)" if int(t[:4]) in archive["stepping_stones"] else t for t in steps]
+        lineages.append(f"- {' → '.join(steps)}" + (" (behind the incumbent)" if n in archive["behind"] else ""))
     evidence, nulls = [], {}
     for n, r in sorted(records.items()):
         if r["class"] in ("NO EVIDENCE", "SMALL") and r.get("kind") != "screen":
@@ -321,7 +365,9 @@ def dream(root, spec, state) -> Path:
     lines = [f"# Dream packet: {ctx['task']}", "", "Offline: nothing below was measured for this file. Screens are rankings, not "
              "evidence; kept estimates are selected (biased upward); only a confirm is a result.",
              "", "## 1. Archive map", "", *archive_map,
-             "", "## 2. Lineages and stepping stones", "", *(_capped(lineages) or ["- none yet"]),
+             "", "## 2. Lineages and stepping stones", "",
+             f"- stepping stones (screens that read worse than their own parent): {len(archive['stepping_stones'])}; kept promotions "
+             f"built on one: {len(explore.stone_keeps(ctx['task']))}", *(_capped(lineages) or ["- none yet"]),
              "", "## 3. Open evidence", "",
              *(evidence or ["- none: no reverted test left the useful effect open, and nothing tested came back NULL"]),
              "", "## 4. Overlap map (files tried, how often)", "", *(overlap or ["- none yet"]),
