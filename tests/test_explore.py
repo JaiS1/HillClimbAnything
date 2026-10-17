@@ -93,11 +93,11 @@ class ScreenPathTests(ExploreCase):
                 mock.patch.object(gitops, "advance_branch", side_effect=boom):
             self.set_speed(15)                                            # a huge win: a keep would be certain on the line path
             code, text = self.screen("much faster")
-            self.assertEqual(code, 0, text)
+            self.assertEqual(code, 5, text)
             self.assertIn("a screen, not evidence", text)
             self.next_(parent=1)
             self.repo.write("src/boost.txt", "3\n")
-            self.assertEqual(self.screen("again")[0], 0)
+            self.assertEqual(self.screen("again")[0], 5)
         self.assertEqual(self.repo.head(), head)
         self.assertEqual(self.state()["last_keep"], head)
         self.assertEqual(self.attempt(1)["verdict"], "screened")
@@ -163,7 +163,7 @@ class BaseThreadingTests(ExploreCase):
     def parent_p(self):
         self.init()
         self.set_speed(27)
-        self.assertEqual(self.screen("P: faster")[0], 0)
+        self.assertEqual(self.screen("P: faster")[0], 5)
         self.next_(parent=1)
         self.assertEqual(self.repo.read("src/speed.txt"), "27\n")
 
@@ -172,7 +172,7 @@ class BaseThreadingTests(ExploreCase):
         self.set_speed(30)                                                # the parent changed P; the agent restores it by hand
         self.repo.write("src/boost.txt", "1\n")
         code, text = self.screen("undo P, touch something else")
-        self.assertEqual(code, 0, text)
+        self.assertEqual(code, 5, text)
         rec = self.attempt(2)
         self.assertEqual(self.show(rec["snapshot"], "src/speed.txt"), "30")
         self.assertGreater(rec["estimate"], 5)                            # slower than the parent P (27 -> 30), as on disk
@@ -180,7 +180,7 @@ class BaseThreadingTests(ExploreCase):
     def test_the_baseline_is_the_parent_and_the_change_list_is_against_it(self):
         self.parent_p()
         self.repo.write("src/boost.txt", "1\n")
-        self.assertEqual(self.screen("only boost")[0], 0)
+        self.assertEqual(self.screen("only boost")[0], 5)
         rec = self.attempt(2)
         self.assertEqual(rec["base"], self.entry(1)["sha"])
         self.assertLess(abs(rec["estimate"]), 3)                          # the same speed as the parent, not -10% vs the incumbent
@@ -233,7 +233,7 @@ class MemoryTests(ExploreCase):
         n_s = self.attempt(1)["screen"]["blocks"]
         self.next_(parent=1)
         code, text = self.screen("re-screen", seed=9)
-        self.assertEqual(code, 0, text)
+        self.assertEqual(code, 5, text)
         rec = self.attempt(2)
         self.assertEqual((rec["screen"]["blocks"], rec["explore"]["pooled_from"], rec["tree"]), (2 * n_s, [1], self.attempt(1)["tree"]))
         self.assertIn(f"{n_s} pooled", text)
@@ -314,7 +314,7 @@ class ReplayTests(ExploreCase):
     def test_a_tree_with_a_prior_try_needs_again_and_the_again_is_recorded(self):
         self.revert_r()
         self.set_speed("29.9")                                            # the same tree, now as a screen
-        self.assertEqual(self.screen("R as a screen")[0], 0)
+        self.assertEqual(self.screen("R as a screen")[0], 5)
         self.next_(parent=2)
         code, text = self.promote(2)
         self.assertEqual(code, 2, text)
@@ -478,7 +478,7 @@ class PruneTests(ExploreCase):
         with mock.patch.object(explore, "MEMBER_ARMS", 2):
             for i in range(3):
                 self.repo.write("src/boost.txt", f"{i + 1}\n")
-                self.assertEqual(self.screen(f"child {i}")[0], 0)
+                self.assertEqual(self.screen(f"child {i}")[0], 5)
                 self.next_(parent=1)
             self.assertIn(self.entry(1)["sha"][:12], self.arm_dirs())
             self.assertLessEqual(len(self.arm_dirs()), 3)                 # the original (= last keep), the parent, one recent member
@@ -785,7 +785,7 @@ class NextPiecesTests(ExploreCase):
 
     def test_the_hint_needs_floor_plus_allowance_and_asks_for_a_re_screen_when_screens_are_noisy(self):
         nodes = {1: {"f_rank": 0.040, "var": 0.0001, "se": 0.002, "blocks": 5}, 2: {"f_rank": 0.012, "var": 0.0, "se": 0.0, "blocks": 5}}
-        archive = {"elites": [1, 2], "nodes": nodes, "floor": 0.01, "f_inc": 0.0}
+        archive = {"elites": [1, 2], "nodes": nodes, "floor": 0.01, "f_inc": 0.0, "screens": 3}
         best = explore.hint(archive, 5)
         self.assertEqual(best["n"], 1)
         self.assertAlmostEqual(best["needed"], 0.01 + 0.01 * math.sqrt(2 * math.log(3)))
@@ -811,3 +811,234 @@ class NextPiecesTests(ExploreCase):
         self.set_speed("29.8")
         _, text = self.next_()
         self.assertRegex(text, r"overlap   your working diff touches the same lines as 0001 (NULL|NO EVIDENCE)")
+
+
+# --- fixes from the adversarial review of Phase 1 ---------------------------------------------------------
+
+class HeldoutCase(ExploreCase):
+    toml_args = {"limits": {"confirms": 3}}
+
+    def setUp(self):
+        super().setUp()
+        held = self.tmp / "held"
+        held.mkdir()
+        (held / "scale.txt").write_text("1.0\n")
+        self.held = str(held)
+
+
+class ReviewTaintTests(HeldoutCase):
+    def test_a_failed_promotion_taints_the_promoted_member_and_its_children(self):
+        """adv2 test_A: the keep a promotion makes is a fresh commit, so its member and the member's children do not descend
+        from it; they must be tainted by content and lineage."""
+        self.init(heldout=self.held)
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.screen("A dev-only")                                         # 1
+        self.next_(parent=1)
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("B child of A")                                       # 2
+        self.next_(parent="incumbent")
+        self.assertEqual(self.promote(1)[0], 0)                           # 3: keeps the dev-only hack
+        self.assertEqual(self.confirm()[0], 1)
+        self.assertTrue(self.entry(1)["tainted"])
+        self.assertTrue(self.entry(2)["tainted"])
+        self.assertTrue(self.entry(3)["unconfirmed"])
+        self.assertFalse(self.entry(3).get("tainted"))                    # the undone keep is unconfirmed, not "tainted by itself"
+        with self.assertRaises(Refusal):
+            self.promote(2)
+        with self.assertRaises(Refusal):
+            self.promote(1, again=True)
+
+    def test_a_crash_in_the_failed_confirm_is_finished_with_its_taint_by_the_next_command(self):
+        """adv test_C: the taint hook raises; the next command reconciles the restore and taints."""
+        self.init(heldout=self.held)
+        self.set_speed(28)
+        self.screen("A")                                                  # 1
+        self.next_(parent="incumbent")
+        self.repo.write("src/dev_hack.txt", "0.7\n")
+        self.assertEqual(self.try_("dev win")[0], 0)                      # 2
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("B on the bad keep")                                  # 3
+        self.next_(parent="incumbent")
+        with mock.patch.object(explore, "taint_after_fail", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.confirm()
+        self.assertEqual(ledger.get_pending("speedy")["kind"], "restore")
+        _, text = self.next_()
+        self.assertIn("finished an interrupted confirm reset", text)
+        self.assertIsNone(ledger.get_pending("speedy"))
+        self.assertTrue(self.entry(2)["unconfirmed"])
+        self.assertTrue(self.entry(3)["tainted"])
+        self.assertFalse(self.entry(1).get("tainted"))
+        with self.assertRaises(Refusal):
+            self.promote(3)
+
+
+class ReviewFixTests(ExploreCase):
+    def test_re_screens_pool_each_block_once(self):
+        """adv test_B: 5, 10, 15, 20 blocks, not 5, 10, 20, 40."""
+        self.init()
+        self.set_speed(28)
+        self.screen("M")
+        for i in range(3):
+            self.next_(parent=1)
+            self.assertEqual(self.screen("re-screen", seed=10 + i)[0], 5)
+        self.assertEqual([self.entry(n)["blocks"] for n in (1, 2, 3, 4)], [5, 10, 15, 20])
+        self.assertEqual([len(self.entry(n)["scores"]) for n in (1, 2, 3, 4)], [5, 10, 15, 20])
+
+    def test_dream_keeps_its_instruction_however_many_records(self):
+        """adv2 test_F: 200 open records once pushed the instruction past the 150-line cut."""
+        from hca.commands import next_
+        self.init()
+        self.set_speed("29.9")
+        self.try_("t")
+        ctx = next_._context(self.root, repokit_spec(self.root), self.state())
+        for n in range(10, 210):
+            ctx["records"][n] = {"n": n, "class": "NO EVIDENCE", "kind": "try", "estimate": 1.0, "message": "m"}
+        with mock.patch.object(next_, "_context", return_value=ctx):
+            text = next_.dream(self.root, repokit_spec(self.root), self.state()).read_text()
+        self.assertLessEqual(len(text.splitlines()), 150)
+        self.assertIn("Write 5-10 ideas", text)
+        self.assertIn("- (+175 more)", text)
+
+    def test_relabelling_a_keep_as_a_screen_in_verdict_json_changes_nothing(self):
+        """adv test_D: kind comes from the referee store."""
+        self.init()
+        self.set_speed(21)
+        self.assertEqual(self.try_("keep")[0], 0)
+        _, before = self.report()
+        record = ledger.attempt_path(self.root, 1) / "verdict.json"
+        record.write_text(json.dumps(dict(json.loads(record.read_text()), kind="screen")))
+        _, after = self.report()
+        self.assertEqual(after, before)
+        self.assertRegex(after, r"0001\s+keep")
+        self.assertIn("Unconfirmed cumulative", after)
+
+    def test_a_member_that_hand_undoes_a_keep_reports_it_dropped(self):
+        self.init()
+        self.set_speed(21)
+        self.assertEqual(self.try_("keep K")[0], 0)                       # 1
+        self.set_speed(30)                                                # undo K's file by hand, on top of K
+        self.repo.write("src/boost.txt", "1\n")
+        self.screen("undoes K")                                           # 2: descends from K
+        self.next_(parent="incumbent")
+        self.assertEqual(explore.dropped_keeps(self.root, self.state(), self.entry(2)["sha"]), [1])
+        self.assertIn("dropped keeps: keep 0001", self.promote(2)[1])
+
+    def test_next_parent_with_a_bad_id_is_a_usage_error(self):
+        self.init()
+        with self.assertRaises(HcaError) as caught:
+            self.next_(parent="foo")
+        self.assertNotIsInstance(caught.exception, Refusal)
+        self.assertIn("attempt id", str(caught.exception))
+        with contextlib.chdir(self.root), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["next", "--parent", "foo"]), 3)
+
+    def test_an_editable_ideas_md_is_an_edit_in_line_mode_and_the_notebook_in_explore_mode(self):
+        self.repo.write("hca.toml", self.repo.read("hca.toml").replace('editable = ["src/**"]', 'editable = ["src/**", "IDEAS.md"]'))
+        self.repo.commit_all("IDEAS.md is editable")
+        self.init()
+        self.repo.write("IDEAS.md", "## I1 [micro] x\n")
+        self.set_speed(21)
+        self.assertEqual(self.try_("line keep with notes")[0], 0)
+        self.assertEqual(self.repo.git("show", "HEAD:IDEAS.md"), "## I1 [micro] x")
+        self.repo.write("IDEAS.md", "## I1 [micro] x\n## I2 [io] y\n")
+        self.set_speed(19)
+        self.assertEqual(self.screen("explore")[0], 5)
+        self.assertNotIn("IDEAS.md", (ledger.attempt_path(self.root, 2) / "patch.diff").read_text())
+        self.assertIn("I2", self.repo.read("IDEAS.md"))                   # the restore to the next parent leaves the notebook alone
+
+    def test_the_max_tries_warning_counts_promotions(self):
+        self.repo.write("hca.toml", self.repo.read("hca.toml").replace('useful_effect = "5%"\n', 'useful_effect = "5%"\nmax_tries = 1\n'))
+        self.repo.commit_all("max_tries 1")
+        self.init()
+        self.set_speed("29.9")
+        self.assertNotIn("past max_tries", self.try_("one")[1])
+        self.set_speed(27)
+        self.assertNotIn("past max_tries", self.screen("s")[1])
+        self.next_(parent="incumbent")
+        self.assertIn("this is test 2 (tries + promotions), past max_tries (1)", self.promote(2)[1])
+
+    def test_a_refused_promotion_puts_the_editable_paths_back(self):
+        self.init()
+        self.set_speed("29.9")
+        self.assertEqual(self.try_("R")[0], 1)                            # 1
+        self.set_speed("29.9")
+        self.screen("R as a screen")                                      # 2: same tree
+        self.next_(parent="incumbent")
+        code, text = self.promote(2)
+        self.assertEqual(code, 2, text)
+        self.assertIn("put back where they were before --promote", text)
+        self.assertNotIn("untouched", text)
+        self.assertEqual(self.repo.read("src/speed.txt"), "30\n")
+        self.assertIsNone(self.state()["explore"]["parent"])
+
+    def test_a_promotion_whose_baseline_cannot_be_built_is_discarded_and_undone(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("M")
+        self.next_(parent="incumbent")
+        with mock.patch.object(arms, "ensure_arm", side_effect=HcaError("baseline build broke")):
+            with self.assertRaises(HcaError):
+                self.promote(1)
+        self.assertEqual(self.repo.read("src/speed.txt"), "30\n")
+        self.assertIsNone(self.state()["explore"]["parent"])
+        self.assertNotIn(2, explore.entries("speedy"))
+
+    def test_report_dream_takes_the_lock(self):
+        self.init()
+        with ledger.lock(self.root, "try"):
+            with self.assertRaises(HcaError) as caught:
+                self.hca(report, args={"md": None, "dream": True})
+        self.assertIn("another `hca try` is running", str(caught.exception))
+
+    def test_a_pre_explore_ledger_still_works(self):
+        self.init()
+        self.set_speed("29.9")
+        self.assertEqual(self.try_("old")[0], 1)
+        store = ledger.load_store("speedy")
+        store["attempts"] = [{k: e[k] for k in ("n", "session", "tree", "again", "refused", "at")} for e in store["attempts"]]
+        ledger.save_store("speedy", store)
+        record = ledger.attempt_path(self.root, 1) / "verdict.json"
+        old = {k: v for k, v in json.loads(record.read_text()).items() if k not in ("kind", "review_pointers")}
+        record.write_text(json.dumps(old))
+        self.assertEqual(self.next_()[0], 0)
+        code, text = self.report()
+        self.assertEqual(code, 0)
+        self.assertRegex(text, r"0001\s+revert")
+        self.set_speed(27)
+        self.assertEqual(self.try_("new")[0], 0)
+        self.assertEqual(ledger.store_counts("speedy"), {"try": 2, "promote": 0, "screen": 0})
+
+
+class ExactAlphaControlTests(ExploreCase):
+    def test_a_leaky_promotion_that_reuses_the_screen_blocks_fails_the_bound(self):
+        """Positive control for the exact-alpha test: the same selection, but the 'promotion' reuses the best screen's blocks."""
+        noise = random.Random(7)
+        rounds, keeps = 1000, 0
+        for _ in range(rounds):
+            screens = [[noise.gauss(0.0, 0.02) for _ in range(8)] for _ in range(20)]
+            best = max(screens, key=stats.hodges_lehmann)
+            keeps += stats.keep_decision(best, 0.0, look=1, looks=1)["verdict"] == "keep"
+        pmf = lambda k: math.exp(math.lgamma(rounds + 1) - math.lgamma(k + 1) - math.lgamma(rounds - k + 1)      # noqa: E731
+                                 + k * math.log(0.01) + (rounds - k) * math.log(0.99))
+        tail = 1 - sum(pmf(k) for k in range(keeps))
+        self.assertLess(tail, 1e-4, f"{keeps} keeps in {rounds}: the leak should be caught")
+
+    def test_the_real_promote_path_measures_fresh_blocks(self):
+        self.init()
+        self.set_speed(27)
+        self.screen("M")
+        self.next_(parent="incumbent")
+        screen_scores = self.entry(1)["scores"]
+        drawn, noise = [], random.Random(11)
+
+        def fresh(spec, base, cand, n, rng, env, out, **kw):
+            scores = [noise.gauss(0.0, 0.02) for _ in range(n)]
+            drawn.extend(scores)
+            return measure.BlockResult(scores, list(range(n)), [], False, n, {}, {}, 0, [], 0.0, 0.0)
+        with mock.patch.object(measure, "run_blocks", side_effect=fresh):
+            self.promote(1)
+        rec = self.attempt(2)
+        self.assertEqual(rec["blocks"], len(drawn))
+        self.assertAlmostEqual(rec["estimate_log"], stats.hodges_lehmann(drawn))
+        self.assertFalse(set(screen_scores) & set(drawn))
